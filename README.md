@@ -1,13 +1,15 @@
-# Skill<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 30" height="1em" width="1.6em" aria-hidden="true"><text x="0" y="23" fill="#ff6eb4" font-family="Georgia,serif" font-size="24" font-weight="400">er</text></svg>
+# Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="52" height="32" />
+
+<!-- Pink "er": external SVG via img — GitHub's README sanitizer strips inline SVG, so em-sized SVG does not work on github.com. -->
 
 ![Skiller Hero Banner](docs/images/screenshots/hero.png)
 
 Install, sync, and manage AI agent skills across your coding agents from one desktop app.
 
-## Why Skill<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 30" height="1em" width="1.6em" aria-hidden="true"><text x="0" y="23" fill="#ff6eb4" font-family="Georgia,serif" font-size="24" font-weight="400">er</text></svg>
+## Why Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="39" height="24" />
 
 Managing skills separately in every agent is repetitive and error-prone.  
-Skill<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 30" height="1em" width="1.6em" aria-hidden="true"><text x="0" y="23" fill="#ff6eb4" font-family="Georgia,serif" font-size="24" font-weight="400">er</text></svg> gives you one control center to:
+Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="26" height="16" /> gives you one control center to:
 
 - **See everything at once** — agents, installed skills, and status in one dashboard
 - **Install once, sync everywhere** — propagate skills across your agent stack
@@ -17,7 +19,7 @@ Skill<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 30" height="1em" wi
 
 ## Supported agents
 
-Skill<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 30" height="1em" width="1.6em" aria-hidden="true"><text x="0" y="23" fill="#ff6eb4" font-family="Georgia,serif" font-size="24" font-weight="400">er</text></svg> talks to every listed agent natively — dropping a skill into one place propagates it to all of them.
+Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="26" height="16" /> talks to every listed agent natively — dropping a skill into one place propagates it to all of them.
 
 <table>
   <tr>
@@ -79,7 +81,7 @@ Grab the installer for your OS from the [**latest release**](https://github.com/
 
 | OS | File | Notes |
 | --- | --- | --- |
-| macOS (Apple Silicon) | `stable-macos-arm64-Skiller.dmg` | Signed + notarized — opens with no Gatekeeper warnings. Open the DMG and drag Skill<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 30" height="1em" width="1.6em" aria-hidden="true"><text x="0" y="23" fill="#ff6eb4" font-family="Georgia,serif" font-size="24" font-weight="400">er</text></svg> to Applications. |
+| macOS (Apple Silicon) | `stable-macos-arm64-Skiller.dmg` | Signed + notarized — opens with no Gatekeeper warnings. Open the DMG and drag Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="23" height="14" /> to Applications. |
 | Windows (x64) | `stable-win-x64-Skiller-Setup.zip` | Extract and run `Skiller.exe`. SmartScreen may show a one-time warning — click "More info" → "Run anyway". |
 | Linux (x64) | `stable-linux-x64-Skiller-Setup.tar.gz` | Extract and run `bin/launcher` from the resulting folder. |
 
@@ -87,7 +89,7 @@ Every release is built and published by the CI matrix in `.github/workflows/rele
 
 ## Auto-updates
 
-Once installed, Skill<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 30" height="1em" width="1.6em" aria-hidden="true"><text x="0" y="23" fill="#ff6eb4" font-family="Georgia,serif" font-size="24" font-weight="400">er</text></svg> keeps itself current:
+Once installed, Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="26" height="16" /> keeps itself current:
 
 - Checks for new versions on launch, then every 6 hours in the background.
 - Downloads delta patches (~14 KB typical) when available; falls back to the full bundle if the patch chain breaks.

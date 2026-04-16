@@ -1,7 +1,5 @@
 # Skiller
 
----
-
 ![Skiller Hero Banner](docs/images/screenshots/hero.png)
 
 Skiller is a desktop manager for AI agent skills.  

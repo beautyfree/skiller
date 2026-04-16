@@ -1,0 +1,74 @@
+<!-- Open Graph asset: 1200x630. Regenerate PNG: rsvg-convert -w 1200 docs/images/og-skiller.svg -o docs/images/og-skiller.png -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="Skiller, your skills HQ">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06050a"/>
+      <stop offset="55%" stop-color="#0c0a12"/>
+      <stop offset="100%" stop-color="#0f0c18"/>
+    </linearGradient>
+    <radialGradient id="glowBL" cx="0" cy="1" r="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#6d28d9" stop-opacity="0.42"/>
+      <stop offset="55%" stop-color="#5b21b6" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#07060a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowTR" cx="1" cy="0" r="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#1e3a8a" stop-opacity="0.28"/>
+      <stop offset="60%" stop-color="#172554" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#07060a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="topHair" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#1a1530" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#07060a" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="grain" x="0" y="0" width="100%" height="100%" filterUnits="objectBoundingBox">
+      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="4" stitchTiles="stitch" result="n"/>
+      <feColorMatrix in="n" type="saturate" values="0" result="gray"/>
+      <feComponentTransfer in="gray" result="a">
+        <feFuncA type="linear" slope="0.12" intercept="0"/>
+      </feComponentTransfer>
+    </filter>
+    <linearGradient id="word" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e8e4f2"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glowBL)"/>
+  <rect width="1200" height="630" fill="url(#glowTR)"/>
+  <rect width="1200" height="72" fill="url(#topHair)"/>
+
+  <rect width="1200" height="630" filter="url(#grain)" opacity="0.55"/>
+
+  <!-- Brand lockup: rabbit + wordmark (centered) -->
+  <g transform="translate(600, 308)">
+    <image
+      x="-382"
+      y="-118"
+      width="236"
+      height="244"
+      href="skiller-mark.png"
+      xlink:href="skiller-mark.png"
+      preserveAspectRatio="xMidYMid meet"
+    />
+    <text
+      x="-118"
+      y="28"
+      fill="url(#word)"
+      font-family="DM Sans, ui-sans-serif, system-ui, sans-serif"
+      font-size="96"
+      font-weight="700"
+      letter-spacing="-0.03em"
+    >Skiller</text>
+    <text
+      x="-118"
+      y="88"
+      fill="#b794f6"
+      font-family="DM Sans, ui-sans-serif, system-ui, sans-serif"
+      font-size="28"
+      font-weight="500"
+      letter-spacing="0.02em"
+      opacity="0.92"
+    >Your skills HQ</text>
+  </g>
+</svg>

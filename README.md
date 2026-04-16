@@ -1,4 +1,4 @@
-# Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="52" height="32" />
+# Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="47" height="26" />
 
 <!-- Pink "er": external SVG via img — GitHub's README sanitizer strips inline SVG, so em-sized SVG does not work on github.com. -->
 
@@ -6,10 +6,10 @@
 
 Install, sync, and manage AI agent skills across your coding agents from one desktop app.
 
-## Why Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="39" height="24" />
+## Why Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="38" height="21" />
 
 Managing skills separately in every agent is repetitive and error-prone.  
-Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="26" height="16" /> gives you one control center to:
+Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="25" height="14" /> gives you one control center to:
 
 - **See everything at once** — agents, installed skills, and status in one dashboard
 - **Install once, sync everywhere** — propagate skills across your agent stack
@@ -19,7 +19,7 @@ Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="26" height="16" 
 
 ## Supported agents
 
-Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="26" height="16" /> talks to every listed agent natively — dropping a skill into one place propagates it to all of them.
+Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="25" height="14" /> talks to every listed agent natively — dropping a skill into one place propagates it to all of them.
 
 <table>
   <tr>
@@ -81,7 +81,7 @@ Grab the installer for your OS from the [**latest release**](https://github.com/
 
 | OS | File | Notes |
 | --- | --- | --- |
-| macOS (Apple Silicon) | `stable-macos-arm64-Skiller.dmg` | Signed + notarized — opens with no Gatekeeper warnings. Open the DMG and drag Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="23" height="14" /> to Applications. |
+| macOS (Apple Silicon) | `stable-macos-arm64-Skiller.dmg` | Signed + notarized — opens with no Gatekeeper warnings. Open the DMG and drag Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="22" height="13" /> to Applications. |
 | Windows (x64) | `stable-win-x64-Skiller-Setup.zip` | Extract and run `Skiller.exe`. SmartScreen may show a one-time warning — click "More info" → "Run anyway". |
 | Linux (x64) | `stable-linux-x64-Skiller-Setup.tar.gz` | Extract and run `bin/launcher` from the resulting folder. |
 
@@ -89,7 +89,7 @@ Every release is built and published by the CI matrix in `.github/workflows/rele
 
 ## Auto-updates
 
-Once installed, Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="26" height="16" /> keeps itself current:
+Once installed, Skill<img src="docs/images/readme-skiller-er.svg" alt="" width="25" height="14" /> keeps itself current:
 
 - Checks for new versions on launch, then every 6 hours in the background.
 - Downloads delta patches (~14 KB typical) when available; falls back to the full bundle if the patch chain breaks.

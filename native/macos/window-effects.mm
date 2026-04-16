@@ -166,6 +166,38 @@ extern "C" bool setWindowVibrancyEnabled(void *windowPtr, bool enabled) {
   return success;
 }
 
+/**
+ * Align NSWindow chrome with in-app theme so NSVisualEffectMaterialUnderWindowBackground
+ * composites correctly (especially forced dark UI while macOS is in light appearance).
+ * appearanceMode: 0 = follow system, 1 = light (Aqua), 2 = dark (Dark Aqua).
+ */
+extern "C" bool setWindowChromeAppearance(void *windowPtr, int32_t appearanceMode) {
+  if (windowPtr == nullptr) {
+    return false;
+  }
+
+  __block BOOL success = NO;
+  agentSkillsRunOnMain(^{
+    NSWindow *window = (__bridge NSWindow *)windowPtr;
+    if (![window isKindOfClass:[NSWindow class]]) {
+      return;
+    }
+
+    if (appearanceMode == 1) {
+      [window setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameAqua]];
+    } else if (appearanceMode == 2) {
+      [window setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]];
+    } else {
+      [window setAppearance:nil];
+    }
+
+    [window invalidateShadow];
+    success = YES;
+  });
+
+  return success;
+}
+
 extern "C" bool ensureWindowShadow(void *windowPtr) {
   if (windowPtr == nullptr) {
     return false;

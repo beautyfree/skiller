@@ -19,13 +19,11 @@ export function useTheme() {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Persisted "system" is stored as omitted key / null in TOML → `undefined` after parse.
+  // Only explicit "light" or "dark" strings force a fixed theme.
   const t = settings?.theme;
   const theme: "light" | "dark" | "system" =
-    t === "light" || t === "dark"
-      ? t
-      : t === null
-        ? "system"
-        : "dark";
+    t === "light" || t === "dark" ? t : "system";
 
   useEffect(() => {
     const root = document.documentElement;

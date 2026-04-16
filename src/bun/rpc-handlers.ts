@@ -60,6 +60,7 @@ import {
 } from './macos-window-preferences'
 import {
   setMacOSWindowVibrancy,
+  syncMacOSWindowChromeFromSettings,
   toggleMacOSWindowZoom,
 } from './macos-window-effects'
 
@@ -358,9 +359,16 @@ export function createBunRequestHandlers(ctx: {
       const blurBefore = effectiveMacOSWindowBlur()
       const blurDesired = effectiveMacOSWindowBlurFromSettings(params.settings)
       writeSettings(params.settings)
-      if (process.platform === 'darwin' && blurBefore !== blurDesired) {
+      if (process.platform === 'darwin') {
+        const blurChanged = blurBefore !== blurDesired
         const nextBlur = blurDesired
         queueMicrotask(() => {
+          try {
+            syncMacOSWindowChromeFromSettings(getMainWindow())
+          } catch (err) {
+            console.warn('syncMacOSWindowChromeFromSettings:', err)
+          }
+          if (!blurChanged) return
           try {
             setMacOSWindowVibrancy(getMainWindow(), nextBlur)
           } catch (err) {

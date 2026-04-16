@@ -1,13 +1,19 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Skiller — one control center for AI agent skills. Install once, sync everywhere."
+      content="Skiller — desktop app to install and sync AI agent skills (SKILL.md) across Claude Code, Cursor, and more. Download for macOS, Windows, or Linux from GitHub Releases."
     />
-    <title>Skiller — agent skills, glamorously managed</title>
+    <meta property="og:title" content="Skiller" />
+    <meta
+      property="og:description"
+      content="Download Skiller from GitHub — one app to sync skills across your agents."
+    />
+    <meta property="og:type" content="website" />
+    <title>Skiller — download</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -29,6 +35,8 @@
         --border: rgba(255, 255, 255, 0.08);
         --glow: rgba(255, 110, 180, 0.35);
         --radius: 16px;
+        /* macOS-style window corners for screenshots (not UI cards) */
+        --window-radius: 10px;
         --max: 1080px;
       }
 
@@ -44,7 +52,7 @@
 
       body {
         margin: 0;
-        font-family: "DM Sans", system-ui, sans-serif;
+        font-family: 'DM Sans', system-ui, sans-serif;
         background: var(--bg0);
         color: var(--text);
         line-height: 1.6;
@@ -74,11 +82,27 @@
         position: fixed;
         inset: 0;
         z-index: -1;
-        background:
-          radial-gradient(ellipse 80% 50% at 50% -20%, rgba(183, 148, 246, 0.25), transparent),
-          radial-gradient(ellipse 60% 40% at 100% 0%, rgba(255, 110, 180, 0.12), transparent),
-          radial-gradient(ellipse 50% 30% at 0% 30%, rgba(126, 232, 247, 0.08), transparent),
-          linear-gradient(180deg, var(--bg0) 0%, var(--bg1) 45%, var(--bg0) 100%);
+        background: radial-gradient(
+            ellipse 80% 50% at 50% -20%,
+            rgba(183, 148, 246, 0.25),
+            transparent
+          ),
+          radial-gradient(
+            ellipse 60% 40% at 100% 0%,
+            rgba(255, 110, 180, 0.12),
+            transparent
+          ),
+          radial-gradient(
+            ellipse 50% 30% at 0% 30%,
+            rgba(126, 232, 247, 0.08),
+            transparent
+          ),
+          linear-gradient(
+            180deg,
+            var(--bg0) 0%,
+            var(--bg1) 45%,
+            var(--bg0) 100%
+          );
       }
 
       .wrap {
@@ -93,14 +117,37 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 16px;
         padding: 28px 0 48px;
       }
 
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        text-decoration: none;
+        color: inherit;
+      }
+
+      .brand:hover {
+        text-decoration: none;
+      }
+
+      .brand-logo {
+        width: 40px;
+        height: 40px;
+        object-fit: contain;
+        flex-shrink: 0;
+        display: block;
+      }
+
       .logo {
-        font-family: "Instrument Serif", Georgia, serif;
+        font-family: 'Instrument Serif', Georgia, serif;
         font-size: 1.75rem;
         letter-spacing: -0.02em;
         color: var(--text);
+        line-height: 1;
       }
 
       .logo span {
@@ -129,20 +176,18 @@
       }
 
       .hero {
-        padding-bottom: 100px;
+        padding-bottom: 72px;
       }
 
-      .eyebrow {
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.8rem;
-        text-transform: uppercase;
-        letter-spacing: 0.14em;
-        color: var(--pink);
-        margin-bottom: 20px;
+      .hero-grid-hint {
+        margin: 28px 0 14px;
+        font-size: 0.92rem;
+        color: var(--muted);
+        line-height: 1.5;
       }
 
       h1 {
-        font-family: "Instrument Serif", Georgia, serif;
+        font-family: 'Instrument Serif', Georgia, serif;
         font-size: clamp(2.6rem, 6vw, 4rem);
         font-weight: 400;
         line-height: 1.08;
@@ -168,14 +213,225 @@
         font-weight: 600;
       }
 
+      .cta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 28px;
+      }
+
+      .btn-download {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 14px 26px;
+        border-radius: 12px;
+        border: none;
+        background: linear-gradient(135deg, var(--pink), var(--pink-dim));
+        color: #1a0512;
+        font-weight: 600;
+        font-size: 0.95rem;
+        font-family: inherit;
+        text-decoration: none;
+        transition: filter 0.2s, transform 0.15s;
+      }
+
+      .btn-download:hover {
+        filter: brightness(1.08);
+        transform: translateY(-1px);
+        text-decoration: none;
+      }
+
+      .hero-shot {
+        margin: 36px 0 0;
+        border-radius: var(--window-radius);
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset,
+          0 12px 40px rgba(0, 0, 0, 0.45), 0 4px 12px rgba(0, 0, 0, 0.35);
+        background: var(--bg2);
+      }
+
+      .hero-shot img {
+        display: block;
+        width: 100%;
+        height: auto;
+        vertical-align: middle;
+      }
+
+      .hero-shot figcaption {
+        padding: 12px 16px;
+        font-size: 0.85rem;
+        color: var(--dim);
+        border-top: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.25);
+      }
+
+      .gallery-item {
+        cursor: pointer;
+        transition: border-color 0.2s, box-shadow 0.2s;
+      }
+
+      .gallery-item:hover {
+        border-color: rgba(255, 110, 180, 0.35);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset,
+          0 12px 40px rgba(0, 0, 0, 0.45), 0 4px 12px rgba(0, 0, 0, 0.35),
+          0 0 0 1px rgba(255, 110, 180, 0.2);
+      }
+
+      .gallery-item:focus-visible {
+        outline: 2px solid var(--pink);
+        outline-offset: 4px;
+      }
+
+      .gallery-dialog {
+        position: fixed;
+        inset: 0;
+        z-index: 2000;
+        max-width: none;
+        max-height: none;
+        width: min(96vw, 1400px);
+        margin: auto;
+        padding: 0;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg2);
+        color: var(--text);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+      }
+
+      .gallery-dialog::backdrop {
+        background: rgba(7, 6, 10, 0.88);
+        backdrop-filter: blur(6px);
+      }
+
+      .gallery-dialog[open] {
+        display: flex;
+        flex-direction: column;
+        max-height: 92vh;
+      }
+
+      .gallery-dialog:not([open]) {
+        display: none;
+      }
+
+      .gallery-dialog-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+
+      .gallery-dialog-title {
+        margin: 0;
+        flex: 1;
+        min-width: 0;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--text);
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .gallery-dialog-tools {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+        margin-left: auto;
+      }
+
+      .gallery-icon-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        font-size: 1.25rem;
+        line-height: 1;
+        font-family: inherit;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+      }
+
+      .gallery-icon-btn:hover {
+        background: rgba(255, 110, 180, 0.12);
+        border-color: rgba(255, 110, 180, 0.35);
+      }
+
+      .gallery-icon-btn:focus-visible {
+        outline: 2px solid var(--pink);
+        outline-offset: 2px;
+      }
+
+      .gallery-viewport {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 16px;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .gallery-viewport img {
+        display: block;
+        max-width: 100%;
+        width: auto;
+        height: auto;
+        vertical-align: top;
+        border-radius: 6px;
+      }
+
+      .gallery-dialog-footer {
+        padding: 10px 16px 14px;
+        font-size: 0.8rem;
+        color: var(--dim);
+        border-top: 1px solid var(--border);
+        text-align: center;
+        flex-shrink: 0;
+      }
+
+      kbd {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.78em;
+        padding: 2px 7px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.28);
+        color: var(--muted);
+      }
+
+      .screen-grid {
+        display: grid;
+        gap: 20px;
+      }
+
+      @media (min-width: 880px) {
+        .screen-grid {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+
       .platforms {
-        font-family: "JetBrains Mono", monospace;
+        font-family: 'JetBrains Mono', monospace;
         font-size: 0.85rem;
         color: var(--dim);
       }
 
       .section-title {
-        font-family: "Instrument Serif", Georgia, serif;
+        font-family: 'Instrument Serif', Georgia, serif;
         font-size: clamp(2rem, 4vw, 2.75rem);
         font-weight: 400;
         margin: 0 0 12px;
@@ -199,21 +455,36 @@
         gap: 16px;
       }
 
+      /* Product tour: 4 cols from 900px → 4 cards = one row, 8 cards = two full rows */
+      @media (min-width: 900px) {
+        #build .grid {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+      }
+
       .card {
         position: relative;
         padding: 24px 22px;
         border-radius: var(--radius);
         border: 1px solid var(--border);
-        background: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+        background: linear-gradient(
+          145deg,
+          rgba(255, 255, 255, 0.05) 0%,
+          rgba(255, 255, 255, 0.02) 100%
+        );
         overflow: hidden;
         transition: border-color 0.2s, transform 0.2s;
       }
 
       .card::before {
-        content: "";
+        content: '';
         position: absolute;
         inset: 0;
-        background: radial-gradient(600px circle at var(--mx, 50%) var(--my, 0%), rgba(255, 110, 180, 0.08), transparent 40%);
+        background: radial-gradient(
+          600px circle at var(--mx, 50%) var(--my, 0%),
+          rgba(255, 110, 180, 0.08),
+          transparent 40%
+        );
         opacity: 0;
         transition: opacity 0.3s;
       }
@@ -228,7 +499,7 @@
       }
 
       .card h3 {
-        font-family: "JetBrains Mono", monospace;
+        font-family: 'JetBrains Mono', monospace;
         font-size: 1rem;
         font-weight: 500;
         margin: 0 0 10px;
@@ -242,77 +513,6 @@
         line-height: 1.55;
       }
 
-      .industrial {
-        text-align: center;
-        padding: 88px 24px;
-        border-radius: 24px;
-        border: 1px solid var(--border);
-        background:
-          radial-gradient(ellipse at center, rgba(183, 148, 246, 0.12) 0%, transparent 65%),
-          var(--bg2);
-      }
-
-      .industrial h2 {
-        font-family: "Instrument Serif", Georgia, serif;
-        font-size: clamp(1.85rem, 3.5vw, 2.5rem);
-        font-weight: 400;
-        margin: 0 0 16px;
-      }
-
-      .industrial p {
-        color: var(--muted);
-        max-width: 32rem;
-        margin: 0 auto 28px;
-      }
-
-      .stats {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 32px 48px;
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.9rem;
-        color: var(--dim);
-      }
-
-      .stats strong {
-        display: block;
-        font-size: 1.5rem;
-        color: var(--pink);
-        font-weight: 500;
-        margin-bottom: 4px;
-      }
-
-      .more-grid {
-        display: grid;
-        gap: 24px;
-      }
-
-      @media (min-width: 720px) {
-        .more-grid {
-          grid-template-columns: 1fr 1fr;
-        }
-      }
-
-      .wide-card {
-        padding: 28px;
-        border-radius: var(--radius);
-        border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.03);
-      }
-
-      .wide-card h3 {
-        font-family: "Instrument Serif", Georgia, serif;
-        font-size: 1.5rem;
-        font-weight: 400;
-        margin: 0 0 12px;
-      }
-
-      .wide-card p {
-        margin: 0;
-        color: var(--muted);
-      }
-
       .opensource {
         padding: 64px 0 0;
       }
@@ -321,84 +521,13 @@
         margin-bottom: 0;
       }
 
-      .newsletter {
-        margin-top: 48px;
-        padding: 40px;
-        border-radius: var(--radius);
-        border: 1px solid var(--border);
-        background: linear-gradient(135deg, rgba(255, 110, 180, 0.06), rgba(126, 232, 247, 0.04));
-      }
-
-      .newsletter h3 {
-        font-family: "Instrument Serif", Georgia, serif;
-        font-size: 1.65rem;
-        font-weight: 400;
-        margin: 0 0 8px;
-      }
-
-      .newsletter p {
-        color: var(--muted);
-        margin: 0 0 20px;
-        font-size: 0.98rem;
-      }
-
-      .newsletter-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-        align-items: center;
-      }
-
-      .newsletter input {
-        flex: 1 1 200px;
-        min-width: 0;
-        padding: 14px 16px;
-        border-radius: 12px;
-        border: 1px solid var(--border);
-        background: rgba(0, 0, 0, 0.35);
-        color: var(--text);
-        font-family: inherit;
-        font-size: 1rem;
-      }
-
-      .newsletter input::placeholder {
-        color: var(--dim);
-      }
-
-      .newsletter input:focus {
-        outline: none;
-        border-color: rgba(183, 148, 246, 0.5);
-        box-shadow: 0 0 0 3px var(--glow);
-      }
-
-      .btn-primary {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        padding: 14px 24px;
-        border-radius: 12px;
-        border: none;
-        background: linear-gradient(135deg, var(--pink), var(--pink-dim));
-        color: #1a0512;
-        font-weight: 600;
-        font-size: 0.95rem;
-        cursor: pointer;
-        font-family: inherit;
-        transition: filter 0.2s, transform 0.15s;
-      }
-
-      .btn-primary:hover {
-        filter: brightness(1.08);
-        transform: translateY(-1px);
-      }
-
       .chat {
         text-align: center;
         padding: 80px 0 40px;
       }
 
       .chat h2 {
-        font-family: "Instrument Serif", Georgia, serif;
+        font-family: 'Instrument Serif', Georgia, serif;
         font-size: clamp(2rem, 4vw, 2.75rem);
         font-weight: 400;
         margin: 0 0 16px;
@@ -433,7 +562,7 @@
         }
         .card,
         .nav-cta,
-        .btn-primary {
+        .gallery-item {
           transition: none;
         }
       }
@@ -445,159 +574,395 @@
 
     <div class="wrap">
       <header>
-        <div class="logo">Skill<span>er</span></div>
         <a
-          class="nav-cta"
+          class="brand"
           href="https://github.com/beautyfree/skiller-skills-desktop-manager"
-          >View on GitHub →</a
+          aria-label="Skiller on GitHub"
         >
+          <img
+            class="brand-logo"
+            src="images/skiller-mark.png?v=5"
+            width="80"
+            height="80"
+            alt=""
+            decoding="async"
+          />
+          <div class="logo">Skill<span>er</span></div>
+        </a>
+        <div
+          style="
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: flex-end;
+          "
+        >
+          <a
+            class="nav-cta"
+            href="https://github.com/beautyfree/skiller-skills-desktop-manager/releases/latest"
+            >Download →</a
+          >
+          <a
+            class="nav-cta"
+            href="https://github.com/beautyfree/skiller-skills-desktop-manager"
+            >GitHub →</a
+          >
+        </div>
       </header>
 
       <div class="hero">
-        <p class="eyebrow">Desktop · skills · sync</p>
-        <h1>Remember your <em>first</em> skill drift?</h1>
+        <h1>Your <em>skills HQ</em> for every <em>SKILL.md</em></h1>
         <p class="lede">
-          Your new <strong>skills HQ</strong>, now available as a calm, native app. Your agents, your
-          <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.95em; color: var(--cyan)"
-            >SKILL.md</code
-          >
-          files, and your workflows — wired into one place. This is agent tooling made
-          <em style="font-style: italic; color: var(--violet)">glamorous</em>.
+          One desktop app to <strong>install, sync, and edit</strong>
+          <code style="color: var(--cyan)">SKILL.md</code> across your agents.
+          Get a signed build below — everything else lives in the
+          <a href="https://github.com/beautyfree/skiller-skills-desktop-manager"
+            >GitHub repo</a
+          >.
         </p>
-        <p class="platforms">macOS · Windows · Linux</p>
+        <div class="cta-row">
+          <a
+            class="btn-download"
+            href="https://github.com/beautyfree/skiller-skills-desktop-manager/releases/latest"
+            >Get the latest release</a
+          >
+        </div>
+        <p class="platforms">macOS (Apple Silicon) · Windows x64 · Linux x64</p>
+        <figure
+          class="hero-shot gallery-item"
+          tabindex="0"
+          role="button"
+          aria-label="Open gallery: Dashboard"
+        >
+          <img
+            src="images/screenshots/dashboard.png"
+            alt="Skiller app: Dashboard with detected agents and installed skills"
+            loading="eager"
+            decoding="async"
+          />
+          <figcaption>Dashboard — click to enlarge</figcaption>
+        </figure>
+        <p class="hero-grid-hint">
+          Skills Manager, Marketplace, Settings — click an image to open full
+          size (<kbd>←</kbd><kbd>→</kbd> · <kbd>Esc</kbd> to close).
+        </p>
+        <div class="screen-grid">
+          <figure
+            class="hero-shot gallery-item"
+            style="margin: 0"
+            tabindex="0"
+            role="button"
+            aria-label="Open gallery: Skills Manager"
+          >
+            <img
+              src="images/screenshots/skills.png"
+              alt="Skiller Skills Manager: skill list, agents, and markdown editor"
+              loading="lazy"
+              decoding="async"
+            />
+            <figcaption>Skills Manager</figcaption>
+          </figure>
+          <figure
+            class="hero-shot gallery-item"
+            style="margin: 0"
+            tabindex="0"
+            role="button"
+            aria-label="Open gallery: Marketplace"
+          >
+            <img
+              src="images/screenshots/marketplace.png"
+              alt="Skiller Marketplace: search and install from community sources"
+              loading="lazy"
+              decoding="async"
+            />
+            <figcaption>Marketplace</figcaption>
+          </figure>
+          <figure
+            class="hero-shot gallery-item"
+            style="margin: 0"
+            tabindex="0"
+            role="button"
+            aria-label="Open gallery: Settings"
+          >
+            <img
+              src="images/screenshots/settings.png"
+              alt="Skiller Settings: theme, updates, and preferences"
+              loading="lazy"
+              decoding="async"
+            />
+            <figcaption>Settings</figcaption>
+          </figure>
+        </div>
       </div>
 
       <section id="build">
-        <h2 class="section-title">Build with Skiller</h2>
+        <h2 class="section-title">Product tour</h2>
         <p class="section-sub">
-          Everything you need to curate great skills for your stack. One dashboard, many agents.
+          Eight slices of the app: visibility, skills, marketplace, settings,
+          sources, sync, search, and paths.
         </p>
         <div class="grid">
           <article class="card" style="--mx: 20%; --my: 10%">
             <h3>Dashboard</h3>
-            <p>System-wide visibility into agents, installs, and health — no more guessing what lives where.</p>
+            <p>
+              System-wide view of detected agents, how many skills each one
+              uses, search and filters — no more guessing what lives where.
+            </p>
           </article>
           <article class="card" style="--mx: 80%; --my: 20%">
             <h3>Skills Manager</h3>
-            <p>Edit, sync, and remove skills with immediate feedback. Your markdown, your machine.</p>
+            <p>
+              Browse every install, see which agents consume a skill, edit
+              <code style="color: var(--cyan)">SKILL.md</code>
+              inline with markdown preview, sync or remove in one click.
+            </p>
           </article>
           <article class="card" style="--mx: 40%; --my: 0%">
             <h3>Marketplace</h3>
-            <p>Pull from community sources like skills.sh and ClawHub without leaving the app.</p>
+            <p>
+              Search skills.sh and ClawHub in-app, preview targets and repo
+              metadata, install without touching the filesystem by hand.
+            </p>
           </article>
           <article class="card" style="--mx: 60%; --my: 30%">
             <h3>Settings</h3>
-            <p>Configure sources, behavior, and runtime preferences — tuned once, respected everywhere.</p>
+            <p>
+              Theme, accent, window blur (macOS), language, close behavior,
+              cache — and <strong>App Updates</strong> with restart-and-install
+              when a new build is ready.
+            </p>
           </article>
-        </div>
-      </section>
-
-      <section id="agents" aria-labelledby="agents-title">
-        <h2 id="agents-title" class="section-title">Agent buffet.</h2>
-        <p class="section-sub">
-          Claude Code, Cursor, Codex, Gemini CLI, Copilot CLI, Kiro, OpenCode, OpenClaw, Factory, Warp, and more —
-          install once, propagate across your stack.
-        </p>
-        <div class="industrial">
-          <h2>Industrial grade.</h2>
-          <p>
-            Skiller is built for people who ship: cross-platform, local-first, and honest about what’s on disk. For
-            deeper integration questions,
-            <a href="https://github.com/beautyfree/skiller-skills-desktop-manager/issues">open an issue</a>
-            — we’re friendly.
-          </p>
-          <div class="stats">
-            <div><strong>15+</strong> agent targets</div>
-            <div><strong>1</strong> source of truth</div>
-            <div><strong>0</strong> cloud required</div>
-          </div>
-        </div>
-      </section>
-
-      <section id="more">
-        <h2 class="section-title">More stuff</h2>
-        <p class="section-sub">Skills are infrastructure. Treat them like it.</p>
-        <div class="more-grid">
-          <div class="wide-card">
-            <h3>Discover</h3>
+          <article class="card" style="--mx: 50%; --my: 15%">
+            <h3>Skill sources</h3>
             <p>
-              Browse marketplaces and community indexes without tab-hopping. Find the right skill, then make it
-              yours.
+              Import from a <strong>Git URL</strong> or a
+              <strong>local folder</strong> to register extra repos, browse
+              their skills, and keep them in sync alongside marketplace
+              installs.
             </p>
-          </div>
-          <div class="wide-card">
-            <h3>Sync</h3>
+          </article>
+          <article class="card" style="--mx: 55%; --my: 22%">
+            <h3>Multi-agent sync</h3>
             <p>
-              Propagate updates across agents when you’re ready — no copy-paste marathons, no “which folder was it
-              again?”
+              See which agents consume each skill, then push or remove updates
+              across those targets in one flow — no copy-paste between install
+              trees.
             </p>
-          </div>
+          </article>
+          <article class="card" style="--mx: 35%; --my: 18%">
+            <h3>Global search</h3>
+            <p>
+              One field to filter skills, agents, and sources — jump to an
+              install or open the editor without digging through folders.
+            </p>
+          </article>
+          <article class="card" style="--mx: 65%; --my: 12%">
+            <h3>Paths at a glance</h3>
+            <p>
+              Inspect where each skill lands on disk for every detected agent
+              before you sync — fewer surprises when paths differ by tool.
+            </p>
+          </article>
         </div>
       </section>
 
       <section class="opensource" id="opensource">
         <h2 class="section-title">We love clarity.</h2>
         <p class="section-sub">
-          Skiller sits on open, inspectable building blocks and a commitment to keeping your skills
-          <em>yours</em>. Read the repo, file issues, suggest sources — the command line isn’t the only interface that
-          deserves polish.
+          Skiller sits on open, inspectable building blocks and a commitment to
+          keeping your skills
+          <em>yours</em>. Read the repo, file issues, suggest sources — the
+          command line isn’t the only interface that deserves polish.
         </p>
-
-        <div class="newsletter" id="tail">
-          <h3>Tail the changelog.</h3>
-          <p>
-            Keep up with releases, experiments, and quality-of-life fixes. Drop your email — we’ll only send signal, not
-            noise.
-          </p>
-          <form class="newsletter-row" id="notify-form">
-            <input type="email" name="email" placeholder="you@domain.dev" autocomplete="email" aria-label="Email" />
-            <button type="submit" class="btn-primary" id="notify-btn">Submit</button>
-          </form>
-          <p id="notify-hint" style="margin: 16px 0 0; font-size: 0.85rem; color: var(--dim)">
-            Demo field — wire to your provider or remove. No data leaves this page until you connect it.
-          </p>
-        </div>
       </section>
 
       <div class="chat" id="chat">
         <h2>Let’s chat!</h2>
         <p>
-          Questions about skills, agents, or a feature idea? You’re always welcome in the
-          <a href="https://github.com/beautyfree/skiller-skills-desktop-manager/discussions">GitHub discussions</a>.
+          Questions about skills, agents, or a feature idea? You’re always
+          welcome in the
+          <a
+            href="https://github.com/beautyfree/skiller-skills-desktop-manager/discussions"
+            >GitHub discussions</a
+          >.
         </p>
-        <a class="nav-cta" href="https://github.com/beautyfree/skiller-skills-desktop-manager">Star the repo →</a>
+        <a
+          class="nav-cta"
+          href="https://github.com/beautyfree/skiller-skills-desktop-manager"
+          >Star the repo →</a
+        >
       </div>
 
       <footer>
-        <span>© Skiller · beautyfree</span>
+        <span>
+          © Skiller · <a href="https://github.com/beautyfree">beautyfree</a> ·
+          <a
+            href="https://x.com/netebe"
+            rel="noopener noreferrer"
+            target="_blank"
+            >@netebe</a
+          >
+        </span>
         <div class="links">
-          <a href="https://github.com/beautyfree/skiller-skills-desktop-manager">Repository</a>
-          <a href="https://github.com/beautyfree/skiller-skills-desktop-manager/releases/latest"
+          <a href="https://github.com/beautyfree/skiller-skills-desktop-manager"
+            >Repository</a
+          >
+          <a
+            href="https://github.com/beautyfree/skiller-skills-desktop-manager/releases/latest"
             >Download</a
+          >
+          <a
+            href="https://github.com/beautyfree/skiller-skills-desktop-manager/blob/main/docs/DEVELOPMENT.md"
+            >Develop</a
           >
         </div>
       </footer>
     </div>
 
+    <dialog
+      class="gallery-dialog"
+      id="gallery-dialog"
+      aria-labelledby="gallery-dialog-title"
+    >
+      <div class="gallery-dialog-header">
+        <button
+          type="button"
+          class="gallery-icon-btn"
+          id="gallery-prev"
+          aria-label="Previous screenshot"
+        >
+          ‹
+        </button>
+        <h2 class="gallery-dialog-title" id="gallery-dialog-title">
+          Screenshot
+        </h2>
+        <button
+          type="button"
+          class="gallery-icon-btn"
+          id="gallery-next"
+          aria-label="Next screenshot"
+        >
+          ›
+        </button>
+        <div class="gallery-dialog-tools">
+          <button
+            type="button"
+            class="gallery-icon-btn"
+            id="gallery-close"
+            aria-label="Close gallery"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+      <div class="gallery-viewport" id="gallery-viewport">
+        <img id="gallery-img" src="" alt="" decoding="async" />
+      </div>
+      <p class="gallery-dialog-footer">
+        <span id="gallery-counter"></span> · <kbd>Esc</kbd> to close
+      </p>
+    </dialog>
+
     <script>
-      document.querySelectorAll(".card").forEach((card) => {
-        card.addEventListener("pointermove", (e) => {
-          const r = card.getBoundingClientRect();
-          const x = ((e.clientX - r.left) / r.width) * 100;
-          const y = ((e.clientY - r.top) / r.height) * 100;
-          card.style.setProperty("--mx", x + "%");
-          card.style.setProperty("--my", y + "%");
-        });
-      });
-      document.getElementById("notify-form")?.addEventListener("submit", (e) => {
-        e.preventDefault();
-        const hint = document.getElementById("notify-hint");
-        if (hint) {
-          hint.textContent =
-            "Placeholder only — connect to your email provider or API; nothing was sent.";
-          hint.style.color = "var(--cyan)";
+      document.querySelectorAll('.card').forEach((card) => {
+        card.addEventListener('pointermove', (e) => {
+          const r = card.getBoundingClientRect()
+          const x = ((e.clientX - r.left) / r.width) * 100
+          const y = ((e.clientY - r.top) / r.height) * 100
+          card.style.setProperty('--mx', x + '%')
+          card.style.setProperty('--my', y + '%')
+        })
+      })
+
+      ;(function galleryLightbox() {
+        const dialog = document.getElementById('gallery-dialog')
+        const img = document.getElementById('gallery-img')
+        const titleEl = document.getElementById('gallery-dialog-title')
+        const counterEl = document.getElementById('gallery-counter')
+        const viewport = document.getElementById('gallery-viewport')
+        const items = []
+        document.querySelectorAll('.gallery-item').forEach((fig) => {
+          const shot = fig.querySelector('img')
+          if (!shot) return
+          const cap =
+            fig.querySelector('figcaption')?.textContent?.trim() ||
+            shot.alt ||
+            'Screenshot'
+          const shortLabel =
+            cap.replace(/\s*—\s*click to enlarge\s*/i, '').trim() || cap
+          items.push({
+            src: shot.currentSrc || shot.src,
+            alt: shot.alt || shortLabel,
+            label: shortLabel,
+          })
+        })
+
+        let index = 0
+
+        function render() {
+          const it = items[index]
+          if (!it) return
+          img.removeAttribute('width')
+          img.removeAttribute('height')
+          img.src = it.src
+          img.alt = it.alt
+          titleEl.textContent = it.label
+          counterEl.textContent = index + 1 + ' / ' + items.length
+          viewport.scrollTop = 0
+          viewport.scrollLeft = 0
         }
-      });
+
+        function open(at) {
+          index = ((at % items.length) + items.length) % items.length
+          render()
+          dialog.showModal()
+        }
+
+        function close() {
+          dialog.close()
+        }
+
+        dialog.addEventListener('close', () => {
+          img.removeAttribute('src')
+        })
+
+        document.querySelectorAll('.gallery-item').forEach((fig, i) => {
+          fig.addEventListener('click', () => open(i))
+          fig.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              open(i)
+            }
+          })
+        })
+
+        document
+          .getElementById('gallery-close')
+          .addEventListener('click', close)
+        document
+          .getElementById('gallery-prev')
+          .addEventListener('click', () => {
+            index = (index - 1 + items.length) % items.length
+            render()
+          })
+        document
+          .getElementById('gallery-next')
+          .addEventListener('click', () => {
+            index = (index + 1) % items.length
+            render()
+          })
+
+        dialog.addEventListener('keydown', (e) => {
+          if (!dialog.open) return
+          if (e.key === 'ArrowRight') {
+            e.preventDefault()
+            document.getElementById('gallery-next').click()
+          } else if (e.key === 'ArrowLeft') {
+            e.preventDefault()
+            document.getElementById('gallery-prev').click()
+          }
+        })
+      })()
     </script>
   </body>
 </html>

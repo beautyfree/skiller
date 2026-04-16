@@ -1,14 +1,13 @@
-# Skiller
+# Skill<span style="color:#ff6eb4">er</span>
 
 ![Skiller Hero Banner](docs/images/screenshots/hero.png)
 
-Skiller is a desktop manager for AI agent skills.  
-Install, sync, and manage skills across multiple coding agents from one UI.
+Install, sync, and manage AI agent skills across your coding agents from one desktop app.
 
-## Why Skiller
+## Why Skill<span style="color:#ff6eb4">er</span>
 
 Managing skills separately in every agent is repetitive and error-prone.  
-Skiller gives you one control center to:
+Skill<span style="color:#ff6eb4">er</span> gives you one control center to:
 
 - **See everything at once** — agents, installed skills, and status in one dashboard
 - **Install once, sync everywhere** — propagate skills across your agent stack
@@ -18,7 +17,7 @@ Skiller gives you one control center to:
 
 ## Supported agents
 
-Skiller talks to every listed agent natively — dropping a skill into one place propagates it to all of them.
+Skill<span style="color:#ff6eb4">er</span> talks to every listed agent natively — dropping a skill into one place propagates it to all of them.
 
 <table>
   <tr>
@@ -80,7 +79,7 @@ Grab the installer for your OS from the [**latest release**](https://github.com/
 
 | OS | File | Notes |
 | --- | --- | --- |
-| macOS (Apple Silicon) | `stable-macos-arm64-Skiller.dmg` | Signed + notarized — opens with no Gatekeeper warnings. Open the DMG and drag Skiller to Applications. |
+| macOS (Apple Silicon) | `stable-macos-arm64-Skiller.dmg` | Signed + notarized — opens with no Gatekeeper warnings. Open the DMG and drag Skill<span style="color:#ff6eb4">er</span> to Applications. |
 | Windows (x64) | `stable-win-x64-Skiller-Setup.zip` | Extract and run `Skiller.exe`. SmartScreen may show a one-time warning — click "More info" → "Run anyway". |
 | Linux (x64) | `stable-linux-x64-Skiller-Setup.tar.gz` | Extract and run `bin/launcher` from the resulting folder. |
 
@@ -88,7 +87,7 @@ Every release is built and published by the CI matrix in `.github/workflows/rele
 
 ## Auto-updates
 
-Once installed, Skiller keeps itself current:
+Once installed, Skill<span style="color:#ff6eb4">er</span> keeps itself current:
 
 - Checks for new versions on launch, then every 6 hours in the background.
 - Downloads delta patches (~14 KB typical) when available; falls back to the full bundle if the patch chain breaks.
@@ -98,9 +97,7 @@ The updater points at `github.com/.../releases/latest/download`, so every tagged
 
 ## For Developers
 
-All development, build, and debugging details were moved to:
-
-- `[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)`
+All development, build, and debugging details are in **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**.
 
 ## Contributing
 

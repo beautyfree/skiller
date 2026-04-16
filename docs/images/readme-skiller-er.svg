@@ -1,10 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 30" role="img" aria-label="er">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 27 15" role="img" aria-label="er">
   <text
     x="0"
-    y="23"
+    y="11.2"
     fill="#ff6eb4"
-    font-family="Georgia, 'Times New Roman', serif"
-    font-size="24"
-    font-weight="400"
+    font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
+    font-size="12"
+    font-weight="600"
+    letter-spacing="-0.02em"
   >er</text>
 </svg>

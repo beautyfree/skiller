@@ -13,7 +13,10 @@ import type { BunSideRpc } from "./rpc-handlers";
 import { createAppRouter } from "./trpc/router";
 import { startTrpcHttpServer } from "./trpc-server";
 import { startSkillWatcher } from "../main/watcher";
-import { applyMacOSWindowEffects } from "./macos-window-effects";
+import {
+	applyMacOSWindowEffects,
+	syncMacOSWindowChromeFromSettings,
+} from "./macos-window-effects";
 import { effectiveMacOSWindowBlur } from "./macos-window-preferences";
 import { initAppUpdater, stopAppUpdater } from "./app-updater";
 
@@ -131,6 +134,7 @@ if (process.platform === "darwin") {
 	applyMacOSWindowEffects(mainWindow, {
 		enableVibrancy: macosWindowBlur,
 	});
+	syncMacOSWindowChromeFromSettings(mainWindow);
 	// Dock icon click: show() only calls makeKey/orderFront and does not deminiaturize.
 	Electrobun.events.on("reopen", () => {
 		if (!mainWindow) return;

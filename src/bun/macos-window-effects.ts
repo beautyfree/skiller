@@ -6,6 +6,8 @@ import type { BrowserWindow } from "electrobun/bun";
 import { dlopen, FFIType } from "bun:ffi";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import type { AppSettingsJson } from "../shared/rpc-schema";
+import { readSettings } from "../main/settings";
 
 /** Inset from window left for the traffic-light cluster (visual balance). */
 const MAC_TRAFFIC_LIGHTS_X = 14;
@@ -40,6 +42,51 @@ export function setMacOSWindowVibrancy(
 		console.warn("setMacOSWindowVibrancy failed:", error);
 		return false;
 	}
+}
+
+/** 0 = follow system, 1 = light chrome (Aqua), 2 = dark chrome (Dark Aqua). */
+export function chromeAppearanceModeFromSettings(
+	settings: AppSettingsJson,
+): number {
+	const t = String(settings.theme ?? "").toLowerCase();
+	if (t === "dark") return 2;
+	if (t === "light") return 1;
+	return 0;
+}
+
+/**
+ * Sets NSWindow.appearance to match persisted theme so vibrancy/titlebar match in-app UI.
+ */
+export function setMacOSWindowChromeAppearance(
+	mainWindow: BrowserWindow,
+	appearanceMode: number,
+): boolean {
+	if (!existsSync(dylibPath)) {
+		return false;
+	}
+	try {
+		const lib = dlopen(dylibPath, {
+			setWindowChromeAppearance: {
+				args: [FFIType.ptr, FFIType.i32],
+				returns: FFIType.bool,
+			},
+		});
+		const mode =
+			appearanceMode === 1 ? 1 : appearanceMode === 2 ? 2 : 0;
+		return lib.symbols.setWindowChromeAppearance(mainWindow.ptr, mode);
+	} catch (error) {
+		console.warn("setMacOSWindowChromeAppearance failed:", error);
+		return false;
+	}
+}
+
+export function syncMacOSWindowChromeFromSettings(
+	mainWindow: BrowserWindow,
+): boolean {
+	return setMacOSWindowChromeAppearance(
+		mainWindow,
+		chromeAppearanceModeFromSettings(readSettings()),
+	);
 }
 
 /**

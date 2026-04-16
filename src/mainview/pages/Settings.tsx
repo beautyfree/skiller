@@ -260,10 +260,13 @@ export default function SettingsPage() {
             </div>
             <div className="flex shrink-0 gap-1.5">
               {(['light', 'dark', 'system'] as const).map((themeOption) => {
-                const current = settings?.theme ?? 'dark'
-                const isActive =
-                  current === themeOption ||
-                  (themeOption === 'system' && !settings?.theme)
+                // Must match useTheme: omitted / null theme in TOML means "system", not default dark.
+                const persisted = settings?.theme
+                const effectiveTheme: 'light' | 'dark' | 'system' =
+                  persisted === 'light' || persisted === 'dark'
+                    ? persisted
+                    : 'system'
+                const isActive = themeOption === effectiveTheme
                 return (
                   <Button
                     key={themeOption}

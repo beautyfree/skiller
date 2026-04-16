@@ -81,8 +81,8 @@ Grab the installer for your OS from the [**latest release**](https://github.com/
 | OS | File | Notes |
 | --- | --- | --- |
 | macOS (Apple Silicon) | `stable-macos-arm64-Skiller.dmg` | Signed + notarized — opens with no Gatekeeper warnings. Open the DMG and drag Skiller to Applications. |
-| Windows (x64) | `stable-win-x64-Skiller.exe` | Self-extracting launcher. SmartScreen may show a one-time warning — click "More info" → "Run anyway". |
-| Linux (x64) | `stable-linux-x64-Skiller.*` | Extract and run the included launcher. |
+| Windows (x64) | `stable-win-x64-Skiller-Setup.zip` | Extract and run `Skiller.exe`. SmartScreen may show a one-time warning — click "More info" → "Run anyway". |
+| Linux (x64) | `stable-linux-x64-Skiller-Setup.tar.gz` | Extract and run `bin/launcher` from the resulting folder. |
 
 Every release is built and published by the CI matrix in `.github/workflows/release.yml` — tagging `vX.Y.Z` produces all three platforms automatically.
 

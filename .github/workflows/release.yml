@@ -34,9 +34,9 @@ jobs:
           body: |
             Desktop installers — download the one that matches your OS:
 
-            - **macOS (Apple Silicon):** `stable-macos-arm64-Skiller.dmg` (signed + notarized)
-            - **Windows (x64):** `stable-win-x64-Skiller.exe`
-            - **Linux (x64):** `stable-linux-x64-Skiller.*`
+            - **macOS (Apple Silicon):** `stable-macos-arm64-Skiller.dmg` (signed + notarized — drag to Applications)
+            - **Windows (x64):** `stable-win-x64-Skiller-Setup.zip` (extract and run `Skiller.exe`)
+            - **Linux (x64):** `stable-linux-x64-Skiller-Setup.tar.gz` (extract and run `bin/launcher`)
 
             After the first install, Skiller checks this release on launch and
             via **Settings → App Updates**. Updates are downloaded in the
@@ -58,7 +58,7 @@ jobs:
         include:
           - label: macos-arm64
             runner: macos-14
-            script: build:mac
+            script: dist:mac
           - label: windows-x64
             runner: windows-latest
             script: build:win

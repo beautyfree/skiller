@@ -78,4 +78,4 @@ bun install
 ## Further reading
 
 - `README.md` — product overview and install links.
-- `docs/DEVELOPMENT.md` — deep dive on dev, DMG, updater, and GitHub Actions release.
+- `docs/DEVELOPMENT.md` — dev, DMG, updater, GitHub Actions release, and **GitHub Pages** for the `docs/` landing.

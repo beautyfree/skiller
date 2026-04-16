@@ -82,6 +82,14 @@ Required repo **Secrets** (Settings → Secrets and variables → Actions) for m
 
 Windows/Linux jobs don't need secrets; an unsigned `.exe` will just show a SmartScreen warning the first time a user runs it.
 
+### Landing site — GitHub Pages
+
+`.github/workflows/pages.yml` publishes the static files in `docs/` (e.g. `index.html`, `images/`) to GitHub Pages on pushes to `main` that touch `docs/**` or the workflow. You can also run the workflow manually (**Actions → Deploy docs to GitHub Pages → Run workflow**).
+
+**One-time repo setup:** **Settings → Pages → Build and deployment → Source: GitHub Actions.** If Pages was never enabled, the deploy job used to fail at *Setup Pages* with `HttpError: Not Found` when calling the Pages API — enabling Actions as the source fixes that. The workflow sets `enablement: true` on `actions/configure-pages` so a first run may enable Pages automatically when permissions allow.
+
+Site URL shape: `https://<owner>.github.io/<repo>/` (for this fork, owner `beautyfree` and repo name from **Settings → General**).
+
 ### Option 2 — Local Windows VM (Parallels / UTM / Hyper-V)
 
 Inside a Windows 10/11 VM:

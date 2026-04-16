@@ -2,14 +2,10 @@
 
 ---
 
-<img src="assets/icons/app/icon-512.png" width="120" height="120" alt="Skiller logo" align="left">
+![Skiller Hero Banner](docs/images/screenshots/hero.png)
 
 Skiller is a desktop manager for AI agent skills.  
 Install, sync, and manage skills across multiple coding agents from one UI.
-
-<br clear="left" />
-
-![Skiller Hero Banner](docs/images/screenshots/hero.png)
 
 ## Why Skiller
 

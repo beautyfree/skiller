@@ -1,6 +1,6 @@
 name: Release
 
-# Triggered by pushing a tag like v0.1.9. Builds the desktop app natively
+# Triggered by pushing a tag like v0.1.0. Builds the desktop app natively
 # on each OS (Electrobun does not cross-compile) and publishes all artifacts
 # to a single GitHub Release.
 

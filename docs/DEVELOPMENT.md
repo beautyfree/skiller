@@ -68,9 +68,9 @@ There are two ways to produce all three without owning three machines:
 `.github/workflows/release.yml` fans out to `macos-14`, `windows-latest`, and `ubuntu-latest` runners. Tag a release and GitHub builds and publishes everything:
 
 ```bash
-# Bump version in package.json, commit, then:
-git tag v0.1.9
-git push origin v0.1.9
+# Bump version in package.json, commit, then tag and push, e.g.:
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
 Required repo **Secrets** (Settings → Secrets and variables → Actions) for macOS notarization:

@@ -1,0 +1,13 @@
+slug = "codex"
+name = "Codex"
+enabled = true
+global_paths = ["~/.codex/skills"]
+skill_format = "skill-md"
+cli_command = "codex"
+install_command = "npm install -g @openai/codex"
+install_docs_url = "https://help.openai.com/en/articles/11096431-openai-codex-cli-getting-started"
+install_source_label = "official-help-center"
+
+[[additional_readable_paths]]
+path = "~/.agents/skills"
+source_agent = "shared"

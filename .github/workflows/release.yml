@@ -1,0 +1,124 @@
+name: Release
+
+# Triggered by pushing a tag like v0.1.9. Builds the desktop app natively
+# on each OS (Electrobun does not cross-compile) and publishes all artifacts
+# to a single GitHub Release.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-desktop:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macos-arm64
+            runner: macos-14
+            script: build:mac
+          - label: windows-x64
+            runner: windows-latest
+            script: build:win
+          - label: linux-x64
+            runner: ubuntu-latest
+            script: build:linux
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # create-dmg produces the styled, drag-to-Applications DMG that
+      # replaces Electrobun's default.
+      - name: Install create-dmg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install create-dmg
+
+      # Linux deps needed by Electrobun's WebKitGTK webview + system tooling.
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config cmake \
+            libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+
+      - run: bun install --frozen-lockfile
+
+      # Write the App Store Connect API .p8 key from a secret so notarytool can
+      # use it. Secret contents should be the raw contents of AuthKey_XXXX.p8.
+      - name: Write notarization API key (macOS)
+        if: runner.os == 'macOS' && env.ELECTROBUN_APPLEAPIKEY_P8 != ''
+        env:
+          ELECTROBUN_APPLEAPIKEY_P8: ${{ secrets.ELECTROBUN_APPLEAPIKEY_P8 }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$ELECTROBUN_APPLEAPIKEY_P8" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "ELECTROBUN_APPLEAPIKEYPATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Build app
+        env:
+          # macOS signing + notarization (no-op on other OSes)
+          ELECTROBUN_DEVELOPER_ID: ${{ secrets.ELECTROBUN_DEVELOPER_ID }}
+          ELECTROBUN_APPLEAPIISSUER: ${{ secrets.ELECTROBUN_APPLEAPIISSUER }}
+          ELECTROBUN_APPLEAPIKEY: ${{ secrets.ELECTROBUN_APPLEAPIKEY }}
+        run: bun run ${{ matrix.script }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: skiller-${{ matrix.label }}
+          path: artifacts/
+
+  release:
+    name: Publish GitHub Release
+    needs: build-desktop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded
+          pattern: skiller-*
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Skiller ${{ github.ref_name }}
+          body: |
+            Desktop installers — download the one that matches your OS:
+
+            - **macOS (Apple Silicon):** `stable-macos-arm64-Skiller.dmg` (signed + notarized)
+            - **Windows (x64):** `stable-win-x64-Skiller.exe`
+            - **Linux (x64):** `stable-linux-x64-Skiller.*`
+
+            After the first install, Skiller checks this release on launch and
+            via **Settings → App Updates**. Updates are downloaded in the
+            background (delta patches when available) and applied on next
+            restart — no manual re-install required.
+          # Upload every artifact — including the stable-*-update.json and
+          # .app.tar.zst files that Electrobun's Updater fetches.
+          files: downloaded/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

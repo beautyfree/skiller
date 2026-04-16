@@ -1,0 +1,9 @@
+slug = "openclaw"
+name = "OpenClaw"
+enabled = true
+global_paths = ["~/.openclaw/skills"]
+skill_format = "skill-md"
+cli_command = "openclaw"
+install_command = "npm install -g openclaw@latest"
+install_docs_url = "https://docs.openclaw.ai/start/getting-started"
+install_source_label = "official-readme"

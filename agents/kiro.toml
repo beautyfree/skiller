@@ -1,0 +1,9 @@
+slug = "kiro"
+name = "Kiro"
+enabled = true
+global_paths = ["~/.kiro/skills"]
+skill_format = "skill-md"
+cli_command = "kiro-cli"
+install_command = "curl -fsSL https://cli.kiro.dev/install | bash"
+install_docs_url = "https://kiro.dev/downloads/"
+install_source_label = "official-docs"

@@ -26,14 +26,12 @@ Skiller talks to every listed agent natively — dropping a skill into one place
     <td align="center" width="150"><a href="https://help.openai.com/en/articles/11096431-openai-codex-cli-getting-started"><img src="docs/images/agents/codex.png" width="64" height="64" alt="Codex"><br><b>Codex</b></a><br><sub>CLI</sub></td>
     <td align="center" width="150"><a href="https://google-gemini.github.io/gemini-cli/docs/get-started/"><img src="docs/images/agents/gemini-cli.png" width="64" height="64" alt="Gemini CLI"><br><b>Gemini CLI</b></a><br><sub>CLI</sub></td>
     <td align="center" width="150"><a href="https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-in-the-cli"><img src="docs/images/agents/copilot-cli.png" width="64" height="64" alt="GitHub Copilot CLI"><br><b>Copilot CLI</b></a><br><sub>CLI</sub></td>
-  </tr>
-  <tr>
     <td align="center" width="150"><a href="https://opencode.ai/docs/"><img src="docs/images/agents/opencode.png" width="64" height="64" alt="OpenCode"><br><b>OpenCode</b></a><br><sub>CLI</sub></td>
     <td align="center" width="150"><a href="https://docs.openclaw.ai/start/getting-started"><img src="docs/images/agents/openclaw.png" width="64" height="64" alt="OpenClaw"><br><b>OpenClaw</b></a><br><sub>CLI</sub></td>
-    <td align="center" width="150"><a href="https://www.codebuddy.ai/docs/cli/installation"><img src="docs/images/agents/codebuddy.png" width="64" height="64" alt="CodeBuddy"><br><b>CodeBuddy</b></a><br><sub>CLI</sub></td>
-    <td align="center" width="150"><a href="https://docs.qoder.com/cli/quick-start"><img src="docs/images/agents/qoder.png" width="64" height="64" alt="Qoder"><br><b>Qoder</b></a><br><sub>CLI</sub></td>
   </tr>
   <tr>
+    <td align="center" width="150"><a href="https://www.codebuddy.ai/docs/cli/installation"><img src="docs/images/agents/codebuddy.png" width="64" height="64" alt="CodeBuddy"><br><b>CodeBuddy</b></a><br><sub>CLI</sub></td>
+    <td align="center" width="150"><a href="https://docs.qoder.com/cli/quick-start"><img src="docs/images/agents/qoder.png" width="64" height="64" alt="Qoder"><br><b>Qoder</b></a><br><sub>CLI</sub></td>
     <td align="center" width="150"><a href="https://cursor.com/docs/cli/overview"><img src="docs/images/agents/cursor.png" width="64" height="64" alt="Cursor"><br><b>Cursor</b></a><br><sub>IDE</sub></td>
     <td align="center" width="150"><a href="https://formulae.brew.sh/cask/windsurf"><img src="docs/images/agents/windsurf.png" width="64" height="64" alt="Windsurf"><br><b>Windsurf</b></a><br><sub>IDE</sub></td>
     <td align="center" width="150"><a href="https://formulae.brew.sh/cask/trae"><img src="docs/images/agents/trae.png" width="64" height="64" alt="Trae"><br><b>Trae</b></a><br><sub>IDE</sub></td>
@@ -44,6 +42,8 @@ Skiller talks to every listed agent natively — dropping a skill into one place
     <td align="center" width="150"><a href="https://docs.cline.bot/getting-started/quick-start#cli"><img src="docs/images/agents/cline.png" width="64" height="64" alt="Cline"><br><b>Cline</b></a><br><sub>VS Code extension</sub></td>
     <td align="center" width="150"><a href="https://www.warp.dev/"><img src="docs/images/agents/warp.png" width="64" height="64" alt="Warp"><br><b>Warp</b></a><br><sub>Terminal</sub></td>
     <td align="center" width="150"><a href="https://factory.ai/"><img src="docs/images/agents/factory.png" width="64" height="64" alt="Factory"><br><b>Factory</b></a><br><sub>Cloud platform</sub></td>
+    <td></td>
+    <td></td>
   </tr>
 </table>
 

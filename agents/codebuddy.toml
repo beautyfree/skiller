@@ -1,0 +1,9 @@
+slug = "codebuddy"
+name = "CodeBuddy"
+enabled = true
+global_paths = ["~/.codebuddy/skills"]
+skill_format = "skill-md"
+cli_command = "codebuddy"
+install_command = "npm install -g @tencent-ai/codebuddy-code"
+install_docs_url = "https://www.codebuddy.ai/docs/cli/installation"
+install_source_label = "official-docs"

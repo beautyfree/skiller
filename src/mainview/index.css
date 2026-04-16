@@ -1,0 +1,872 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ─────────────────────────────────────────────
+   Linear-inspired tokens (DESIGN.md). Dark: luminance stack + indigo/violet accent.
+   Maps to shadcn semantic tokens for components.
+   ───────────────────────────────────────────── */
+
+:root {
+  /* Light — Linear brand (Mercury White #F4F5F8, Nordic Gray #222326) + in-app surface stack */
+  --ds-bg-primary: #f4f5f8;
+  --ds-bg-secondary: #edeef3;
+  --ds-bg-tertiary: #e4e6ec;
+  --ds-bg-elevated: #ffffff;
+  --ds-text-primary: #222326;
+  --ds-text-secondary: #5c5f66;
+  --ds-text-tertiary: #868992;
+  --ds-text-quaternary: #a4a8b0;
+  --ds-border: rgba(34, 35, 38, 0.1);
+  --ds-border-strong: #d7d9e0;
+  --ds-accent: #5e6ad2;
+  --ds-accent-interactive: #7170ff;
+  --ds-accent-hover: #4f56b8;
+  --ds-surface-hover: rgba(34, 35, 38, 0.05);
+  --ds-surface-active: rgba(34, 35, 38, 0.09);
+  /* Subtle wash — same as Tailwind bg-black/[0.02] */
+  --ds-surface-tint: rgba(0, 0, 0, 0.02);
+  --ds-sidebar-vibrancy: #f0f1f5;
+  --ds-floating-panel: rgba(255, 255, 255, 0.97);
+  --ds-shadow-sm: 0 1px 2px rgba(34, 35, 38, 0.06);
+  --ds-shadow-md: 0 4px 12px rgba(34, 35, 38, 0.08);
+  --ds-shadow-lg: 0 8px 28px rgba(34, 35, 38, 0.12);
+  --ds-shadow-layered-subtle: 0 0 0 0.5px rgba(34, 35, 38, 0.08), 0 1px 2px rgba(34, 35, 38, 0.05);
+  --ds-shadow-layered-medium: 0 0 0 0.5px rgba(34, 35, 38, 0.09), 0 4px 14px rgba(34, 35, 38, 0.08);
+  --ds-system-green: #34c759;
+  --ds-system-red: #ff3b30;
+  --ds-system-orange: #ff9500;
+  --ds-system-purple: #af52de;
+  --ds-badge-info-bg: rgba(59, 130, 246, 0.14);
+  --ds-badge-info-fg: #1d4ed8;
+  --ds-badge-info-border: rgba(59, 130, 246, 0.3);
+  --ds-badge-success-bg: rgba(16, 185, 129, 0.14);
+  --ds-badge-success-fg: #047857;
+  --ds-badge-success-border: rgba(16, 185, 129, 0.3);
+  /* macOS vibrancy: keep alpha high — low alpha + desktop blur reads as uniform gray */
+  --ds-vibrancy-shell: rgba(244, 245, 248, 0.94);
+  --ds-vibrancy-sidebar: rgba(241, 242, 247, 0.9);
+  --ds-vibrancy-panel: rgba(255, 255, 255, 0.97);
+
+  --background: var(--ds-bg-primary);
+  --foreground: var(--ds-text-primary);
+  --card: var(--ds-bg-elevated);
+  --card-foreground: var(--ds-text-primary);
+  --popover: var(--ds-floating-panel);
+  --popover-foreground: var(--ds-text-primary);
+
+  --primary: var(--ds-accent);
+  --primary-foreground: #ffffff;
+
+  --secondary: var(--ds-bg-secondary);
+  --secondary-foreground: var(--ds-text-primary);
+  --muted: var(--ds-bg-secondary);
+  --muted-foreground: var(--ds-text-secondary);
+  --accent: var(--ds-bg-tertiary);
+  --accent-foreground: var(--ds-text-primary);
+  --destructive: var(--ds-system-red);
+
+  --border: var(--ds-border);
+  --input: rgba(34, 35, 38, 0.12);
+  --ring: var(--ds-accent-interactive);
+
+  --chart-1: var(--ds-accent);
+  --chart-2: #34c759;
+  --chart-3: #ff9500;
+  --chart-4: #af52de;
+  --chart-5: #ff3b30;
+  --radius: 0.5rem;
+
+  --sidebar: var(--ds-sidebar-vibrancy);
+  --sidebar-foreground: var(--ds-text-secondary);
+  --sidebar-primary: var(--ds-accent);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--ds-surface-hover);
+  --sidebar-accent-foreground: var(--ds-text-primary);
+  --sidebar-border: var(--ds-border);
+  --sidebar-ring: var(--ds-accent-interactive);
+
+  /* Primary CTA (default button): shadows driven by vars so macOS vibrancy can soften them */
+  --btn-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.dark {
+  /* Pulse-like: pure black canvas; sidebar sits flush on canvas; content panel is elevated */
+  --ds-bg-primary: #000000;
+  --ds-bg-secondary: #0c0c0e;
+  --ds-bg-tertiary: #141416;
+  --ds-bg-elevated: #121214;
+  --ds-bg-hover-surface: #1c1c1f;
+  --ds-text-primary: #f7f8f8;
+  --ds-text-secondary: #d0d6e0;
+  --ds-text-tertiary: #8a8f98;
+  --ds-text-quaternary: #62666d;
+  --ds-border: rgba(255, 255, 255, 0.06);
+  --ds-border-strong: rgba(255, 255, 255, 0.1);
+  /* Slightly brighter than light-mode hex so primary pops on black (same family) */
+  --ds-accent: #6f77ff;
+  --ds-accent-interactive: #8e94ff;
+  --ds-accent-hover: #585fd4;
+  --ds-surface-hover: rgba(255, 255, 255, 0.06);
+  --ds-surface-active: rgba(255, 255, 255, 0.1);
+  /* dark:bg-white/[0.02] */
+  --ds-surface-tint: rgba(255, 255, 255, 0.02);
+  /* Same as canvas — sidebar rail is not a separate “card” */
+  --ds-sidebar-vibrancy: #000000;
+  --ds-floating-panel: rgba(25, 26, 27, 0.98);
+  --ds-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --ds-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --ds-shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.4);
+  --ds-shadow-layered-subtle: 0 0 0 0.5px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.18);
+  --ds-shadow-layered-medium: 0 0 0 0.5px rgba(0, 0, 0, 0.25), 0 4px 16px rgba(0, 0, 0, 0.35);
+  --ds-system-green: #27a644;
+  --ds-system-red: #ff453a;
+  --ds-system-orange: #ff9f0a;
+  --ds-system-purple: #bf5af2;
+  --ds-badge-info-bg: rgba(96, 165, 250, 0.2);
+  --ds-badge-info-fg: #93c5fd;
+  --ds-badge-info-border: rgba(96, 165, 250, 0.36);
+  --ds-badge-success-bg: rgba(52, 211, 153, 0.18);
+  --ds-badge-success-fg: #6ee7b7;
+  --ds-badge-success-border: rgba(52, 211, 153, 0.34);
+  /* macOS vibrancy: same issue in dark — blur washes contrast without a strong tint layer */
+  --ds-vibrancy-shell: rgba(0, 0, 0, 0.72);
+  --ds-vibrancy-sidebar: rgba(0, 0, 0, 0.58);
+  --ds-vibrancy-panel: rgba(18, 18, 20, 0.9);
+
+  --background: var(--ds-bg-primary);
+  --foreground: var(--ds-text-primary);
+  --card: var(--ds-bg-elevated);
+  --card-foreground: var(--ds-text-primary);
+  --popover: var(--ds-floating-panel);
+  --popover-foreground: var(--ds-text-primary);
+
+  --primary: var(--ds-accent);
+  --primary-foreground: #ffffff;
+
+  --secondary: var(--ds-bg-hover-surface);
+  --secondary-foreground: var(--ds-text-primary);
+  --muted: var(--ds-bg-tertiary);
+  --muted-foreground: var(--ds-text-tertiary);
+  --accent: var(--ds-bg-hover-surface);
+  --accent-foreground: var(--ds-text-primary);
+  --destructive: var(--ds-system-red);
+
+  --border: var(--ds-border);
+  --input: rgba(255, 255, 255, 0.08);
+  --ring: var(--ds-accent-interactive);
+
+  --chart-1: var(--ds-accent);
+  --chart-2: #10b981;
+  --chart-3: #ff9f0a;
+  --chart-4: #bf5af2;
+  --chart-5: #ff453a;
+
+  --sidebar: var(--ds-sidebar-vibrancy);
+  --sidebar-foreground: var(--ds-text-secondary);
+  --sidebar-primary: var(--ds-accent);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--ds-surface-hover);
+  --sidebar-accent-foreground: var(--ds-text-primary);
+  --sidebar-border: rgba(255, 255, 255, 0.05);
+  --sidebar-ring: var(--ds-accent-interactive);
+
+  --btn-primary-shadow-dark: inset 0 1px 0 rgba(255, 255, 255, 0.52),
+    0 1px 3px rgba(0, 0, 0, 0.85), 0 10px 40px -8px rgba(111, 119, 255, 0.55);
+}
+
+/* Light theme: flat Mercury canvas */
+html:not(.dark) .layout-root {
+  background: var(--ds-bg-primary);
+}
+
+.badge-info {
+  background: var(--ds-badge-info-bg);
+  color: var(--ds-badge-info-fg);
+  border: 1px solid var(--ds-badge-info-border);
+}
+
+.badge-success {
+  background: var(--ds-badge-success-bg);
+  color: var(--ds-badge-success-fg);
+  border: 1px solid var(--ds-badge-success-border);
+}
+
+@theme inline {
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Menlo", monospace;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans;
+    font-feature-settings: "cv01", "ss03";
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .layout-root {
+    @apply bg-sidebar cursor-default;
+  }
+
+  .layout-sidebar {
+    background: transparent;
+  }
+
+  /* Keep text selection enabled for actual text-entry and text-reading surfaces */
+  input,
+  textarea,
+  [contenteditable="true"],
+  .select-text {
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+  }
+}
+
+/* macOS Electrobun: only dark theme keeps translucent shell */
+html.skiller-macos-vibrancy.dark,
+html.skiller-macos-vibrancy.dark body {
+  background: transparent !important;
+}
+
+/* Slightly stronger body text on tinted blur so it doesn’t match the gray wash */
+html.skiller-macos-vibrancy:not(.dark) {
+  --foreground: #16171b;
+  --card-foreground: #16171b;
+  --muted-foreground: #454850;
+  --sidebar-foreground: #3a3e46;
+  /* Restore previous light visual tuning */
+  --ds-vibrancy-sidebar: rgba(241, 242, 247, 0.52);
+  --ds-vibrancy-panel: rgba(255, 255, 255, 0.62);
+  /* Lighter drop shadow on translucent shell — heavy black reads as a smear */
+  --btn-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 2px rgba(0, 0, 0, 0.06);
+  /* .glass / glass-panel / glass-elevated / glass-hover / main-workspace shadow */
+  --ds-shadow-layered-subtle: 0 0 0 0.5px rgba(34, 35, 38, 0.05),
+    0 1px 2px rgba(34, 35, 38, 0.04);
+  --ds-shadow-layered-medium: 0 0 0 0.5px rgba(34, 35, 38, 0.06),
+    0 3px 10px rgba(34, 35, 38, 0.06);
+}
+
+html.skiller-macos-vibrancy:not(.dark),
+html.skiller-macos-vibrancy:not(.dark) body {
+  background: var(--background) !important;
+}
+
+html.skiller-macos-vibrancy.dark {
+  --muted-foreground: #c4c9d4;
+  --sidebar-foreground: #dce0e8;
+  --ds-vibrancy-sidebar: rgba(0, 0, 0, 0.3);
+  --ds-vibrancy-panel: rgba(18, 18, 20, 0.5);
+  /* Softer than default dark: less opaque black + tighter accent bloom on blurred desktop */
+  --btn-primary-shadow-dark: inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 1px 2px rgba(0, 0, 0, 0.38), 0 6px 18px -8px rgba(111, 119, 255, 0.38);
+  --ds-shadow-layered-subtle: 0 0 0 0.5px rgba(0, 0, 0, 0.12),
+    0 1px 2px rgba(0, 0, 0, 0.12);
+  --ds-shadow-layered-medium: 0 0 0 0.5px rgba(0, 0, 0, 0.16),
+    0 3px 12px rgba(0, 0, 0, 0.22);
+}
+
+html.skiller-macos-vibrancy .layout-root {
+  background: var(--ds-vibrancy-sidebar);
+}
+
+html.skiller-macos-vibrancy .layout-sidebar {
+  background: transparent;
+}
+
+html.skiller-macos-vibrancy .main-workspace-panel {
+  background: var(--ds-vibrancy-panel);
+}
+
+/* Section cards: match sidebar tint (high-opacity vars keep type readable) */
+html.skiller-macos-vibrancy .glass-panel {
+  background: var(--ds-vibrancy-sidebar);
+}
+
+html.skiller-macos-vibrancy.dark .glass-panel:not(.settings-panel) {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, transparent 45%),
+    var(--ds-vibrancy-sidebar);
+}
+
+html.skiller-macos-vibrancy:not(.dark) .glass-panel:not(.settings-panel) {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.38) 0%, transparent 52%),
+    var(--ds-vibrancy-sidebar);
+}
+
+/* .glass: use translucent panel fill instead of solid --card (vibrancy only) */
+html.skiller-macos-vibrancy .glass {
+  background: var(--ds-vibrancy-panel);
+}
+
+/* .glass uses --ds-shadow-layered-* via html vars above; inset fields use hardcoded shadows */
+html.skiller-macos-vibrancy:not(.dark) .glass-inset {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+html.skiller-macos-vibrancy.dark .glass-inset {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.14);
+}
+
+/* ─── Scrollbar (thin — WebKit/Electron) ─── */
+::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.14);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* Firefox — thinnest built-in track (no per-px width API) */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.14) transparent;
+}
+
+html.dark {
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+/* ─────────────────────────────────────────────
+   Glass Material System
+   ───────────────────────────────────────────── */
+
+/* Cards / list items — solid surfaces (no blur on main reading areas; hierarchy via bg + shadow) */
+.glass {
+  background: var(--card);
+  border: 0.5px solid var(--ds-border);
+  box-shadow: var(--ds-shadow-layered-subtle);
+}
+
+.dark .glass {
+  background: var(--card);
+  border: 0.5px solid var(--ds-border);
+  box-shadow: var(--ds-shadow-layered-subtle);
+}
+
+/* Level 2: Sidebar / toolbars — vibrancy (do not use on main reading surface) */
+.glass-panel {
+  background: var(--ds-sidebar-vibrancy);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border: 0.5px solid var(--ds-border);
+  box-shadow: var(--ds-shadow-layered-subtle);
+}
+
+/* Settings sections — subtle tint + transparent border (matches row chips, not heavy cards) */
+.glass-panel.settings-panel {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.settings-panel {
+  background: var(--ds-surface-tint);
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+
+.dark .settings-panel {
+  background: var(--ds-surface-tint);
+}
+
+html.skiller-macos-vibrancy .glass-panel.settings-panel {
+  background: var(--ds-surface-tint);
+}
+
+html.skiller-macos-vibrancy.dark .glass-panel.settings-panel {
+  background: var(--ds-surface-tint);
+}
+
+/* Dashboard / list rows — same subtle fill as bg-black/[0.02] dark:bg-white/[0.02] */
+.glass-surface-tint {
+  background: var(--ds-surface-tint);
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+
+html.skiller-macos-vibrancy .glass-surface-tint {
+  background: var(--ds-surface-tint);
+}
+
+/* Level 3: Floating panels / popovers */
+.glass-elevated {
+  background: var(--ds-floating-panel);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border: 0.5px solid var(--ds-border-strong);
+  border-radius: 12px;
+  box-shadow: var(--ds-shadow-layered-medium);
+}
+
+/* Glass hover - subtle lift */
+.glass-hover {
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.glass-hover:hover {
+  background: var(--ds-bg-tertiary);
+  box-shadow: var(--ds-shadow-layered-medium);
+  transform: translateY(-0.5px);
+}
+
+.dark .glass-hover:hover {
+  background: var(--ds-bg-tertiary);
+  box-shadow: var(--ds-shadow-layered-medium);
+}
+
+/* Glass inset: nested fields inside panels */
+.glass-inset {
+  background: var(--ds-surface-hover);
+  border: 0.5px solid var(--ds-border);
+  border-radius: 6px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.dark .glass-inset {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+/* Glass badge / pill */
+.glass-badge {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  border: 0.5px solid var(--ds-border);
+  border-radius: 4px;
+}
+
+.dark .glass-badge {
+  background: rgba(58, 58, 60, 0.65);
+  border: 0.5px solid var(--ds-border);
+}
+
+/* ─── Dynamic light-tracking border highlight ───
+   Uses mask-composite to render a radial gradient
+   only in the 1.5px border ring. The gradient follows
+   --mx / --my (viewport mouse coords set by JS).
+   ──────────────────────────────────────────────── */
+.glass-shine {
+  position: relative;
+}
+
+.glass-shine::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  padding: 1.5px;
+
+  /* Only render in the border ring */
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+
+  /* Radial highlight that follows cursor position */
+  background: radial-gradient(400px circle at calc(var(--mx, 0) * 1px) calc(var(--my, 0) * 1px),
+      rgba(255, 255, 255, 0.45) 0%,
+      rgba(255, 255, 255, 0.12) 30%,
+      transparent 70%);
+  mix-blend-mode: screen;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.glass-shine:hover::after {
+  opacity: 1;
+}
+
+.dark .glass-shine::after {
+  background: radial-gradient(400px circle at calc(var(--mx, 0) * 1px) calc(var(--my, 0) * 1px),
+      rgba(255, 255, 255, 0.22) 0%,
+      rgba(255, 255, 255, 0.06) 30%,
+      transparent 70%);
+}
+
+/* Always-visible subtle version (for stat cards, panels) */
+.glass-shine-always {
+  position: relative;
+}
+
+.glass-shine-always::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  padding: 1.5px;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  background: radial-gradient(500px circle at calc(var(--mx, 0) * 1px) calc(var(--my, 0) * 1px),
+      rgba(255, 255, 255, 0.38) 0%,
+      rgba(255, 255, 255, 0.08) 35%,
+      transparent 65%);
+  mix-blend-mode: screen;
+  opacity: 0.4;
+  transition: opacity 0.3s ease;
+}
+
+.glass-shine-always:hover::after {
+  opacity: 0.8;
+}
+
+.dark .glass-shine-always::after {
+  background: radial-gradient(500px circle at calc(var(--mx, 0) * 1px) calc(var(--my, 0) * 1px),
+      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.05) 35%,
+      transparent 65%);
+}
+
+/* ─── Specular highlight for stat cards ─── */
+.glass-stat {
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-stat::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg,
+      rgba(255, 255, 255, 0.2) 0%,
+      transparent 50%,
+      rgba(0, 0, 0, 0.02) 100%);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.dark .glass-stat::before {
+  background: linear-gradient(135deg,
+      rgba(255, 255, 255, 0.06) 0%,
+      transparent 50%,
+      rgba(0, 0, 0, 0.12) 100%);
+}
+
+/* Dark theme: keep stat cards plain, no decorative sheen */
+.dark .glass-surface-tint.glass-stat {
+  background: var(--ds-surface-tint);
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+
+html.skiller-macos-vibrancy.dark .glass-surface-tint.glass-stat {
+  background: var(--ds-surface-tint);
+}
+
+.dark .glass-surface-tint.glass-stat::before,
+.glass-surface-tint.glass-stat::before {
+  display: none;
+}
+
+/* ─── Animations ─── */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.92);
+    filter: blur(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.animate-toast-in {
+  animation: toast-in 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0);
+  }
+
+  to {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+  }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(16px);
+    filter: blur(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
+.animate-backdrop-in {
+  animation: backdrop-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.animate-modal-in {
+  animation: modal-in 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.animate-skeleton {
+  animation: skeleton-shimmer 2.5s ease-in-out infinite;
+  background: linear-gradient(90deg,
+      rgba(0, 0, 0, 0.04) 25%,
+      rgba(0, 0, 0, 0.09) 50%,
+      rgba(0, 0, 0, 0.04) 75%);
+  background-size: 200% 100%;
+  border-radius: 6px;
+}
+
+.dark .animate-skeleton {
+  background: linear-gradient(90deg,
+      rgba(255, 255, 255, 0.04) 25%,
+      rgba(255, 255, 255, 0.09) 50%,
+      rgba(255, 255, 255, 0.04) 75%);
+  background-size: 200% 100%;
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─────────────────────────────────────────────
+   Liquid Interaction Animations
+   Ported from react-magic-ui
+   ───────────────────────────────────────────── */
+
+/* Jelly squish — elastic bounce on click */
+@keyframes liquid-squish {
+  0% {
+    transform: scale(1, 1);
+  }
+
+  20% {
+    transform: scale(0.96, 1.04);
+  }
+
+  40% {
+    transform: scale(1.02, 0.98);
+  }
+
+  60% {
+    transform: scale(0.99, 1.01);
+  }
+
+  80% {
+    transform: scale(1.005, 0.995);
+  }
+
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+/* Ripple — expanding circle from click point */
+@keyframes liquid-ripple {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0.7;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(4);
+    opacity: 0;
+  }
+}
+
+/* Specular glow pulse — inset shadow flash on click */
+@keyframes liquid-glow {
+
+  0%,
+  100% {
+    box-shadow:
+      inset 1px 1px 0 rgba(255, 255, 255, 0.2),
+      inset 0 0 5px rgba(255, 255, 255, 0.12);
+  }
+
+  50% {
+    box-shadow:
+      inset 1px 1px 0 rgba(255, 255, 255, 0.28),
+      inset 0 0 15px rgba(255, 255, 255, 0.16),
+      0 0 20px rgba(255, 255, 255, 0.08);
+  }
+}
+
+.dark .glass-liquid-glow {
+  --lg-glow-color: rgba(255, 255, 255, 0.12);
+  --lg-glow-color-strong: rgba(255, 255, 255, 0.18);
+}
+
+/* Combined liquid interaction class:
+   - Jelly squish on :active
+   - Glow overlay on :active
+   Apply to glass cards and buttons */
+.glass-liquid {
+  position: relative;
+  overflow: hidden;
+  will-change: transform;
+}
+
+.glass-liquid:active {
+  animation: liquid-squish 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Glow overlay layer — sits inside glass-liquid */
+.glass-liquid::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 0 4px rgba(255, 255, 255, 0.08);
+  transition: box-shadow 0.3s ease;
+}
+
+.glass-liquid:active::before {
+  animation: liquid-glow 0.6s ease-out;
+}
+
+.dark .glass-liquid::before {
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 0 4px rgba(255, 255, 255, 0.05);
+}
+
+/* Ripple element — positioned by JS via style.left/top */
+.liquid-ripple {
+  position: absolute;
+  z-index: 2;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: radial-gradient(circle,
+      rgba(255, 255, 255, 0.28) 0%,
+      rgba(255, 255, 255, 0.1) 40%,
+      transparent 70%);
+  pointer-events: none;
+  animation: liquid-ripple 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.dark .liquid-ripple {
+  background: radial-gradient(circle,
+      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.06) 40%,
+      transparent 70%);
+}

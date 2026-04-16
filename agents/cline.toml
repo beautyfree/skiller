@@ -1,0 +1,9 @@
+slug = "cline"
+name = "Cline"
+enabled = true
+global_paths = ["~/.cline/skills"]
+skill_format = "skill-md"
+cli_command = "cline"
+install_command = "npm install -g cline"
+install_docs_url = "https://docs.cline.bot/getting-started/quick-start#cli"
+install_source_label = "official-docs"

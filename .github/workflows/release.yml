@@ -1,8 +1,10 @@
 name: Release
 
-# Triggered by pushing a tag like v0.1.0. Builds the desktop app natively
-# on each OS (Electrobun does not cross-compile) and publishes all artifacts
-# to a single GitHub Release.
+# Triggered by pushing a tag like v0.1.0. Builds the desktop app natively on
+# each OS (Electrobun does not cross-compile) and uploads every build straight
+# to the GitHub Release — bypassing actions/upload-artifact so the workflow
+# keeps working even when the account-wide Actions artifact storage quota is
+# full.
 
 on:
   push:
@@ -17,8 +19,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 1. Create a draft release up front so every platform job can append to it.
+  prepare-release:
+    name: Prepare draft release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Create or reset draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Skiller ${{ github.ref_name }}
+          body: |
+            Desktop installers — download the one that matches your OS:
+
+            - **macOS (Apple Silicon):** `stable-macos-arm64-Skiller.dmg` (signed + notarized)
+            - **Windows (x64):** `stable-win-x64-Skiller.exe`
+            - **Linux (x64):** `stable-linux-x64-Skiller.*`
+
+            After the first install, Skiller checks this release on launch and
+            via **Settings → App Updates**. Updates are downloaded in the
+            background (delta patches when available) and applied on next
+            restart — no manual re-install required.
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build-desktop:
     name: Build ${{ matrix.label }}
+    needs: prepare-release
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -78,47 +110,31 @@ jobs:
           ELECTROBUN_APPLEAPIKEY: ${{ secrets.ELECTROBUN_APPLEAPIKEY }}
         run: bun run ${{ matrix.script }}
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      # Upload every artifact directly to the draft Release. This avoids
+      # actions/upload-artifact entirely — no Actions storage quota involved.
+      - name: Upload build outputs to Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: skiller-${{ matrix.label }}
-          path: artifacts/
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          files: artifacts/*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  release:
-    name: Publish GitHub Release
+  publish-release:
+    name: Publish release
     needs: build-desktop
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: downloaded
-          pattern: skiller-*
-          merge-multiple: true
-
+      # Flip the draft to published once every platform job succeeded.
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Skiller ${{ github.ref_name }}
-          body: |
-            Desktop installers — download the one that matches your OS:
-
-            - **macOS (Apple Silicon):** `stable-macos-arm64-Skiller.dmg` (signed + notarized)
-            - **Windows (x64):** `stable-win-x64-Skiller.exe`
-            - **Linux (x64):** `stable-linux-x64-Skiller.*`
-
-            After the first install, Skiller checks this release on launch and
-            via **Settings → App Updates**. Updates are downloaded in the
-            background (delta patches when available) and applied on next
-            restart — no manual re-install required.
-          # Upload every artifact — including the stable-*-update.json and
-          # .app.tar.zst files that Electrobun's Updater fetches.
-          files: downloaded/*
           draft: false
           prerelease: false
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

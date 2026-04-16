@@ -1,9 +1,11 @@
-<img src="assets/icons/app-icon.png" width="120" height="120" alt="Skiller logo" align="left">
-
 # Skiller
 
-Skiller is a cross-platform desktop AI agent skills manager for Claude Code, Cursor, Codex, Copilot, and more.  
-Install, sync, and manage one shared skill set across multiple coding agents from one clean UI.
+---
+
+<img src="assets/icons/app-icon.png" width="120" height="120" alt="Skiller logo" align="left">
+
+Skiller is a desktop manager for AI agent skills.  
+Install, sync, and manage skills across multiple coding agents from one UI.
 
 <br clear="left" />
 

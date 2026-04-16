@@ -90,6 +90,38 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      # Import the Developer ID signing cert into a temporary keychain. The
+      # macOS runner has no signing identity by default; without this,
+      # `codesign --sign "$ELECTROBUN_DEVELOPER_ID" …` fails with
+      # "The specified item could not be found in the keychain."
+      - name: Import Developer ID certificate (macOS)
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_P12_PASSWORD: ${{ secrets.MACOS_CERT_P12_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/skiller-build.keychain-db"
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+
+          echo "$MACOS_CERT_P12" | base64 --decode > "$CERT_PATH"
+
+          security create-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import "$CERT_PATH" \
+            -P "$MACOS_CERT_P12_PASSWORD" \
+            -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          # Allow codesign to use the key without a UI prompt.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # Put our keychain first in the search list so codesign finds it.
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+
+          rm -f "$CERT_PATH"
+
       # Write the App Store Connect API .p8 key from a secret so notarytool can
       # use it. Secret contents should be the raw contents of AuthKey_XXXX.p8.
       - name: Write notarization API key (macOS)

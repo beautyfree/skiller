@@ -52,7 +52,14 @@ trap 'rm -rf "$STAGING"' EXIT
 
 CODESIGN_ARGS=()
 if [[ -n "${CSC_NAME:-}" ]]; then
-	CODESIGN_ARGS=(--codesign "$CSC_NAME")
+	# electron-builder 26+ wants CSC_NAME without the "Developer ID Application: "
+	# prefix (it matches the cert type itself). /usr/bin/codesign has no such
+	# filter — if the keychain has multiple identities (e.g. iPhone Distribution
+	# + Developer ID Application), a bare name like "Your Name (TEAMID)" is
+	# ambiguous. Prepend the prefix back here. Idempotent: strip first in case
+	# CSC_NAME already has the full form (local dev habit).
+	IDENTITY="${CSC_NAME#Developer ID Application: }"
+	CODESIGN_ARGS=(--codesign "Developer ID Application: $IDENTITY")
 fi
 
 echo "Repackaging DMG with styled layout…"

@@ -1,6 +1,6 @@
 # Skiller — agent guidance
 
-Skiller is a **cross-platform desktop app** (Electrobun) for installing, syncing, and editing **AI agent skills** across many agents (Claude Code, Cursor, Copilot CLI, etc.). Bundle ID: `com.beautyfree.skiller`.
+Skiller is a **cross-platform desktop app** (Electrobun) for installing, syncing, and editing **skills** (`SKILL.md`) across many agents (Claude Code, Cursor, Copilot CLI, etc.). Bundle ID: `com.beautyfree.skiller`.
 
 ## Stack
 

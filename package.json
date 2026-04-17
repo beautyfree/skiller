@@ -1,7 +1,7 @@
 {
   "name": "skiller",
   "version": "0.1.0",
-  "description": "A desktop app for managing AI agent skills across Claude Code, Cursor, Copilot, Gemini CLI, and more",
+  "description": "Skiller — manage skills across Claude Code, Cursor, Copilot, Gemini CLI, and more from one desktop app",
   "license": "MIT",
   "author": "Skiller Contributors",
   "repository": {

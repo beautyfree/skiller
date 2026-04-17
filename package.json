@@ -3,7 +3,10 @@
   "version": "0.2.0",
   "description": "A desktop app for managing AI agent skills across Claude Code, Cursor, Copilot, Gemini CLI, and more",
   "license": "MIT",
-  "author": "Skiller Contributors",
+  "author": {
+    "name": "Skiller Contributors",
+    "email": "skiller@beautyfree.dev"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/beautyfree/skiller-skills-desktop-manager"

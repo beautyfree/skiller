@@ -79,21 +79,23 @@ Grab the installer for your OS from the [**latest release**](https://github.com/
 
 | OS | File | Notes |
 | --- | --- | --- |
-| macOS (Apple Silicon) | `stable-macos-arm64-Skiller.dmg` | Signed + notarized — opens with no Gatekeeper warnings. Open the DMG and drag Skiller to Applications. |
-| Windows (x64) | `stable-win-x64-Skiller-Setup.zip` | Extract and run `Skiller.exe`. SmartScreen may show a one-time warning — click "More info" → "Run anyway". |
-| Linux (x64) | `stable-linux-x64-Skiller-Setup.tar.gz` | Extract and run `bin/launcher` from the resulting folder. |
+| macOS (Apple Silicon) | `Skiller-<version>-macos-arm64.dmg` | Signed + notarized. Open the DMG and drag Skiller to Applications. |
+| Windows (x64) | `Skiller-<version>-win-x64.exe` | NSIS installer. SmartScreen may show a one-time warning — click "More info" → "Run anyway". |
+| Linux (x64) | `Skiller-<version>-linux-x86_64.AppImage` or `.deb` | AppImage is self-contained (`chmod +x`, run). Deb for Ubuntu/Debian package managers. |
 
 Every release is built and published by the CI matrix in `.github/workflows/release.yml` — tagging `vX.Y.Z` produces all three platforms automatically.
+
+> **If you had an older `stable-*-Skiller.*` build:** those were produced by a previous Electrobun-based packaging pipeline and can't auto-update to the current Electron-based builds. Grab the new installer above; your local data in `~/Library/Application Support/com.beautyfree.skiller/` (or the Windows/Linux equivalent) stays intact.
 
 ## Auto-updates
 
 Once installed, Skiller keeps itself current:
 
 - Checks for new versions on launch, then every 6 hours in the background.
-- Downloads delta patches (~14 KB typical) when available; falls back to the full bundle if the patch chain breaks.
-- Shows status and a one-click **Restart & install** button in **Settings → App Updates**.
+- Downloads the full updated bundle on demand (click **Download update** in Settings → App Updates).
+- Shows status and a one-click **Restart & install** button once ready.
 
-The updater points at `github.com/.../releases/latest/download`, so every tagged release on GitHub automatically becomes the next update for existing installs.
+Powered by [`electron-updater`](https://www.electron.build/auto-update) reading from this repo's GitHub Releases.
 
 ## For Developers
 

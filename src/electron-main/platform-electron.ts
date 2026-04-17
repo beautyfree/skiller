@@ -1,0 +1,78 @@
+import { app, dialog, shell, type BrowserWindow } from "electron";
+import type {
+	AppPlatform,
+	FileDialogOpts,
+	PlatformWindow,
+	WindowFrame,
+} from "../shared/platform";
+
+/**
+ * AppPlatform for the Electron host. macOS window effects are no-ops here —
+ * Phase 3 replaces them with Electron's built-in `BrowserWindow({ vibrancy })`
+ * + `nativeTheme` so we never re-introduce the FFI dylib.
+ */
+
+function wrapElectronWindow(win: BrowserWindow): PlatformWindow {
+	return {
+		minimize: () => win.minimize(),
+		maximize: () => win.maximize(),
+		unmaximize: () => win.unmaximize(),
+		isMaximized: () => win.isMaximized(),
+		show: () => win.show(),
+		getFrame: (): WindowFrame => {
+			const b = win.getBounds();
+			return { x: b.x, y: b.y, width: b.width, height: b.height };
+		},
+		setFrame: (frame: WindowFrame) => {
+			win.setBounds({
+				x: frame.x,
+				y: frame.y,
+				width: frame.width,
+				height: frame.height,
+			});
+		},
+		// macOS "zoom" (green-button behavior) is close enough to Electron's
+		// `maximize()` that we let the generic fallback handle it rather than
+		// calling into AppKit. Phase 3 can revisit if we want the exact AppKit
+		// semantics back.
+		toggleMacOSZoom: () => false,
+	};
+}
+
+function expandStartingFolder(raw: string | undefined): string | undefined {
+	if (!raw) return undefined;
+	if (raw.startsWith("~/")) {
+		return `${app.getPath("home")}${raw.slice(1)}`;
+	}
+	if (raw === "~") return app.getPath("home");
+	return raw;
+}
+
+export function createElectronPlatform(
+	getWindow: () => BrowserWindow,
+): AppPlatform {
+	return {
+		quit: () => app.quit(),
+		openExternal: (url: string) => shell.openExternal(url),
+		showItemInFolder: (path: string) => shell.showItemInFolder(path),
+		pickFolder: async (opts?: FileDialogOpts) => {
+			const parent = getWindow();
+			const result = await dialog.showOpenDialog(parent, {
+				title: opts?.title,
+				properties: ["openDirectory"],
+				defaultPath: expandStartingFolder(opts?.startingFolder ?? "~/"),
+			});
+			if (result.canceled) return null;
+			return result.filePaths[0] ?? null;
+		},
+		getMainWindow: () => wrapElectronWindow(getWindow()),
+		syncMacOSChromeFromSettings: () => {
+			// Phase 3 wires `nativeTheme.themeSource` based on readSettings().theme.
+			// For now the BrowserWindow's vibrancy/appearance stay at defaults.
+		},
+		setMacOSVibrancy: () => {
+			// Phase 3 switches this to `win.setVibrancy('sidebar' | null)`.
+			return false;
+		},
+	};
+}

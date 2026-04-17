@@ -36,9 +36,23 @@ function navLinkClass({ isActive }: { isActive: boolean }) {
 }
 
 const TITLE_BAR_DRAG_HEIGHT = 36
-/** Minimal webview drag helper for sidebar header (native drag region starts at x=96). */
-const EB_DRAG = 'electrobun-webkit-app-region-drag'
-const dragStyle = { WebkitAppRegion: 'drag' } as React.CSSProperties
+/**
+ * Drag band used as the window-move surface above the sidebar + canvas.
+ *
+ * Uses a host-agnostic class (`app-drag` — see index.css) that works under
+ * Electron via the standard `-webkit-app-region: drag` CSS property. The
+ * legacy Electrobun class (`electrobun-webkit-app-region-drag`) is kept in
+ * parallel so the band also registers as draggable under the old WKWebView
+ * build until Phase 5 removes it.
+ *
+ * On Windows + Linux the band coexists with Electron's native caption-button
+ * overlay (configured in src/electron-main/index.ts). The overlay occupies
+ * ~135px on the right; `env(titlebar-area-*)` can be consulted by children
+ * that need to avoid overlapping the buttons, but the base drag surface is
+ * fine as a full-width band because the buttons paint on top with their own
+ * hit regions.
+ */
+const DRAG_CLASSES = 'app-drag electrobun-webkit-app-region-drag'
 
 export default function Layout() {
   const { t } = useTranslation()
@@ -102,8 +116,8 @@ export default function Layout() {
     <div className="layout-root box-border flex h-screen flex-col overflow-hidden">
       {/* Global drag band as a real layout row (not overlay). */}
       <div
-        className={`pointer-events-auto shrink-0 cursor-default select-none ${EB_DRAG}`}
-        style={{ height: TITLE_BAR_DRAG_HEIGHT, ...dragStyle }}
+        className={`pointer-events-auto shrink-0 cursor-default select-none ${DRAG_CLASSES}`}
+        style={{ height: TITLE_BAR_DRAG_HEIGHT }}
         onMouseDown={(e) => {
           if (e.detail === 2) onTitleBarZoomGesture(e)
         }}

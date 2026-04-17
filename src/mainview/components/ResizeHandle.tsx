@@ -9,7 +9,7 @@ export default function ResizeHandle({
 }) {
   return (
     <div
-      className="electrobun-webkit-app-region-no-drag w-[5px] shrink-0 cursor-col-resize"
+      className="app-no-drag electrobun-webkit-app-region-no-drag w-[5px] shrink-0 cursor-col-resize"
       onMouseDown={onMouseDown}
     />
   );

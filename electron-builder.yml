@@ -1,0 +1,77 @@
+appId: com.beautyfree.skiller
+productName: Skiller
+# Match our GitHub Releases naming so download URLs stay predictable.
+artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+copyright: Copyright © 2026 Skiller Contributors
+
+directories:
+  output: artifacts
+  buildResources: build-resources
+
+# Package only what the app actually needs. Everything else gets pruned.
+files:
+  - out/**/*
+  - package.json
+  - "!**/*.{md,map,ts,tsx,test.js,spec.js}"
+  - "!**/node_modules/*/{README,readme,CHANGELOG,changelog,LICENSE,license}*"
+
+# `agents/` is bundled next to app.asar so paths.setPackagedResourcesDir
+# (src/electron-main/index.ts) can find it via process.resourcesPath.
+extraResources:
+  - from: agents
+    to: agents
+
+# Native modules (better-sqlite3) live outside the asar so the dynamic linker
+# can load the .node binary.
+asarUnpack:
+  - "**/*.node"
+
+# After electron-builder signs the .app, we notarize and staple it ourselves
+# via the hook below.
+afterSign: scripts/notarize.mjs
+
+mac:
+  category: public.app-category.developer-tools
+  icon: assets/icons/app.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build-resources/entitlements.mac.plist
+  entitlementsInherit: build-resources/entitlements.mac.plist
+  # Two-architecture fat binary. Drop `x64` if you only ship Apple Silicon.
+  target:
+    - target: dir
+      arch: [arm64]
+
+# Electron-builder's own DMG creation is disabled on macOS (see target: dir
+# above). scripts/repack-dmg.sh produces the styled, drag-to-Applications DMG
+# using create-dmg — same script the Electrobun build used, just pointed at
+# electron-builder's output path now.
+dmg:
+  writeUpdateInfo: false
+
+win:
+  icon: assets/icons/app.ico
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+linux:
+  icon: assets/icons/app/icon-512.png
+  category: Development
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+
+# GitHub Releases backend — `dist:*` scripts produce artifacts that CI
+# attaches to the tagged release, which electron-updater then reads in
+# Phase 6 as `latest-{mac,linux,win}.yml`.
+publish:
+  provider: github
+  owner: beautyfree
+  repo: skiller-desktop-skills-manager

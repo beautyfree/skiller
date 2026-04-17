@@ -1,5 +1,3 @@
-import type { ElectrobunRPCSchema } from "electrobun";
-
 /** Shared JSON types — SkillSource uses Rust default (externally tagged enum) */
 export type SkillSourceJson =
   | { LocalPath: { path: string } }
@@ -138,10 +136,12 @@ export type SkillSourceParam =
   | "Unknown";
 
 /**
- * Bun handles `requests` from the webview (former Tauri `invoke`).
- * Bun sends `messages` to the webview (former `emit` to frontend).
+ * Main process handles `requests` from the renderer (delivered via tRPC HTTP).
+ * Main pushes `messages` to the renderer (via IPC under Electron). The `bun`
+ * key name is kept for compatibility with existing generated types; rename to
+ * `main` is a future code-golf opportunity once the renderer is updated.
  */
-export type AppRPCSchema = ElectrobunRPCSchema & {
+export type AppRPCSchema = {
   bun: {
     requests: {
       list_agents: { params?: void; response: AgentConfigJson[] };

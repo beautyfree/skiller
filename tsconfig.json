@@ -25,6 +25,5 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
-  "exclude": ["src/electron-main", "src/preload"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "exclude": ["src/electron-main", "src/preload"]
 }

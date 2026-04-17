@@ -1,8 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { BrowserWindow } from 'electrobun'
-import { Utils } from 'electrobun'
+import type { AppPlatform } from '../shared/platform'
 import type { AppRPCSchema } from '../shared/rpc-schema'
 import type {
   MarketplaceSkillJson,
@@ -58,11 +57,6 @@ import {
   effectiveMacOSWindowBlurFromSettings,
   isMacOSWindowBlurLockedOffByEnv,
 } from './macos-window-preferences'
-import {
-  setMacOSWindowVibrancy,
-  syncMacOSWindowChromeFromSettings,
-  toggleMacOSWindowZoom,
-} from './macos-window-effects'
 
 /** macOS zoom often does not report maximized; track title-bar zoom ourselves for reliable toggle. */
 let titleBarZoomRestoreFrame: {
@@ -156,13 +150,14 @@ async function fetchRemoteSkillContent(
   throw new Error('Could not fetch SKILL.md from repository')
 }
 
-export function createBunRequestHandlers(ctx: {
-  /** Resolved when each handler runs — not at module init (window is created after RPC is defined). */
-  getMainWindow: () => BrowserWindow
+export function createRequestHandlers(ctx: {
+  /** Host-specific adapter for OS-level calls (quit, file dialog, window chrome). */
+  platform: AppPlatform
   rpc: BunSideRpc
   ensureSkillWatcherStarted?: (reason: string) => void
 }) {
-  const { getMainWindow, rpc, ensureSkillWatcherStarted } = ctx
+  const { platform, rpc, ensureSkillWatcherStarted } = ctx
+  const getMainWindow = () => platform.getMainWindow()
 
   const handlers = {
     list_agents: async () => {
@@ -364,15 +359,15 @@ export function createBunRequestHandlers(ctx: {
         const nextBlur = blurDesired
         queueMicrotask(() => {
           try {
-            syncMacOSWindowChromeFromSettings(getMainWindow())
+            platform.syncMacOSChromeFromSettings()
           } catch (err) {
-            console.warn('syncMacOSWindowChromeFromSettings:', err)
+            console.warn('syncMacOSChromeFromSettings:', err)
           }
           if (!blurChanged) return
           try {
-            setMacOSWindowVibrancy(getMainWindow(), nextBlur)
+            platform.setMacOSVibrancy(nextBlur)
           } catch (err) {
-            console.warn('setMacOSWindowVibrancy:', err)
+            console.warn('setMacOSVibrancy:', err)
           }
           try {
             rpc.send('shell_runtime_changed', {
@@ -391,7 +386,7 @@ export function createBunRequestHandlers(ctx: {
       getMainWindow().minimize()
     },
     close_quit: async () => {
-      Utils.quit()
+      platform.quit()
     },
     add_skill_repo: async (params: { repoUrl: string }) => {
       const { repo, skills } = await addSkillRepo(params.repoUrl, (p) => {
@@ -476,7 +471,7 @@ export function createBunRequestHandlers(ctx: {
     window_toggle_maximize: async () => {
       const win = getMainWindow()
       if (process.platform === 'darwin') {
-        if (toggleMacOSWindowZoom(win)) {
+        if (win.toggleMacOSZoom()) {
           titleBarZoomActive = false
           titleBarZoomRestoreFrame = null
           return
@@ -489,8 +484,7 @@ export function createBunRequestHandlers(ctx: {
         return
       }
       if (titleBarZoomActive && titleBarZoomRestoreFrame) {
-        const f = titleBarZoomRestoreFrame
-        win.setFrame(f.x, f.y, f.width, f.height)
+        win.setFrame(titleBarZoomRestoreFrame)
         titleBarZoomActive = false
         titleBarZoomRestoreFrame = null
         return
@@ -502,23 +496,17 @@ export function createBunRequestHandlers(ctx: {
     window_show: async () => {
       getMainWindow().show()
     },
-    pick_folder: async (_params?: { title?: string }) => {
-      const paths = await Utils.openFileDialog({
-        canChooseFiles: false,
-        canChooseDirectory: true,
-        allowsMultipleSelection: false,
+    pick_folder: async (params?: { title?: string }) => {
+      return platform.pickFolder({
+        title: params?.title,
         startingFolder: '~/',
       })
-      const first = paths[0]
-      return first ?? null
     },
     open_external: async (params: { url: string }) => {
-      const url = params.url
-      return Utils.openExternal(url)
+      await platform.openExternal(params.url)
     },
     reveal_path_in_folder: async (params: { path: string }) => {
-      const p = params.path
-      Utils.showItemInFolder(p)
+      platform.showItemInFolder(params.path)
     },
   }
 

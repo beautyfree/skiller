@@ -4,12 +4,16 @@ import { fileURLToPath } from "node:url";
 import Electrobun, {
 	BrowserView,
 	BrowserWindow,
+	PATHS,
 	Tray,
 	Updater,
 	Utils,
 } from "electrobun/bun";
+import { dirname as pathDirname } from "node:path";
+import { setPackagedResourcesDir, setPackagedViewsDir } from "../main/paths";
 import type { AppRPCSchema } from "../shared/rpc-schema";
 import type { BunSideRpc } from "./rpc-handlers";
+import { createElectrobunPlatform } from "./platform-electrobun";
 import { createAppRouter } from "./trpc/router";
 import { startTrpcHttpServer } from "./trpc-server";
 import { startSkillWatcher } from "../main/watcher";
@@ -21,6 +25,11 @@ import { effectiveMacOSWindowBlur } from "./macos-window-preferences";
 import { initAppUpdater, stopAppUpdater } from "./app-updater";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Electrobun bundle layout: Resources/app/views/... — two `dirname`s land on
+// Resources/ which is where `agents/` sits (see electrobun.config.ts `copy`).
+setPackagedResourcesDir(pathDirname(pathDirname(PATHS.VIEWS_FOLDER)));
+setPackagedViewsDir(pathDirname(PATHS.VIEWS_FOLDER));
 
 /** Vite dev server — must match vite.config.ts server.port. */
 const DEV_SERVER_PORT = 5180;
@@ -86,11 +95,13 @@ const bunSideRpc: BunSideRpc = {
 	},
 };
 
+const platform = createElectrobunPlatform(() => {
+	if (!mainWindow) throw new Error("Main window is not ready");
+	return mainWindow;
+});
+
 const appRouter = createAppRouter({
-	getMainWindow: () => {
-		if (!mainWindow) throw new Error("Main window is not ready");
-		return mainWindow;
-	},
+	platform,
 	rpc: bunSideRpc,
 	ensureSkillWatcherStarted: (reason: string) => {
 		void reason;

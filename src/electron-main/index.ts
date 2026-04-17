@@ -1,27 +1,114 @@
 /**
- * Electron main process entrypoint (Phase 1 minimal shell).
+ * Electron main process entrypoint.
  *
- * Only opens a window and loads the renderer — tRPC, IPC, tray, updater, and
- * macOS window effects come in Phase 2+. Kept intentionally tiny so we can
- * verify electron-vite HMR wiring before porting anything else.
+ * Phase 2: real wiring — tRPC HTTP server, skill watcher, tray, IPC push
+ * channel to the renderer, and platform adapter. Phase 3 layers in macOS
+ * vibrancy/traffic-light polish; Phase 6 replaces the stub updater.
  */
-import { app, BrowserWindow, shell } from "electron";
+import {
+	app,
+	BrowserWindow,
+	Menu,
+	nativeImage,
+	shell,
+	Tray,
+	ipcMain,
+} from "electron";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { setPackagedResourcesDir, setPackagedViewsDir } from "../main/paths";
+import { startSkillWatcher } from "../main/watcher";
+import type { AppRPCSchema } from "../shared/rpc-schema";
+import type { BunSideRpc } from "../bun/rpc-handlers";
+import { createAppRouter } from "../bun/trpc/router";
+import { createElectronPlatform } from "./platform-electron";
+import { startTrpcHttpServer } from "./trpc-server";
 
-const DEFAULT_WINDOW_FRAME = { width: 1440, height: 900 } as const;
+const TRPC_PORT = Number(process.env.AGENTSKILLS_TRPC_PORT ?? 17888);
+const DEFAULT_WINDOW_FRAME = {
+	x: 120,
+	y: 100,
+	width: 1440,
+	height: 900,
+} as const;
 
+let mainWindow: BrowserWindow | undefined;
+let tray: Tray | undefined;
+let stopWatcher: (() => void) | null = null;
+
+// --- Packaged-resource paths ---------------------------------------------
+// Production: `extraResources` in electron-builder.yml places `agents/` and
+// `templates/` next to `app.asar` under `Contents/Resources/`. Dev: run from
+// the repo so the fallback inside src/main/paths.ts picks up `./agents`.
+if (app.isPackaged) {
+	setPackagedResourcesDir(process.resourcesPath);
+	setPackagedViewsDir(join(process.resourcesPath, "app"));
+} else {
+	setPackagedResourcesDir(app.getAppPath());
+	setPackagedViewsDir(join(app.getAppPath(), "out/renderer"));
+}
+
+// --- Push channel: main → renderer ---------------------------------------
+// Electrobun used a typed RPC duplex; in Electron we use webContents.send on
+// a single "push" channel and discriminate by message name. The renderer
+// bridges these through preload into the existing `listen()` API.
+const PUSH_CHANNEL = "skiller:push";
+
+const bunSideRpc: BunSideRpc = {
+	send: (name, payload) => {
+		const win = mainWindow;
+		if (!win || win.isDestroyed()) return;
+		win.webContents.send(PUSH_CHANNEL, { name, payload });
+	},
+};
+
+// --- Platform adapter -----------------------------------------------------
+const platform = createElectronPlatform(() => {
+	if (!mainWindow) throw new Error("Main window is not ready");
+	return mainWindow;
+});
+
+// --- tRPC router + HTTP server -------------------------------------------
+const appRouter = createAppRouter({
+	platform,
+	rpc: bunSideRpc,
+	ensureSkillWatcherStarted: () => {
+		if (stopWatcher) return;
+		stopWatcher = startSkillWatcher(() => {
+			bunSideRpc.send("skills_changed");
+		});
+	},
+});
+
+let trpcServerPort = TRPC_PORT;
+let trpcCloseServer: (() => void) | null = null;
+
+async function initTrpcServer(): Promise<void> {
+	const handle = await startTrpcHttpServer(appRouter, TRPC_PORT);
+	trpcServerPort = handle.port;
+	trpcCloseServer = handle.close;
+	console.log(`tRPC: http://127.0.0.1:${trpcServerPort}/trpc`);
+}
+
+function sendTrpcEndpointToRenderer(): void {
+	bunSideRpc.send("trpc_endpoint", {
+		baseUrl: `http://127.0.0.1:${trpcServerPort}`,
+	});
+}
+
+// --- Window ---------------------------------------------------------------
 function createMainWindow(): BrowserWindow {
 	const win = new BrowserWindow({
 		title: "Skiller",
 		width: DEFAULT_WINDOW_FRAME.width,
 		height: DEFAULT_WINDOW_FRAME.height,
-		x: 120,
-		y: 100,
+		x: DEFAULT_WINDOW_FRAME.x,
+		y: DEFAULT_WINDOW_FRAME.y,
 		show: false,
 		autoHideMenuBar: true,
-		// Cross-platform titlebar polish comes in Phase 3 (macOS) / Phase 4 (win/linux).
-		// For Phase 1 we keep the native frame so the window is usable on every OS.
+		// Phase 3/4 add titlebarStyle, vibrancy, and titleBarOverlay. For now a
+		// native frame keeps the window usable on every OS during smoke-testing.
 		webPreferences: {
 			preload: join(__dirname, "../preload/index.js"),
 			sandbox: false,
@@ -32,14 +119,16 @@ function createMainWindow(): BrowserWindow {
 
 	win.on("ready-to-show", () => win.show());
 
-	// External links open in the default browser, not inside the Electron window.
 	win.webContents.setWindowOpenHandler(({ url }) => {
 		void shell.openExternal(url);
 		return { action: "deny" };
 	});
 
-	// electron-vite injects ELECTRON_RENDERER_URL in dev mode (Vite dev server).
-	// In prod we load the built index.html from the renderer bundle.
+	// Push the tRPC endpoint every time a new document becomes interactive so
+	// the renderer gets it before the first `invoke()` — mirrors the Electrobun
+	// dom-ready flow.
+	win.webContents.on("did-finish-load", sendTrpcEndpointToRenderer);
+
 	if (is.dev && process.env.ELECTRON_RENDERER_URL) {
 		void win.loadURL(process.env.ELECTRON_RENDERER_URL);
 	} else {
@@ -49,26 +138,97 @@ function createMainWindow(): BrowserWindow {
 	return win;
 }
 
-void app.whenReady().then(() => {
+// --- IPC handlers ---------------------------------------------------------
+// Catch-all invoke bridge: renderer calls `window.api.invoke(channel, args)`,
+// which forwards to ipcMain. Phase 2 only uses this for ad-hoc calls — the
+// main traffic goes through tRPC over HTTP.
+ipcMain.handle("skiller:version", () => app.getVersion());
+
+// --- Tray -----------------------------------------------------------------
+function trayIconPath(): string | undefined {
+	const candidates = [
+		join(__dirname, "tray", "tray.png"),
+		join(__dirname, "tray", "tray-macos.png"),
+		// Fallback to the packaged Resources folder (production).
+		join(process.resourcesPath, "tray.png"),
+	];
+	for (const p of candidates) {
+		try {
+			readFileSync(p);
+			return p;
+		} catch {
+			/* next */
+		}
+	}
+	return undefined;
+}
+
+function setupTray(): void {
+	const iconPath = trayIconPath();
+	if (!iconPath || !existsSync(iconPath)) return;
+	const image = nativeImage.createFromPath(iconPath);
+	if (process.platform === "darwin") image.setTemplateImage(true);
+
+	tray = new Tray(image);
+	const contextMenu = Menu.buildFromTemplate([
+		{
+			label: "Show Skiller",
+			click: () => {
+				if (!mainWindow) return;
+				if (mainWindow.isMinimized()) mainWindow.restore();
+				mainWindow.show();
+			},
+		},
+		{ type: "separator" },
+		{ label: "Quit", click: () => app.quit() },
+	]);
+	tray.setContextMenu(contextMenu);
+	tray.setToolTip("Skiller");
+}
+
+// --- App lifecycle --------------------------------------------------------
+void app.whenReady().then(async () => {
 	electronApp.setAppUserModelId("com.beautyfree.skiller");
 
-	// F12 toggles devtools in dev, Cmd/Ctrl+R reload — @electron-toolkit convenience.
 	app.on("browser-window-created", (_event, win) => {
 		optimizer.watchWindowShortcuts(win);
 	});
 
-	createMainWindow();
+	await initTrpcServer();
+	mainWindow = createMainWindow();
+	setupTray();
 
 	app.on("activate", () => {
-		// macOS: dock-click with no open windows recreates one.
-		if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+		if (!mainWindow || mainWindow.isDestroyed()) {
+			mainWindow = createMainWindow();
+			return;
+		}
+		if (mainWindow.isMinimized()) mainWindow.restore();
+		mainWindow.show();
 	});
 });
 
+// Match Electrobun's `exitOnLastWindowClosed: false` — keep the tray alive on
+// macOS when the user closes the last window. On win/linux, quit for parity.
 app.on("window-all-closed", () => {
-	// Match current Electrobun behavior (`exitOnLastWindowClosed: false`) — keep
-	// the app alive on macOS so the tray stays responsive. On win/linux, quit.
 	if (process.platform !== "darwin") {
 		app.quit();
 	}
 });
+
+app.on("before-quit", () => {
+	if (stopWatcher) {
+		stopWatcher();
+		stopWatcher = null;
+	}
+	if (trpcCloseServer) {
+		try {
+			trpcCloseServer();
+		} catch {
+			/* ignore */
+		}
+		trpcCloseServer = null;
+	}
+});
+
+export type { AppRPCSchema };

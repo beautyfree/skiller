@@ -1,10 +1,11 @@
 name: Release
 
-# Triggered by pushing a tag like v0.1.0. Builds the desktop app natively on
-# each OS (Electrobun does not cross-compile) and uploads every build straight
-# to the GitHub Release — bypassing actions/upload-artifact so the workflow
-# keeps working even when the account-wide Actions artifact storage quota is
-# full.
+# Triggered by pushing a tag like v0.2.0. Builds the Electron app natively on
+# each OS (electron-builder + node-gyp native modules don't cross-compile
+# cleanly) and uploads every artifact to the GitHub Release directly so the
+# workflow keeps working even if the account-wide Actions artifact quota is
+# full. electron-updater reads `latest-{mac,linux,win}.yml` from the same
+# release to drive auto-updates in production.
 
 on:
   push:
@@ -19,7 +20,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # 1. Create a draft release up front so every platform job can append to it.
   prepare-release:
     name: Prepare draft release
     runs-on: ubuntu-latest
@@ -34,14 +34,13 @@ jobs:
           body: |
             Desktop installers — download the one that matches your OS:
 
-            - **macOS (Apple Silicon):** `stable-macos-arm64-Skiller.dmg` (signed + notarized — drag to Applications)
-            - **Windows (x64):** `stable-win-x64-Skiller-Setup.zip` (extract and run `Skiller.exe`)
-            - **Linux (x64):** `stable-linux-x64-Skiller-Setup.tar.gz` (extract and run `bin/launcher`)
+            - **macOS (Apple Silicon):** `Skiller-<version>-macos-arm64.dmg` (signed + notarized — drag to Applications)
+            - **Windows (x64):** `Skiller-<version>-win-x64.exe` (NSIS installer)
+            - **Linux (x64):** `Skiller-<version>-linux-x86_64.AppImage` or `.deb`
 
             After the first install, Skiller checks this release on launch and
-            via **Settings → App Updates**. Updates are downloaded in the
-            background (delta patches when available) and applied on next
-            restart — no manual re-install required.
+            via **Settings → App Updates**. Updates are downloaded on demand
+            and applied on next restart — powered by `electron-updater`.
           draft: true
           prerelease: false
           generate_release_notes: true
@@ -61,10 +60,10 @@ jobs:
             script: dist:mac
           - label: windows-x64
             runner: windows-latest
-            script: build:win
+            script: dist:win
           - label: linux-x64
             runner: ubuntu-latest
-            script: build:linux
+            script: dist:linux
     steps:
       - uses: actions/checkout@v5
 
@@ -72,27 +71,32 @@ jobs:
         with:
           bun-version: latest
 
-      # create-dmg produces the styled, drag-to-Applications DMG that
-      # replaces Electrobun's default.
+      # create-dmg builds the styled drag-to-Applications DMG that
+      # scripts/repack-dmg.sh wraps around electron-builder's signed .app.
       - name: Install create-dmg (macOS)
         if: runner.os == 'macOS'
         run: brew install create-dmg
 
-      # Linux deps needed by Electrobun's WebKitGTK webview + system tooling.
+      # Native module build toolchain for better-sqlite3 under Electron's ABI.
       - name: Install Linux deps
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential pkg-config cmake \
-            libgtk-3-dev libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev librsvg2-dev
+            build-essential pkg-config python3 \
+            libxss1 libnss3 libasound2t64 \
+            fakeroot dpkg
 
       - run: bun install --frozen-lockfile
 
-      # Import the Developer ID signing cert into a temporary keychain. The
-      # macOS runner has no signing identity by default; without this,
-      # `codesign --sign "$ELECTROBUN_DEVELOPER_ID" …` fails with
+      # Rebuild native modules (better-sqlite3) against the Electron ABI
+      # bundled by electron-builder. Runs on every OS — electron-builder
+      # handles the platform-specific node-gyp invocation.
+      - name: Rebuild native modules
+        run: bunx electron-builder install-app-deps
+
+      # Import the Developer ID signing cert into a temporary keychain.
+      # Without this, electron-builder's codesign step fails with
       # "The specified item could not be found in the keychain."
       - name: Import Developer ID certificate (macOS)
         if: runner.os == 'macOS'
@@ -114,43 +118,51 @@ jobs:
             -P "$MACOS_CERT_P12_PASSWORD" \
             -A -t cert -f pkcs12 \
             -k "$KEYCHAIN_PATH"
-          # Allow codesign to use the key without a UI prompt.
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          # Put our keychain first in the search list so codesign finds it.
           security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
 
           rm -f "$CERT_PATH"
 
-      # Write the App Store Connect API .p8 key from a secret so notarytool can
-      # use it. Secret contents should be the raw contents of AuthKey_XXXX.p8.
+      # notarytool / @electron/notarize needs the .p8 file on disk. Secret
+      # should be the raw contents of AuthKey_XXXX.p8 (multiline).
       - name: Write notarization API key (macOS)
-        if: runner.os == 'macOS' && env.ELECTROBUN_APPLEAPIKEY_P8 != ''
+        if: runner.os == 'macOS' && env.APPLE_API_KEY_P8 != ''
         env:
-          ELECTROBUN_APPLEAPIKEY_P8: ${{ secrets.ELECTROBUN_APPLEAPIKEY_P8 }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
           KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
-          printf '%s' "$ELECTROBUN_APPLEAPIKEY_P8" > "$KEY_PATH"
+          printf '%s' "$APPLE_API_KEY_P8" > "$KEY_PATH"
           chmod 600 "$KEY_PATH"
-          echo "ELECTROBUN_APPLEAPIKEYPATH=$KEY_PATH" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY=$KEY_PATH" >> "$GITHUB_ENV"
 
       - name: Build app
         env:
-          # macOS signing + notarization (no-op on other OSes)
-          ELECTROBUN_DEVELOPER_ID: ${{ secrets.ELECTROBUN_DEVELOPER_ID }}
-          ELECTROBUN_APPLEAPIISSUER: ${{ secrets.ELECTROBUN_APPLEAPIISSUER }}
-          ELECTROBUN_APPLEAPIKEY: ${{ secrets.ELECTROBUN_APPLEAPIKEY }}
+          # electron-builder reads GH_TOKEN for its publish step; we publish
+          # via softprops below instead but the var being set also unlocks
+          # electron-builder's release-draft verification.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS signing + notarization (renamed from ELECTROBUN_* in Phase 5).
+          CSC_NAME: ${{ secrets.CSC_NAME }}
+          APPLE_API_KEY_ISSUER: ${{ secrets.APPLE_API_KEY_ISSUER }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
         run: bun run ${{ matrix.script }}
 
-      # Upload every artifact directly to the draft Release. This avoids
-      # actions/upload-artifact entirely — no Actions storage quota involved.
+      # Upload every artifact (including latest-*.yml and .blockmap files —
+      # electron-updater needs them alongside the binaries).
       - name: Upload build outputs to Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
-          files: artifacts/*
-          fail_on_unmatched_files: true
+          files: |
+            artifacts/*.dmg
+            artifacts/*.exe
+            artifacts/*.AppImage
+            artifacts/*.deb
+            artifacts/*.yml
+            artifacts/*.blockmap
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -161,7 +173,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Flip the draft to published once every platform job succeeded.
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:

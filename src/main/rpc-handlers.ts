@@ -12,36 +12,36 @@ import type {
   UpdateAllResultJson,
   UpdateProgressJson,
 } from '../shared/rpc-schema'
-import { detectAgents, loadAgentConfigs } from '../main/registry'
-import { getAgentsDir } from '../main/paths'
-import type { AgentConfig } from '../main/types'
-import type { SkillSource } from '../main/skill-types'
-import { scanAllSkills } from '../main/scanner'
-import { installSkillFromGit, installSkillFromPath } from '../main/install'
+import { detectAgents, loadAgentConfigs } from './registry'
+import { getAgentsDir } from './paths'
+import type { AgentConfig } from './types'
+import type { SkillSource } from './skill-types'
+import { scanAllSkills } from './scanner'
+import { installSkillFromGit, installSkillFromPath } from './install'
 import {
   uninstallSkill,
   uninstallSkillFromAll,
   unlinkInheritedSkillFromAgentConfigs,
-} from '../main/uninstall'
-import { updateAll, updateSingleSkill } from '../main/update'
-import { readSettings, writeSettings } from '../main/settings'
+} from './uninstall'
+import { updateAll, updateSingleSkill } from './update'
+import { readSettings, writeSettings } from './settings'
 import {
   agentConfigToJson,
   marketplaceSkillToJson,
   skillToJson,
-} from '../main/skill-json'
-import { clearMarketplaceCacheDb } from '../main/marketplace/cache'
+} from './skill-json'
+import { clearMarketplaceCacheDb } from './marketplace/cache'
 import {
   applyUpdate as applyAppUpdate,
   checkForUpdate as checkAppUpdate,
   downloadUpdate as downloadAppUpdate,
   getAppUpdateStatus,
 } from './app-updater'
-import { fetchTimeoutSignal } from '../main/marketplace/fetch-signal'
-import { fetchClawhub, searchClawhub } from '../main/marketplace/clawhub'
-import { fetchSkillssh, searchSkillssh } from '../main/marketplace/skillssh'
-import { installFromMarketplace } from '../main/marketplace/install-from-marketplace'
-import type { MarketplaceSkill } from '../main/marketplace-types'
+import { fetchTimeoutSignal } from './marketplace/fetch-signal'
+import { fetchClawhub, searchClawhub } from './marketplace/clawhub'
+import { fetchSkillssh, searchSkillssh } from './marketplace/skillssh'
+import { installFromMarketplace } from './marketplace/install-from-marketplace'
+import type { MarketplaceSkill } from './marketplace-types'
 import {
   addLocalDir,
   addSkillRepo,
@@ -50,8 +50,8 @@ import {
   listSkillRepos,
   removeSkillRepo,
   syncSkillRepo,
-} from '../main/repos'
-import { resolveSkillSourcePath } from '../main/skill-paths'
+} from './repos'
+import { resolveSkillSourcePath } from './skill-paths'
 import {
   effectiveMacOSWindowBlur,
   effectiveMacOSWindowBlurFromSettings,

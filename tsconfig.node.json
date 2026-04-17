@@ -15,12 +15,10 @@
     }
   },
   "include": [
-    "vite.config.ts",
     "electron.vite.config.ts",
     "src/electron-main/**/*",
     "src/preload/**/*",
     "src/main/**/*",
-    "src/shared/**/*",
-    "src/bun/**/*"
+    "src/shared/**/*"
   ]
 }

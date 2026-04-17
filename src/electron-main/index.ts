@@ -20,8 +20,8 @@ import { join } from "node:path";
 import { setPackagedResourcesDir, setPackagedViewsDir } from "../main/paths";
 import { startSkillWatcher } from "../main/watcher";
 import type { AppRPCSchema } from "../shared/rpc-schema";
-import type { BunSideRpc } from "../bun/rpc-handlers";
-import { createAppRouter } from "../bun/trpc/router";
+import type { BunSideRpc } from "../main/rpc-handlers";
+import { createAppRouter } from "../main/trpc/router";
 import { createElectronPlatform } from "./platform-electron";
 import { startTrpcHttpServer } from "./trpc-server";
 import {

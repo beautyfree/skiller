@@ -1,1 +1,1 @@
-export type { AppRouter } from '../bun/trpc/router'
+export type { AppRouter } from '../main/trpc/router'

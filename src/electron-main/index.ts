@@ -22,6 +22,7 @@ import { startSkillWatcher } from "../main/watcher";
 import type { AppRPCSchema } from "../shared/rpc-schema";
 import type { BunSideRpc } from "../main/rpc-handlers";
 import { createAppRouter } from "../main/trpc/router";
+import { initAppUpdater, stopAppUpdater } from "../main/app-updater";
 import { createElectronPlatform } from "./platform-electron";
 import { startTrpcHttpServer } from "./trpc-server";
 import {
@@ -236,6 +237,14 @@ void app.whenReady().then(async () => {
 	mainWindow = createMainWindow();
 	setupTray();
 
+	// Kick off auto-updates. In dev `app.isPackaged === false` and the
+	// updater no-ops; in production it polls GitHub Releases every 6h and
+	// fans every status change through the shared push channel so Settings
+	// can render progress + "Restart & install".
+	initAppUpdater((status) => {
+		bunSideRpc.send("app_update_status_changed", status);
+	});
+
 	app.on("activate", () => {
 		if (!mainWindow || mainWindow.isDestroyed()) {
 			mainWindow = createMainWindow();
@@ -255,6 +264,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+	stopAppUpdater();
 	if (stopWatcher) {
 		stopWatcher();
 		stopWatcher = null;

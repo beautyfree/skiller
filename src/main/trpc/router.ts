@@ -1,8 +1,8 @@
 import { initTRPC } from '@trpc/server'
 import { z } from 'zod'
-import type { BrowserWindow } from 'electrobun'
+import type { AppPlatform } from '../../shared/platform'
 import {
-  createBunRequestHandlers,
+  createRequestHandlers,
   type BunSideRpc,
 } from '../rpc-handlers'
 
@@ -10,11 +10,11 @@ const t = initTRPC.create()
 const anyIn = z.any()
 
 export function createAppRouter(ctx: {
-  getMainWindow: () => BrowserWindow
+  platform: AppPlatform
   rpc: BunSideRpc
   ensureSkillWatcherStarted?: (reason: string) => void
 }) {
-  const h = createBunRequestHandlers(ctx)
+  const h = createRequestHandlers(ctx)
   const proc = t.procedure
 
   return t.router({

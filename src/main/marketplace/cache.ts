@@ -1,8 +1,18 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Database } from "bun:sqlite";
+import Database from "better-sqlite3";
 import type { MarketplaceSkill } from "../marketplace-types";
+
+/**
+ * Marketplace HTTP cache. Moved from `bun:sqlite` to `better-sqlite3` so the
+ * module runs under both Bun (legacy Electrobun build) and Node (Electron
+ * main process). API surface (`readCache`, `writeCache`, etc.) is unchanged.
+ *
+ * `better-sqlite3` is a native addon; electron-builder rebuilds it against the
+ * Electron ABI on packaging via `@electron/rebuild`, and the `.node` file is
+ * `asarUnpack`-ed — see Phase 5 notes in docs/DEVELOPMENT.md.
+ */
 
 function appCacheDir(): string {
 	const h = homedir();
@@ -27,9 +37,11 @@ function nowEpoch(): number {
 	return Math.floor(Date.now() / 1000);
 }
 
-function openCache(): Database {
+type DbInstance = Database.Database;
+
+function openCache(): DbInstance {
 	const db = new Database(marketplaceCacheDbPath());
-	db.run(`
+	db.exec(`
     CREATE TABLE IF NOT EXISTS marketplace_cache (
       cache_key TEXT PRIMARY KEY,
       payload TEXT NOT NULL,
@@ -39,7 +51,7 @@ function openCache(): Database {
 	return db;
 }
 
-function openCacheSafe(): Database | null {
+function openCacheSafe(): DbInstance | null {
 	try {
 		return openCache();
 	} catch (err) {
@@ -53,7 +65,7 @@ export function readCache(key: string): MarketplaceSkill[] | null {
 		const db = openCacheSafe();
 		if (!db) return null;
 		const row = db
-			.query(
+			.prepare(
 				"SELECT payload, expires_at FROM marketplace_cache WHERE cache_key = ?",
 			)
 			.get(key) as { payload: string; expires_at: number } | undefined;
@@ -75,7 +87,7 @@ export function readCacheStale(key: string): MarketplaceSkill[] | null {
 		const db = openCacheSafe();
 		if (!db) return null;
 		const row = db
-			.query("SELECT payload FROM marketplace_cache WHERE cache_key = ?")
+			.prepare("SELECT payload FROM marketplace_cache WHERE cache_key = ?")
 			.get(key) as { payload: string } | undefined;
 		if (!row) return null;
 		try {
@@ -101,14 +113,13 @@ export function writeCache(
 		if (!db) return;
 		const payload = JSON.stringify(skills);
 		const expires = nowEpoch() + ttlSeconds;
-		db.run(
+		db.prepare(
 			`INSERT INTO marketplace_cache(cache_key, payload, expires_at)
      VALUES (?, ?, ?)
      ON CONFLICT(cache_key) DO UPDATE SET
        payload = excluded.payload,
        expires_at = excluded.expires_at`,
-			[key, payload, expires],
-		);
+		).run(key, payload, expires);
 	} catch (err) {
 		console.warn("[marketplace-cache] write failed:", err);
 	}
@@ -118,7 +129,7 @@ export function clearMarketplaceCacheDb(): void {
 	try {
 		const db = openCacheSafe();
 		if (!db) return;
-		db.run("DELETE FROM marketplace_cache");
+		db.exec("DELETE FROM marketplace_cache");
 	} catch (err) {
 		console.warn("[marketplace-cache] clear failed:", err);
 	}

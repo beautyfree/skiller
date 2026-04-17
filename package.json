@@ -9,7 +9,11 @@
     "url": "https://github.com/beautyfree/skiller-skills-desktop-manager"
   },
   "type": "module",
+  "main": "out/main/index.js",
   "scripts": {
+    "dev:electron": "electron-vite dev",
+    "build:electron": "electron-vite build",
+    "start:electron": "electron-vite preview",
     "dev": "bun run build:native-effects && electrobun dev --watch",
     "start": "bun run build && electrobun dev",
     "dev:hmr": "concurrently \"bun run hmr\" \"bun run start\"",
@@ -64,8 +68,10 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "@trpc/react-query": "^11.0.0",
+    "@electron-toolkit/preload": "^3.0.2",
+    "@electron-toolkit/utils": "^4.0.0",
     "@tailwindcss/vite": "^4.2.1",
+    "@trpc/react-query": "^11.0.0",
     "@types/handlebars": "^4.1.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
@@ -73,6 +79,9 @@
     "@types/which": "^3.0.4",
     "@vitejs/plugin-react": "^4.6.0",
     "concurrently": "^9.2.1",
+    "electron": "^41.2.1",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^5.0.0",
     "tailwindcss": "^4.2.1",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"

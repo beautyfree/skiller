@@ -11,7 +11,16 @@ node_modules
 dist
 dist-ssr
 build
+out
 artifacts
+
+# TypeScript project references incremental build output
+*.tsbuildinfo
+# Emitted by `tsc --build` for root config files (kept as side-effects)
+/vite.config.d.ts
+/vite.config.js
+/electron.vite.config.d.ts
+/electron.vite.config.js
 *.local
 .playwright-mcp
 

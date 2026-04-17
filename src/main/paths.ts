@@ -1,16 +1,29 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { PATHS } from "electrobun/bun";
+import { join } from "node:path";
 
 /**
- * Bundled agent TOMLs: Electrobun copies `agents` to `Resources/agents` (sibling of `app/`), not
- * `Resources/app/agents`. `PATHS.VIEWS_FOLDER` is `Resources/app/views`, so two `dirname`s reach
- * `Resources/`. Fallback: repo `./agents` (create if missing for first-run dev).
+ * Packaged-bundle root where the host (Electrobun or Electron) copies
+ * `agents/` and `templates/`. Must be set at startup by whichever host is
+ * running (see `src/bun/index.ts` and `src/electron-main/index.ts`). If left
+ * unset, `getAgentsDir` / `getTemplatesDir` fall back to the repo layout so
+ * `bun run dev:vite` / `electron-vite dev` keep working.
  */
+let packagedResourcesDir: string | null = null;
+let packagedViewsDir: string | null = null;
+
+export function setPackagedResourcesDir(dir: string): void {
+	packagedResourcesDir = dir;
+}
+
+export function setPackagedViewsDir(dir: string): void {
+	packagedViewsDir = dir;
+}
+
 export function getAgentsDir(): string {
-	const resourcesRoot = dirname(dirname(PATHS.VIEWS_FOLDER));
-	const packaged = join(resourcesRoot, "agents");
-	if (existsSync(packaged)) return packaged;
+	if (packagedResourcesDir) {
+		const packaged = join(packagedResourcesDir, "agents");
+		if (existsSync(packaged)) return packaged;
+	}
 	const cwdAgents = join(process.cwd(), "agents");
 	if (existsSync(cwdAgents)) return cwdAgents;
 	mkdirSync(cwdAgents, { recursive: true });
@@ -18,6 +31,8 @@ export function getAgentsDir(): string {
 }
 
 export function getTemplatesDir(): string {
-	const viewsParent = dirname(PATHS.VIEWS_FOLDER);
-	return join(viewsParent, "templates");
+	if (packagedViewsDir) {
+		return join(packagedViewsDir, "templates");
+	}
+	return join(process.cwd(), "templates");
 }

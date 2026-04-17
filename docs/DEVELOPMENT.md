@@ -76,7 +76,7 @@ macOS signing + notarization:
 - `MACOS_CERT_P12_PASSWORD` — password used to export the `.p12`
 - `MACOS_KEYCHAIN_PASSWORD` — arbitrary temp-keychain password (generate any string)
 - `CSC_NAME` — full identity string (e.g. `Developer ID Application: Your Name (XXXXXXXXXX)`)
-- `APPLE_API_KEY_ISSUER` — App Store Connect → Users and Access → Integrations → App Store Connect API → Issuer ID
+- `APPLE_API_ISSUER` — App Store Connect → Users and Access → Integrations → App Store Connect API → Issuer ID
 - `APPLE_API_KEY_ID` — 10-char Key ID
 - `APPLE_API_KEY_P8` — full contents of the `AuthKey_XXXXXXXXXX.p8` file (multi-line secret)
 
@@ -109,7 +109,7 @@ Electron-builder reads these from `.env` or the shell when you run `bun run dist
 | --- | --- |
 | `CSC_NAME` | Full Developer ID identity string |
 | `APPLE_API_KEY_ID` | 10-char Key ID from App Store Connect |
-| `APPLE_API_KEY_ISSUER` | Issuer UUID |
+| `APPLE_API_ISSUER` | Issuer UUID |
 | `APPLE_API_KEY` | Absolute path to the `.p8` file (preferred for CI) |
 | — or Apple ID fallback — |
 | `APPLE_ID` | Developer Apple ID email |
@@ -119,7 +119,7 @@ Electron-builder reads these from `.env` or the shell when you run `bun run dist
 ### Flow
 
 1. `electron-vite build` — emits main + preload + renderer into `out/`.
-2. `electron-builder --mac` — creates a signed `.app` in `artifacts/mac-arm64/` and runs `scripts/notarize.mjs` as `afterSign` (notarizes + staples the app bundle).
+2. `electron-builder --mac` — creates a signed `.app` in `artifacts/mac-arm64/`, then notarizes + staples it using the API-key env vars (handled natively by electron-builder 26+; no custom afterSign hook needed).
 3. `scripts/repack-dmg.sh` — wraps the signed app in a styled drag-to-Applications DMG, re-signs the DMG wrapper, notarizes + staples the DMG.
 
 ### Verify locally
@@ -143,7 +143,7 @@ Relevant config:
 Apple returns a JSON log listing unsigned binaries or missing secure timestamps when notarization fails. Common causes:
 
 - A native addon (e.g. `better-sqlite3.node`) wasn't codesigned with `--timestamp`. `electron-builder` handles this automatically; if you add new native modules, `bunx electron-builder install-app-deps` on the target OS before dist.
-- Missing one of the three API-key vars. All three (`APPLE_API_KEY_ISSUER`, `APPLE_API_KEY_ID`, `APPLE_API_KEY`) must be present, and the `.p8` file must exist at the path in `APPLE_API_KEY`.
+- Missing one of the three API-key vars. All three (`APPLE_API_ISSUER`, `APPLE_API_KEY_ID`, `APPLE_API_KEY`) must be present, and the `.p8` file must exist at the path in `APPLE_API_KEY`.
 
 ## Renderer DevTools / blank screen debugging
 

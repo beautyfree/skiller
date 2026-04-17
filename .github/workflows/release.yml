@@ -142,9 +142,11 @@ jobs:
           # via softprops below instead but the var being set also unlocks
           # electron-builder's release-draft verification.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS signing + notarization (renamed from ELECTROBUN_* in Phase 5).
+          # macOS signing + notarization. Env-var names follow electron-builder's
+          # conventions (NB: `APPLE_API_ISSUER`, not `APPLE_API_KEY_ISSUER` —
+          # electron-builder rejects the "_KEY_" variant).
           CSC_NAME: ${{ secrets.CSC_NAME }}
-          APPLE_API_KEY_ISSUER: ${{ secrets.APPLE_API_KEY_ISSUER }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
         run: bun run ${{ matrix.script }}
 

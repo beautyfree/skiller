@@ -5,11 +5,15 @@ import type {
 	PlatformWindow,
 	WindowFrame,
 } from "../shared/platform";
+import {
+	setMacOSVibrancy as applyMacOSVibrancy,
+	syncMacOSChromeFromSettings as applyMacOSChromeSync,
+} from "./window-effects-macos";
 
 /**
- * AppPlatform for the Electron host. macOS window effects are no-ops here —
- * Phase 3 replaces them with Electron's built-in `BrowserWindow({ vibrancy })`
- * + `nativeTheme` so we never re-introduce the FFI dylib.
+ * AppPlatform for the Electron host. macOS vibrancy + chrome appearance are
+ * handled via Electron's built-in APIs (`win.setVibrancy`, `nativeTheme.themeSource`)
+ * — no FFI, no custom dylib.
  */
 
 function wrapElectronWindow(win: BrowserWindow): PlatformWindow {
@@ -67,12 +71,10 @@ export function createElectronPlatform(
 		},
 		getMainWindow: () => wrapElectronWindow(getWindow()),
 		syncMacOSChromeFromSettings: () => {
-			// Phase 3 wires `nativeTheme.themeSource` based on readSettings().theme.
-			// For now the BrowserWindow's vibrancy/appearance stay at defaults.
+			applyMacOSChromeSync();
 		},
-		setMacOSVibrancy: () => {
-			// Phase 3 switches this to `win.setVibrancy('sidebar' | null)`.
-			return false;
+		setMacOSVibrancy: (enabled: boolean) => {
+			return applyMacOSVibrancy(getWindow(), enabled);
 		},
 	};
 }

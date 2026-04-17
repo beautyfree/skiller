@@ -12,7 +12,9 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+    "outDir": "./out/tsc-node",
+    "declarationDir": "./out/tsc-node"
   },
   "include": [
     "vite.config.ts",

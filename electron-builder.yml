@@ -62,6 +62,10 @@ nsis:
 linux:
   icon: assets/icons/app/icon-512.png
   category: Development
+  # .deb requires a maintainer string. Mirrors package.json `author` but kept
+  # explicit so we don't get bitten again if someone simplifies the author
+  # field back to a plain string.
+  maintainer: "Skiller Contributors <skiller@beautyfree.dev>"
   target:
     - target: AppImage
       arch: [x64]

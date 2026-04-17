@@ -39,9 +39,15 @@ mac:
   gatekeeperAssess: false
   entitlements: build-resources/entitlements.mac.plist
   entitlementsInherit: build-resources/entitlements.mac.plist
-  # Two-architecture fat binary. Drop `x64` if you only ship Apple Silicon.
+  # `dir` = unpacked .app bundle (consumed by scripts/repack-dmg.sh to produce
+  # the styled DMG humans download). `zip` = autoupdate transport — electron-
+  # updater downloads this at runtime and writes `latest-mac.yml` listing it.
+  # Without the zip target, electron-builder skips `latest-mac.yml` entirely
+  # and auto-updates silently break for macOS users.
   target:
     - target: dir
+      arch: [arm64]
+    - target: zip
       arch: [arm64]
 
 # Electron-builder's own DMG creation is disabled on macOS (see target: dir

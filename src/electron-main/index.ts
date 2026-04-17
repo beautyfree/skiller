@@ -24,6 +24,10 @@ import type { BunSideRpc } from "../bun/rpc-handlers";
 import { createAppRouter } from "../bun/trpc/router";
 import { createElectronPlatform } from "./platform-electron";
 import { startTrpcHttpServer } from "./trpc-server";
+import {
+	effectiveMacOSWindowBlur,
+	syncMacOSChromeFromSettings,
+} from "./window-effects-macos";
 
 const TRPC_PORT = Number(process.env.AGENTSKILLS_TRPC_PORT ?? 17888);
 const DEFAULT_WINDOW_FRAME = {
@@ -99,6 +103,9 @@ function sendTrpcEndpointToRenderer(): void {
 
 // --- Window ---------------------------------------------------------------
 function createMainWindow(): BrowserWindow {
+	const isMac = process.platform === "darwin";
+	const wantVibrancy = isMac && effectiveMacOSWindowBlur();
+
 	const win = new BrowserWindow({
 		title: "Skiller",
 		width: DEFAULT_WINDOW_FRAME.width,
@@ -107,8 +114,20 @@ function createMainWindow(): BrowserWindow {
 		y: DEFAULT_WINDOW_FRAME.y,
 		show: false,
 		autoHideMenuBar: true,
-		// Phase 3/4 add titlebarStyle, vibrancy, and titleBarOverlay. For now a
-		// native frame keeps the window usable on every OS during smoke-testing.
+		// macOS polish — replaces the custom FFI dylib used under Electrobun.
+		// Traffic-light inset matches the old libMacWindowEffects placement
+		// (14x12) so the titlebar layout in the renderer doesn't need to shift.
+		...(isMac
+			? {
+					titleBarStyle: "hiddenInset",
+					trafficLightPosition: { x: 14, y: 12 },
+					vibrancy: wantVibrancy ? ("sidebar" as const) : undefined,
+					visualEffectState: "active" as const,
+					transparent: wantVibrancy,
+				}
+			: {}),
+		// Phase 4 adds `titleBarOverlay` and `titleBarStyle: 'hidden'` for the
+		// Windows/Linux caption-button path.
 		webPreferences: {
 			preload: join(__dirname, "../preload/index.js"),
 			sandbox: false,
@@ -195,6 +214,13 @@ void app.whenReady().then(async () => {
 	});
 
 	await initTrpcServer();
+
+	// Push the user's saved theme into nativeTheme before the first window
+	// mounts so the initial paint lands on the correct appearance.
+	if (process.platform === "darwin") {
+		syncMacOSChromeFromSettings();
+	}
+
 	mainWindow = createMainWindow();
 	setupTray();
 

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Hardened Runtime + notarization minimum entitlements for an Electron app.
+    - allow-jit: Chromium V8 JIT
+    - allow-unsigned-executable-memory: Chromium/V8 writes executable pages
+    - disable-library-validation: loads better-sqlite3.node at runtime
+    - cs.allow-dyld-environment-variables: Electron's helper process needs
+      DYLD_* env vars under hardened runtime
+
+    Do not add entitlements beyond what's listed unless the feature explicitly
+    needs them — every addition widens the notarization attack surface.
+  -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+</dict>
+</plist>

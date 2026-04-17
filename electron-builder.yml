@@ -1,0 +1,89 @@
+appId: com.beautyfree.skiller
+productName: Skiller
+# Match our GitHub Releases naming so download URLs stay predictable.
+artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+copyright: Copyright © 2026 Skiller Contributors
+
+directories:
+  output: artifacts
+  buildResources: build-resources
+
+# Package only what the app actually needs. Everything else gets pruned.
+files:
+  - out/**/*
+  - package.json
+  - "!**/*.{md,map,ts,tsx,test.js,spec.js}"
+  - "!**/node_modules/*/{README,readme,CHANGELOG,changelog,LICENSE,license}*"
+
+# `agents/` is bundled next to app.asar so paths.setPackagedResourcesDir
+# (src/electron-main/index.ts) can find it via process.resourcesPath.
+extraResources:
+  - from: agents
+    to: agents
+
+# Native modules (better-sqlite3) live outside the asar so the dynamic linker
+# can load the .node binary.
+asarUnpack:
+  - "**/*.node"
+
+# Notarization: electron-builder 26+ handles it natively when the expected env
+# vars are present (APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER for the
+# API-key flow; APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID as
+# fallback). No afterSign hook needed — running our own notarize.mjs on top
+# would just re-submit the already-notarized bundle.
+
+mac:
+  category: public.app-category.developer-tools
+  icon: assets/icons/app.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build-resources/entitlements.mac.plist
+  entitlementsInherit: build-resources/entitlements.mac.plist
+  # `dir` = unpacked .app bundle (consumed by scripts/repack-dmg.sh to produce
+  # the styled DMG humans download). `zip` = autoupdate transport — electron-
+  # updater downloads this at runtime and writes `latest-mac.yml` listing it.
+  # Without the zip target, electron-builder skips `latest-mac.yml` entirely
+  # and auto-updates silently break for macOS users.
+  target:
+    - target: dir
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+
+# Electron-builder's own DMG creation is disabled on macOS (see target: dir
+# above). scripts/repack-dmg.sh produces the styled, drag-to-Applications DMG
+# using create-dmg — same script the Electrobun build used, just pointed at
+# electron-builder's output path now.
+dmg:
+  writeUpdateInfo: false
+
+win:
+  icon: assets/icons/app.ico
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+linux:
+  icon: assets/icons/app/icon-512.png
+  category: Development
+  # .deb requires a maintainer string. Mirrors package.json `author` but kept
+  # explicit so we don't get bitten again if someone simplifies the author
+  # field back to a plain string.
+  maintainer: "Skiller Contributors <skiller@beautyfree.dev>"
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+
+# GitHub Releases backend — `dist:*` scripts produce artifacts that CI
+# attaches to the tagged release, which electron-updater then reads in
+# Phase 6 as `latest-{mac,linux,win}.yml`.
+publish:
+  provider: github
+  owner: beautyfree
+  repo: skiller-desktop-skills-manager

@@ -1,238 +1,189 @@
 # Development Guide
 
-This document contains developer-focused setup, build, and debugging instructions for Skiller.
+Developer-focused setup, build, and debugging instructions for Skiller.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh/) (recommended) or Node.js 18+
-- Project dependencies installed via package manager
+- [Bun](https://bun.sh/) 1.3+ (used for install + script running; Electron itself runs on Node 20 bundled inside Electron)
+- macOS 14+ for local macOS release builds (signing, notarization, DMG repacking)
+- Windows 10+ for local Windows release builds (or use the GitHub Actions matrix)
+- `create-dmg` (`brew install create-dmg`) for macOS DMG repackaging
 
-## Local Setup
+## Local setup
 
 ```bash
-# Install dependencies
 bun install
+# Rebuild better-sqlite3 against Electron's ABI (only needed if native modules change):
+bunx electron-builder install-app-deps
 ```
 
-## Run Modes
+## Run modes
 
 ```bash
-# Desktop app with bundled views (Electrobun watches main-process code)
+# Full dev: main + preload watch, renderer on Vite HMR port 5180
 bun run dev
 
-# Desktop app + Vite HMR (recommended for frontend iteration)
-bun run dev:hmr
-
-# Vite web UI only (no full desktop RPC/preload behavior)
-bun run dev:vite
-
-# HMR mode with webview DevTools auto-opened
+# Same, but auto-open renderer DevTools on launch
 bun run dev:debug
-```
 
-## Type Checking
-
-```bash
-bunx tsc --noEmit
-```
-
-## Production Build
-
-```bash
-# Production web bundle output in dist/
+# Build the static bundle into out/ (no packaging)
 bun run build
+
+# Preview the built bundle in a packaged-like Electron process
+bun run preview
 ```
 
-## Prerequisites for macOS distribution
+## Type checking
 
 ```bash
-# create-dmg — used by scripts/repack-dmg.sh to produce the styled
-# drag-to-Applications DMG that replaces Electrobun's default layout.
-brew install create-dmg
+bun run typecheck
+# = tsc --noEmit && tsc -p tsconfig.node.json --noEmit
 ```
+
+The two configs own disjoint parts of the tree:
+
+- `tsconfig.json` → `src/mainview/**` (renderer) + shared types
+- `tsconfig.node.json` → `src/electron-main/**` + `src/preload/**` + `src/main/**` + shared types
+
+They share `src/shared/**`; both type-check with `noEmit: true` so overlapping includes are fine.
 
 ## Distribution builds per platform
 
-Electrobun **does not cross-compile** — you must run the build on the target OS ([source](https://blackboard.sh/electrobun/docs/guides/cross-platform-development)). This repo exposes one script per platform:
+[electron-builder](https://www.electron.build/) packages + signs + notarizes. Native modules (`better-sqlite3`) are rebuilt against Electron's ABI on the target OS, so cross-compilation is not supported — run the appropriate script on the appropriate OS, or use the GitHub Actions matrix.
 
 | Host OS | Command | Output in `artifacts/` |
 | --- | --- | --- |
-| macOS (Apple Silicon) | `bun run dist:mac` | `stable-macos-arm64-Skiller.dmg` (signed + notarized when `.env` is configured) |
-| Windows x64 | `bun run dist:win` | `stable-win-x64-Skiller*` (`.exe` + self-extractor) |
-| Linux x64 | `bun run dist:linux` | `stable-linux-x64-Skiller*` |
+| macOS (Apple Silicon) | `bun run dist:mac` | `Skiller-<version>-macos-arm64.dmg` (signed + notarized, drag-to-Applications layout) |
+| Windows x64 | `bun run dist:win` | `Skiller-<version>-win-x64.exe` (NSIS installer) |
+| Linux x64 | `bun run dist:linux` | `Skiller-<version>-linux-x86_64.{AppImage,deb}` |
 
-There are two ways to produce all three without owning three machines:
+There are two ways to produce all three without owning three machines.
 
 ### Option 1 — GitHub Actions matrix (zero local setup)
 
 `.github/workflows/release.yml` fans out to `macos-14`, `windows-latest`, and `ubuntu-latest` runners. Tag a release and GitHub builds and publishes everything:
 
 ```bash
-# Bump version in package.json, commit, then tag and push, e.g.:
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
-Required repo **Secrets** (Settings → Secrets and variables → Actions) for macOS notarization:
+**Required repo secrets** (Settings → Secrets and variables → Actions):
 
-- `ELECTROBUN_DEVELOPER_ID` — `Developer ID Application: … (TEAM_ID)`
-- `ELECTROBUN_APPLEAPIISSUER` — Issuer UUID from App Store Connect → Users and Access → Integrations → App Store Connect API
-- `ELECTROBUN_APPLEAPIKEY` — Key ID (10 chars) from the same page
-- `ELECTROBUN_APPLEAPIKEY_P8` — paste the entire contents of `AuthKey_XXXXXXXXXX.p8` (multi-line secret). The workflow writes it to `$RUNNER_TEMP/AuthKey.p8` and exports `ELECTROBUN_APPLEAPIKEYPATH` automatically — you do NOT set `ELECTROBUN_APPLEAPIKEYPATH` yourself.
+macOS signing + notarization:
 
-Windows/Linux jobs don't need secrets; an unsigned `.exe` will just show a SmartScreen warning the first time a user runs it.
+- `MACOS_CERT_P12` — base64-encoded `.p12` export of `Developer ID Application: … (TEAM_ID)`
+- `MACOS_CERT_P12_PASSWORD` — password used to export the `.p12`
+- `MACOS_KEYCHAIN_PASSWORD` — arbitrary temp-keychain password (generate any string)
+- `CSC_NAME` — full identity string (e.g. `Developer ID Application: Your Name (XXXXXXXXXX)`)
+- `APPLE_API_ISSUER` — App Store Connect → Users and Access → Integrations → App Store Connect API → Issuer ID
+- `APPLE_API_KEY_ID` — 10-char Key ID
+- `APPLE_API_KEY_P8` — full contents of the `AuthKey_XXXXXXXXXX.p8` file (multi-line secret)
+
+Windows/Linux jobs don't need secrets — Windows ships as an unsigned NSIS installer (SmartScreen shows a one-time warning on first install).
 
 ### Landing site — GitHub Pages
 
-`.github/workflows/pages.yml` publishes the static files in `docs/` (e.g. `index.html`, `images/`) to GitHub Pages on pushes to `main` that touch `docs/**` or the workflow. You can also run the workflow manually (**Actions → Deploy docs to GitHub Pages → Run workflow**).
-
-**One-time repo setup:** **Settings → Pages → Build and deployment → Source: GitHub Actions.** If Pages was never enabled, the deploy job used to fail at *Setup Pages* with `HttpError: Not Found` when calling the Pages API — enabling Actions as the source fixes that. The workflow sets `enablement: true` on `actions/configure-pages` so a first run may enable Pages automatically when permissions allow.
-
-Site URL shape: `https://<owner>.github.io/<repo>/` (for this fork, owner `beautyfree` and repo name from **Settings → General**).
+`.github/workflows/pages.yml` publishes the static files in `docs/` to GitHub Pages on pushes to `main` that touch `docs/**`. First-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 
 ### Option 2 — Local Windows VM (Parallels / UTM / Hyper-V)
 
 Inside a Windows 10/11 VM:
 
 ```powershell
-# Prereqs: Git, Bun, Visual Studio Build Tools (Desktop development with C++), cmake
-git clone https://github.com/beautyfree/skiller-skills-desktop-manager
-cd skiller-skills-desktop-manager
+# Prereqs: Git, Bun, Visual Studio Build Tools (Desktop development with C++), Python 3
+git clone https://github.com/beautyfree/skiller-desktop-skills-manager
+cd skiller-desktop-skills-manager
 bun install
+bunx electron-builder install-app-deps
 bun run dist:win
 ```
 
-Artifacts end up in `artifacts/`. Copy them back out of the VM.
-
-### Windows code signing (optional)
-
-Without a code-signing certificate, the `.exe` runs fine but Windows SmartScreen shows a one-time "unrecognized app" warning to the user. To remove that:
-
-- Standard OV certificate (~$200/year) — reputation is built over time; warnings may still appear for new signatures.
-- EV certificate (~$400/year) — instant SmartScreen reputation, hardware token required.
-
-Electrobun doesn't bake Windows signing into `electrobun build`; run `signtool` on the produced `.exe` as a post-build step.
-
 ## macOS code signing and notarization
 
-Signing is **opt-in via environment variables** (Electrobun reads them when you run `electrobun build`). Without them, builds stay unsigned, same as before.
+### Env vars
 
-### One-shot distributable build
+Electron-builder reads these from `.env` or the shell when you run `bun run dist:mac`. Without them, the build succeeds unsigned — useful for quick local testing, not shippable.
 
-Once `.env` is populated (see below), produce a DMG that launches on any Mac without Gatekeeper warnings:
+| Variable | Purpose |
+| --- | --- |
+| `CSC_NAME` | Full Developer ID identity string |
+| `APPLE_API_KEY_ID` | 10-char Key ID from App Store Connect |
+| `APPLE_API_ISSUER` | Issuer UUID |
+| `APPLE_API_KEY` | Absolute path to the `.p8` file (preferred for CI) |
+| — or Apple ID fallback — |
+| `APPLE_ID` | Developer Apple ID email |
+| `APPLE_APP_SPECIFIC_PASSWORD` | [App-specific password](https://support.apple.com/en-us/102654) |
+| `APPLE_TEAM_ID` | 10-char team ID |
+
+### Flow
+
+1. `electron-vite build` — emits main + preload + renderer into `out/`.
+2. `electron-builder --mac` — creates a signed `.app` in `artifacts/mac-arm64/`, then notarizes + staples it using the API-key env vars (handled natively by electron-builder 26+; no custom afterSign hook needed).
+3. `scripts/repack-dmg.sh` — wraps the signed app in a styled drag-to-Applications DMG, re-signs the DMG wrapper, notarizes + staples the DMG.
+
+### Verify locally
 
 ```bash
-bun run dist:mac
-```
-
-Output: `artifacts/stable-macos-arm64-Skiller.dmg` — signed **and** notarized. Send it to anyone.
-
-Verify locally:
-
-```bash
-spctl -a -vvv -t install artifacts/stable-macos-arm64-Skiller.dmg   # expect: "source=Notarized Developer ID"
-xcrun stapler validate artifacts/stable-macos-arm64-Skiller.dmg      # expect: "The validate action worked!"
+spctl -a -vvv -t install artifacts/Skiller-*.dmg    # expect: "source=Notarized Developer ID"
+xcrun stapler validate artifacts/Skiller-*.dmg      # expect: "The validate action worked!"
 ```
 
 ### Why the DMG is hand-styled
 
-Electrobun's built-in DMG writer ships an unstyled window (tiny default icon, no background, no layout). Two problems this caused:
+Electron-builder's built-in DMG writer produces an unstyled window. `scripts/repack-dmg.sh` uses `create-dmg` to get a 128px app icon, a dark background featuring two light "cards" under the app and Applications icons, a bright arrow, and the volume named "Skiller Installer" — the same layout Chrome/Slack use to visually force drag-to-Applications. We produce the styled DMG ourselves because the built-in is cosmetically insufficient (tiny default icon, no background).
 
-1. Users said the Skiller.app icon inside the DMG "looks suspiciously small" — Finder defaulted to 48px icon view.
-2. Running the app directly from `/Volumes/Skiller/Skiller.app` crashed instantly with `RenameAcrossMountPoints`: Electrobun's self-extracting launcher writes into `~/Library/Application Support/com.beautyfree.skiller/...` and then tries to `renameSync` a directory whose source derives from `process.execPath` — when the app runs from a read-only DMG volume, source and destination are on different filesystems, so `rename` fails.
+Relevant config:
 
-`scripts/repack-dmg.sh` calls `create-dmg` to produce a DMG with a 128px icon, a dark background featuring two light "cards" under the app and Applications icons (so Finder's default label text stays readable regardless of macOS theme), a bright white arrow, and the volume named "Install Skiller" — visually forcing the user to drag the app to `/Applications` before running it. This is the same pattern Electron apps use. The DMG is re-signed and re-notarized after repackaging; Electrobun's own `createDmg` is disabled in `electrobun.config.ts`.
-
-### Environment variables
-
-**1. Apple Developer Program** — enroll at [developer.apple.com](https://developer.apple.com). Install **Developer ID Application** certificate in Keychain (Xcode → Settings → Accounts → Manage Certificates, or create in the Developer portal).
-
-**2. Identity string** — run:
-
-```bash
-security find-identity -v -p codesigning
-```
-
-Copy the full name of `Developer ID Application: … (TEAM_ID)` — that is `ELECTROBUN_DEVELOPER_ID`.
-
-**3. Sign only** (Gatekeeper may still warn until notarized):
-
-```bash
-export ELECTROBUN_DEVELOPER_ID="Developer ID Application: Your Name (XXXXXXXXXX)"
-bun run build
-bunx electrobun build --env=stable
-```
-
-**4. Notarization** (recommended for distribution; staples ticket so users avoid quarantine friction) — use **either** App Store Connect API key **or** Apple ID app-specific password:
-
-- **API key (preferred for CI):** set `ELECTROBUN_APPLEAPIISSUER`, `ELECTROBUN_APPLEAPIKEY`, `ELECTROBUN_APPLEAPIKEYPATH` (path to `.p8` file).
-- **Apple ID:** set `ELECTROBUN_APPLEID`, `ELECTROBUN_APPLEIDPASS` ([app-specific password](https://support.apple.com/en-us/102654)), `ELECTROBUN_TEAMID`.
-
-With Developer ID plus one of the notarization credential sets, `electrobun.config.ts` enables `notarize` automatically.
-
-Artifacts: `artifacts/stable-macos-*-Skiller.dmg` and related files under `artifacts/`.
+- `electron-builder.yml` → `mac.target: dir` disables electron-builder's own DMG
+- `dmg.writeUpdateInfo: false` suppresses the blockmap (we generate that separately from the final DMG)
 
 ### Troubleshooting notarization
 
-If `notarization failed ... status: Invalid`, Apple returns a JSON log listing which binaries are unsigned or missing a secure timestamp. Common causes in this project:
+Apple returns a JSON log listing unsigned binaries or missing secure timestamps when notarization fails. Common causes:
 
-- A `.dylib` you added to `src/bun/` is not signed by the Developer ID with `--timestamp`. Add a codesign step to your build script (see `scripts/build-macos-effects.sh` for the pattern) so every custom binary is signed before Electrobun bundles it.
-- `.env` missing one of the three API-key vars (Issuer, Key ID, Key path). All three must be present together, and the `.p8` file must be readable.
+- A native addon (e.g. `better-sqlite3.node`) wasn't codesigned with `--timestamp`. `electron-builder` handles this automatically; if you add new native modules, `bunx electron-builder install-app-deps` on the target OS before dist.
+- Missing one of the three API-key vars. All three (`APPLE_API_ISSUER`, `APPLE_API_KEY_ID`, `APPLE_API_KEY`) must be present, and the `.p8` file must exist at the path in `APPLE_API_KEY`.
 
-## Webview DevTools / Blank Screen Debugging
+## Renderer DevTools / blank screen debugging
 
-Electrobun exposes `BrowserView.openDevTools()` for the main webview.
+- Auto-open: `bun run dev:debug` (`AGENTSKILLS_DEVTOOLS=1 electron-vite dev`).
+- Right-click → Inspect Element works in dev.
+- On macOS Cmd+Alt+I and on Windows/Linux F12 toggle DevTools (see `@electron-toolkit/utils.optimizer.watchWindowShortcuts`).
 
-- Automatic: run `bun run dev:debug`
-- Or set environment flags:
-  - `AGENTSKILLS_DEVTOOLS=1`
-  - `ELECTROBUN_OPEN_DEVTOOLS=1`
-- On macOS, you can also try right-click in webview and choose Inspect Element when available.
+If UI renders in browser but not in Electron:
 
-If UI renders in browser but not in desktop shell:
-
-1. Run `bun run dev:vite`
-2. Open the printed localhost URL in a regular browser
-3. Compare behavior to isolate shell/runtime issues from frontend bundle issues
+1. Open `http://127.0.0.1:5180` in Chrome — if the page renders, the main process crashed and the preload couldn't attach. Check main logs.
+2. If renderer works but tRPC calls hang, the main process didn't bind a port — check the `tRPC: http://127.0.0.1:NNNN/trpc` log line.
 
 ## Auto-updates
 
-Electrobun's [built-in Updater](https://blackboard.sh/electrobun/docs/apis/updater) is wired up in `src/bun/app-updater.ts`:
+`electron-updater` is wired in `src/main/app-updater.ts`:
 
-- **Config** — `electrobun.config.ts` sets `release.baseUrl` to `https://github.com/beautyfree/skiller-skills-desktop-manager/releases/latest/download`. Override per-build by exporting `ELECTROBUN_UPDATE_BASE_URL=https://your-host/…` before `bun run build:mac`.
-- **Artifacts** — `bunx electrobun build --env=stable` emits `stable-<platform>-<arch>-update.json`, `*-Skiller.app.tar.zst`, and `*.patch` into `artifacts/`. The GitHub Actions release workflow uploads every file in `artifacts/` to the Release, so `releases/latest/download/<name>` resolves to the newest version.
-- **Runtime** — `initAppUpdater()` runs `Updater.checkForUpdate()` on startup and every 6 hours. Status transitions are projected into an `AppUpdateStatusJson` snapshot and pushed to the webview via the `app_update_status_changed` bun→webview RPC message. Settings renders the current state and exposes **Check for updates** / **Download update** / **Restart & install** buttons.
-- **Delta patches** — Electrobun generates per-release `*.patch` files via BSDIFF when `release.baseUrl` is set; typical patch is ~14 KB. If the patch chain is broken the Updater falls back to the full `.app.tar.zst`.
+- **Config** — `electron-builder.yml` sets `publish.provider: github` pointing at `beautyfree/skiller-desktop-skills-manager`. When you `bun run dist:mac/win/linux`, electron-builder writes `latest-mac.yml` / `latest-linux.yml` / `latest.yml` (for Windows) alongside the DMG/AppImage/EXE. GitHub Actions uploads all of them to the tagged Release.
+- **Runtime** — `initAppUpdater()` runs `autoUpdater.checkForUpdates()` on launch and every 6 hours. `autoDownload = false`, so the user clicks **Download update** in Settings → App Updates after an update is announced. Progress + ready state stream to the renderer through the `app_update_status_changed` push channel; the Settings page renders the current state and offers **Restart & install** once the update is downloaded.
+- **Delta patches** — electron-builder generates `.blockmap` files automatically when `writeUpdateInfo: false` is not set. We currently ship full DMGs — blockmap-based deltas can be added later when update volume justifies the extra artifacts.
+- **Dev** — `app.isPackaged === false` in dev, so the updater short-circuits and stays in the `idle` state. No spam.
 
 ### Testing the updater locally
 
-The Updater skips itself on the `dev` channel, so you need two `stable` builds to watch an update happen:
-
 ```bash
-# Terminal A: serve artifacts/ over http for the running app to fetch from
-cd artifacts && python3 -m http.server 8787
+# Build version N with the real publish URL (GitHub Releases)
+bun run dist:mac
+open artifacts/Skiller-*.dmg   # install into /Applications, launch
+
+# Bump package.json version and tag + push — CI builds version N+1
+git tag v0.2.1
+git push origin v0.2.1
 ```
 
-```bash
-# Terminal B: build version N pointing at the local server
-export ELECTROBUN_UPDATE_BASE_URL=http://127.0.0.1:8787
-bun run dist:mac
-open build/stable-macos-arm64/Skiller.app  # run version N
+The installed app should detect the new release within 6h (or via **Check for updates** in Settings → App Updates) and offer **Restart & install** after download completes.
 
-# Bump package.json version, then build version N+1 without launching it
-bun run dist:mac
+## Packaging notes
 
-# The running app should detect the new update.json within 6h (or click
-# "Check for updates" in Settings) and offer "Restart & install".
-```
+Primary project configuration:
 
-## Packaging Notes
-
-Packaging and desktop distribution follow [Electrobun docs](https://electrobun.dev/docs).
-
-Primary project configuration files:
-
-- `electrobun.config.ts`
-- `vite.config.ts`
-- `package.json`
-
+- `electron.vite.config.ts` — bundler config (main + preload + renderer all via Vite 7)
+- `electron-builder.yml` — packaging, signing, publish config
+- `build-resources/entitlements.mac.plist` — Hardened Runtime entitlements
+- `package.json` — scripts + `main: out/main/index.js`

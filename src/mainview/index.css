@@ -265,6 +265,23 @@ html:not(.dark) .layout-root {
     background: transparent;
   }
 
+  /* Cross-platform window-drag regions. The `app-drag` class makes the element
+     part of the OS-level window drag area; `app-no-drag` opts out (needed for
+     clickable controls inside a drag band). Works under Electron everywhere
+     and under Electrobun on macOS; Electrobun additionally recognizes its own
+     `electrobun-webkit-app-region-*` classes so the two can coexist during
+     migration. */
+  .app-drag {
+    -webkit-app-region: drag;
+  }
+  .app-no-drag {
+    -webkit-app-region: no-drag;
+  }
+  /* Interactive controls inside a drag band must remain clickable. */
+  .app-drag :is(button, a, input, select, textarea, [role="button"]) {
+    -webkit-app-region: no-drag;
+  }
+
   /* Keep text selection enabled for actual text-entry and text-reading surfaces */
   input,
   textarea,

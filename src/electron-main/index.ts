@@ -102,6 +102,8 @@ function sendTrpcEndpointToRenderer(): void {
 }
 
 // --- Window ---------------------------------------------------------------
+const TITLE_BAR_HEIGHT = 36;
+
 function createMainWindow(): BrowserWindow {
 	const isMac = process.platform === "darwin";
 	const wantVibrancy = isMac && effectiveMacOSWindowBlur();
@@ -114,9 +116,8 @@ function createMainWindow(): BrowserWindow {
 		y: DEFAULT_WINDOW_FRAME.y,
 		show: false,
 		autoHideMenuBar: true,
-		// macOS polish — replaces the custom FFI dylib used under Electrobun.
-		// Traffic-light inset matches the old libMacWindowEffects placement
-		// (14x12) so the titlebar layout in the renderer doesn't need to shift.
+		// macOS — traffic-light inset matches the old libMacWindowEffects
+		// placement (14x12) so Layout.tsx doesn't need titlebar adjustments.
 		...(isMac
 			? {
 					titleBarStyle: "hiddenInset",
@@ -125,9 +126,20 @@ function createMainWindow(): BrowserWindow {
 					visualEffectState: "active" as const,
 					transparent: wantVibrancy,
 				}
-			: {}),
-		// Phase 4 adds `titleBarOverlay` and `titleBarStyle: 'hidden'` for the
-		// Windows/Linux caption-button path.
+			: {
+					// Windows + Linux — hide the native frame but ask Electron to
+					// paint native caption buttons (min/max/close) on an overlay.
+					// The renderer leaves room for them using CSS env vars:
+					//   env(titlebar-area-width), env(titlebar-area-x), etc.
+					// `color: '#00000000'` = transparent overlay so our custom
+					// drag band shows through and the caption buttons float on top.
+					titleBarStyle: "hidden",
+					titleBarOverlay: {
+						color: "#00000000",
+						symbolColor: "#888888",
+						height: TITLE_BAR_HEIGHT,
+					},
+				}),
 		webPreferences: {
 			preload: join(__dirname, "../preload/index.js"),
 			sandbox: false,

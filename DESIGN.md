@@ -2,7 +2,7 @@
 
 This document is the **visual source of truth** for Skiller. It is adapted from a Linear-inspired reference. **Implementation** lives in `src/mainview/index.css` (tokens, Inter + features), `src/mainview/index.html` (font loading), and `src/mainview/components/Layout.tsx` (shell). Marketing or landing pages can reuse the same tokens; the desktop app prioritizes **dark** surfaces (`#08090a` canvas → `#0f1011` panel → `#191a1b` elevated).
 
-**Product:** desktop workspace for managing AI agent skills across editors and CLIs. **Audience:** developers, marketers, managers, and other LLM/tooling users.
+**Product:** Skiller — desktop workspace for managing skills across editors and CLIs. **Audience:** developers, marketers, managers, and other LLM/tooling users.
 
 ---
 

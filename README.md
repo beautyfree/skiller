@@ -2,7 +2,7 @@
 
 ![Skiller Hero Banner](docs/images/screenshots/hero.png)
 
-Install, sync, and manage AI agent skills across your coding agents from one desktop app.
+Install, sync, and manage skills with Skiller across your coding agents from one desktop app.
 
 ## Why Skiller
 

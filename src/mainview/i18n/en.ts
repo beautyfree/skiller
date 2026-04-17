@@ -237,7 +237,7 @@ const en = {
     windowBlurOn: "On",
     windowBlurOff: "Off",
     windowBlurLockedByEnv:
-      "Blur is off because AGENTSKILLS_DISABLE_WINDOW_BLUR is set. Your choice is still saved for next launch without it.",
+      "Blur is off because window blur was disabled via environment variable. Your choice is still saved for next launch without it.",
     // Language
     language: "Language",
     // App Updates
@@ -260,8 +260,8 @@ const en = {
     cacheDescription: "Marketplace results are cached locally for 5 minutes. Clear the cache to force a fresh fetch.",
     clearCache: "Clear Cache",
     cleared: "Cleared",
-    // Agent Paths
-    agentSkillPaths: "Agent Skill Paths",
+    // Per-agent skill paths (Skiller)
+    skillerPaths: "Skiller Paths",
     agentPathsDescription: "Default skill directories for each agent.",
     revealInFinder: "Reveal in Finder",
     about: "About",

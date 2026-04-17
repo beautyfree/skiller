@@ -25,7 +25,7 @@ Skiller is a **cross-platform desktop app** (Electron) for installing, syncing, 
 | `assets/icons/` | **Runtime icons**: `AppIcon.iconset/`, `app.icns`, `app.ico`, `app/icon-512.png` |
 | `assets/icons/Skiller.icon/` | **Source only** (Icon Composer): `scripts/build-app-icons.py` reads `Assets/Image.png` via `icon.json` |
 | `build-resources/` | `entitlements.mac.plist` for Hardened Runtime |
-| `scripts/` | `build-app-icons.py`, `normalize-skiller-icon-layer.py`, `repack-dmg.sh`, `notarize.mjs` |
+| `scripts/` | `build-app-icons.py`, `normalize-skiller-icon-layer.py`, `repack-dmg.sh` |
 | `docs/DEVELOPMENT.md` | Setup, HMR, signing, CI, DMG repack — **read before changing release/signing** |
 | `DESIGN.md` | UI tokens and product design notes |
 
@@ -81,7 +81,7 @@ See `docs/DEVELOPMENT.md` for signing env vars and artifact locations.
 | `AGENTSKILLS_TRPC_PORT` | tRPC HTTP port (default `17888`; falls through to +48 on conflict) |
 | `AGENTSKILLS_DEVTOOLS` | Auto-open renderer DevTools on launch (dev only) |
 | `AGENTSKILLS_DISABLE_WINDOW_BLUR` | `1` → force vibrancy off on macOS even if settings say on |
-| `CSC_NAME`, `APPLE_API_KEY_*`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | macOS signing + notarization. See `docs/DEVELOPMENT.md`. |
+| `CSC_NAME`, `APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | macOS signing + notarization. See `docs/DEVELOPMENT.md`. |
 
 ## Further reading
 

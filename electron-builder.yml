@@ -26,9 +26,11 @@ extraResources:
 asarUnpack:
   - "**/*.node"
 
-# After electron-builder signs the .app, we notarize and staple it ourselves
-# via the hook below.
-afterSign: scripts/notarize.mjs
+# Notarization: electron-builder 26+ handles it natively when the expected env
+# vars are present (APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER for the
+# API-key flow; APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID as
+# fallback). No afterSign hook needed — running our own notarize.mjs on top
+# would just re-submit the already-notarized bundle.
 
 mac:
   category: public.app-category.developer-tools

@@ -103,7 +103,6 @@ type PushListener = (payload: unknown) => void
 const g = globalThis as typeof globalThis & {
   __skillerPushHub?: Map<string, Set<PushListener>>
   __skillerPushBooted?: boolean
-  __skillerElectrobunRpc?: unknown
 }
 
 function getHub(): Map<string, Set<PushListener>> {
@@ -139,57 +138,25 @@ async function bootPushTransport(): Promise<void> {
   if (g.__skillerPushBooted) return
   g.__skillerPushBooted = true
 
-  if (isElectronHost()) {
-    window.api!.on(ELECTRON_PUSH_CHANNEL, (...args: unknown[]) => {
-      const msg = args[0] as { name?: string; payload?: unknown } | undefined
-      if (!msg || typeof msg.name !== 'string') return
-      if (msg.name === 'trpc_endpoint') {
-        const baseUrl = (msg.payload as { baseUrl?: string } | undefined)?.baseUrl
-        if (typeof baseUrl === 'string' && baseUrl.length > 0) {
-          window.__SKILLER_TRPC_BASE_URL__ = baseUrl
-        }
-      }
-      dispatchPush(msg.name, msg.payload)
-    })
+  if (!isElectronHost()) {
+    // Running under plain Vite (`vite dev` with no Electron shell) — no push
+    // transport is available. tRPC queries still work because they go over
+    // HTTP directly to whatever server the developer has running.
+    console.debug('[native] no Electron preload — push transport disabled')
     return
   }
 
-  // Legacy Electrobun path. Imported lazily so the Electron renderer bundle
-  // does not pull in electrobun/view (which references WKWebView globals).
-  try {
-    const { Electroview } = await import('electrobun/view')
-    const rpc = Electroview.defineRPC<AppRPCSchema>({
-      maxRequestTime: 300_000,
-      handlers: { requests: {}, messages: {} },
-    } as Parameters<typeof Electroview.defineRPC<AppRPCSchema>>[0])
-    new Electroview({ rpc })
-    g.__skillerElectrobunRpc = rpc
-
-    rpc.addMessageListener('trpc_endpoint', (payload: { baseUrl?: string }) => {
-      if (typeof payload?.baseUrl === 'string' && payload.baseUrl.length > 0) {
-        window.__SKILLER_TRPC_BASE_URL__ = payload.baseUrl
+  window.api!.on(ELECTRON_PUSH_CHANNEL, (...args: unknown[]) => {
+    const msg = args[0] as { name?: string; payload?: unknown } | undefined
+    if (!msg || typeof msg.name !== 'string') return
+    if (msg.name === 'trpc_endpoint') {
+      const baseUrl = (msg.payload as { baseUrl?: string } | undefined)?.baseUrl
+      if (typeof baseUrl === 'string' && baseUrl.length > 0) {
+        window.__SKILLER_TRPC_BASE_URL__ = baseUrl
       }
-      dispatchPush('trpc_endpoint', payload)
-    })
-
-    // Fan every other known message name into the shared hub so `listen()`
-    // callers get a uniform API regardless of host.
-    const messageNames: BunPushMessage[] = [
-      'skills_changed',
-      'repo_progress',
-      'skill_update_progress',
-      'shell_runtime_changed',
-      'app_update_status_changed',
-      'close_requested',
-    ]
-    for (const name of messageNames) {
-      rpc.addMessageListener(name, (payload: unknown) => {
-        dispatchPush(name, payload)
-      })
     }
-  } catch (err) {
-    console.warn('[native] push transport unavailable:', err)
-  }
+    dispatchPush(msg.name, msg.payload)
+  })
 }
 
 // Fire-and-forget — any `listen()` call races with this; missed events during

@@ -46,5 +46,3 @@ artifacts
 # OS files
 Thumbs.db
 
-# Built on macOS (bun run build:native-effects)
-src/bun/libMacWindowEffects.dylib

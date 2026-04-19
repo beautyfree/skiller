@@ -5,7 +5,11 @@ global_paths = ["~/.warp/skills"]
 skill_format = "skill-md"
 install_command = "brew install --cask warp"
 install_command_windows = "winget install Warp.Warp"
+# Linux: Warp publishes deb/rpm/pkg.tar.zst via their APT/YUM repos. The
+# docs page covers every distro's package-manager recipe — safer than
+# hardcoding a single distro's commands here.
 install_docs_url = "https://www.warp.dev/"
+install_docs_url_linux = "https://docs.warp.dev/getting-started/installation-and-setup"
 install_source_label = "official-site"
 detect_paths = ["/Applications/Warp.app", "~/AppData/Roaming/warp/Warp", "~/.local/share/warp-terminal"]
 

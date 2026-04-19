@@ -6,5 +6,9 @@ skill_format = "skill-md"
 cli_command = "windsurf"
 install_command = "brew install --cask windsurf"
 install_command_windows = "winget install Codeium.Windsurf"
+# Linux: Windsurf ships AppImage, deb, and tar.gz + GPG-signed apt/yum repos.
+# Their download page renders distro-specific one-liners (e.g. apt vs dnf vs
+# tarball), so we route the user there instead of hardcoding one flavor.
 install_docs_url = "https://formulae.brew.sh/cask/windsurf"
+install_docs_url_linux = "https://windsurf.com/editor/download-linux"
 install_source_label = "homebrew-cask"

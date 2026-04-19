@@ -6,5 +6,8 @@ skill_format = "skill-md"
 cli_command = "qodercli"
 install_command = "brew install qoderai/qoder/qodercli --cask"
 install_command_windows = "npm install -g @qoder-ai/qodercli"
+# qodercli is a cross-platform npm package — the Windows command works as-is
+# on Linux too.
+install_command_linux = "npm install -g @qoder-ai/qodercli"
 install_docs_url = "https://docs.qoder.com/cli/quick-start"
 install_source_label = "official-docs"

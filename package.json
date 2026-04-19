@@ -1,6 +1,6 @@
 {
   "name": "skiller",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "A desktop app for managing AI agent skills across Claude Code, Cursor, Copilot, Gemini CLI, and more",
   "license": "MIT",
   "author": {
@@ -21,7 +21,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit",
     "dist:mac": "electron-vite build && electron-builder --mac && bash scripts/repack-dmg.sh",
     "dist:win": "electron-vite build && electron-builder --win",
-    "dist:linux": "electron-vite build && electron-builder --linux"
+    "dist:linux": "electron-vite build && electron-builder --linux && node scripts/patch-appimage-runtime.mjs artifacts"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",

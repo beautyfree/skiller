@@ -163,6 +163,7 @@ jobs:
             artifacts/*.exe
             artifacts/*.AppImage
             artifacts/*.deb
+            artifacts/*.tar.xz
             artifacts/*.yml
             artifacts/*.blockmap
           fail_on_unmatched_files: false

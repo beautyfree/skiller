@@ -1,24 +1,29 @@
+#!/usr/bin/env node
 /**
- * electron-builder `afterAllArtifactBuild` hook.
+ * Standalone CLI — patches every `*.AppImage` in the given directory to use
+ * the static runtime from AppImage/type2-runtime, then rewrites matching
+ * entries in `latest-linux.yml` so electron-updater's sha512 check still
+ * passes.
  *
- * Swaps the ELF runtime at the head of every produced AppImage with the
- * static runtime from https://github.com/AppImage/type2-runtime. That runtime
- * ships with squashfuse compiled in, so the resulting AppImage launches on
- * systems that have libfuse2, libfuse3, or no FUSE at all — which matters
- * most for Arch-based distros (CachyOS, Manjaro, EndeavourOS) where libfuse2
- * is not preinstalled.
+ * Usage:
+ *   node scripts/patch-appimage-runtime.mjs <artifacts-dir>
  *
- * AppImage layout (type 2):
- *   [ ELF runtime (~180 KB) | squashfs FS image ('hsqs' magic) ]
+ * Designed to run AFTER `electron-builder --linux` has finished producing
+ * both the AppImage and the update manifest (electron-builder's own
+ * `afterAllArtifactBuild` hook fires before the manifest is written, so we
+ * invoke this at the `dist:linux` npm-script level instead).
  *
- * We locate the squashfs magic, drop everything before it, prepend the new
- * runtime. Then we recompute sha512 + size and patch `latest-linux.yml` so
- * electron-updater's signature check keeps passing.
+ * Why we patch: the stock AppImage runtime electron-builder ships dynamically
+ * links against libfuse.so.2. Arch-based distros (CachyOS, Manjaro,
+ * EndeavourOS) ship fuse3 by default, so double-clicking a stock AppImage
+ * there fails with "dlopen failed for libfuse.so.2". The static runtime
+ * bundles squashfuse, falls back to extract-and-run where kernel FUSE is
+ * unavailable, and works on every distro.
  */
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { chmod, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import YAML from "yaml";
 
 const STATIC_RUNTIME_URL =
@@ -30,9 +35,7 @@ const RUNTIME_CACHE_PATH = join(RUNTIME_CACHE_DIR, "appimage-runtime-x86_64");
 const SQUASHFS_MAGIC = Buffer.from([0x68, 0x73, 0x71, 0x73]);
 
 async function downloadStaticRuntime() {
-	if (existsSync(RUNTIME_CACHE_PATH)) {
-		return RUNTIME_CACHE_PATH;
-	}
+	if (existsSync(RUNTIME_CACHE_PATH)) return RUNTIME_CACHE_PATH;
 	await mkdir(RUNTIME_CACHE_DIR, { recursive: true });
 	console.log(
 		`[patch-appimage] downloading static runtime from ${STATIC_RUNTIME_URL}`,
@@ -75,7 +78,7 @@ async function patchAppImage(appImagePath) {
 async function updateLatestLinuxYaml(ymlPath, appImageName, patched) {
 	if (!existsSync(ymlPath)) {
 		console.log(
-			`[patch-appimage] ${basename(ymlPath)} not found — skipping manifest update`,
+			`[patch-appimage] ${basename(ymlPath)} not found — skipping manifest update (auto-update will not work on Linux)`,
 		);
 		return;
 	}
@@ -109,12 +112,21 @@ async function updateLatestLinuxYaml(ymlPath, appImageName, patched) {
 	}
 }
 
-export default async function afterAllArtifactBuild(buildResult) {
-	const appImages = (buildResult?.artifactPaths ?? []).filter((p) =>
-		p.endsWith(".AppImage"),
-	);
+async function main() {
+	const dir = resolve(process.argv[2] ?? "artifacts");
+	if (!existsSync(dir)) {
+		console.log(
+			`[patch-appimage] directory ${dir} does not exist — nothing to do`,
+		);
+		return;
+	}
+	const entries = await readdir(dir);
+	const appImages = entries
+		.filter((e) => e.endsWith(".AppImage"))
+		.map((e) => join(dir, e));
 	if (appImages.length === 0) {
-		return [];
+		console.log(`[patch-appimage] no .AppImage files in ${dir}`);
+		return;
 	}
 
 	for (const appImagePath of appImages) {
@@ -122,7 +134,9 @@ export default async function afterAllArtifactBuild(buildResult) {
 		const ymlPath = join(dirname(appImagePath), "latest-linux.yml");
 		await updateLatestLinuxYaml(ymlPath, basename(appImagePath), patched);
 	}
-
-	// Don't advertise additional artifacts — we mutated existing ones in place.
-	return [];
 }
+
+void main().catch((err) => {
+	console.error("[patch-appimage] FAILED:", err);
+	process.exit(1);
+});

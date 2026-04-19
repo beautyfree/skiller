@@ -6,5 +6,9 @@ skill_format = "skill-md"
 cli_command = "trae"
 install_command = "brew install --cask trae"
 install_command_windows = "winget install ByteDance.Trae"
+# Trae has no native Linux desktop build as of 2026 (only macOS, Windows, and
+# the web-based Cloud IDE). No install_command_linux — the UI hides the copy-
+# command block and points the user at the web IDE via docs URL.
 install_docs_url = "https://formulae.brew.sh/cask/trae"
+install_docs_url_linux = "https://www.trae.ai/download"
 install_source_label = "homebrew-cask"

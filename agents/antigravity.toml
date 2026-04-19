@@ -6,7 +6,12 @@ skill_format = "skill-md"
 cli_command = "antigravity"
 install_command = "brew install --cask antigravity"
 install_command_windows = "winget install Google.Antigravity"
+# Linux: Google ships .deb and .tar.gz from their official download page but
+# doesn't publish a stable one-liner install script we can hardcode. Leave the
+# command empty — the UI hides the "copy install command" block when null and
+# shows the docs-URL button instead, which points to the Linux download page.
 install_docs_url = "https://formulae.brew.sh/cask/antigravity"
+install_docs_url_linux = "https://antigravity.google/download/linux"
 install_source_label = "homebrew-cask"
 
 [[additional_readable_paths]]

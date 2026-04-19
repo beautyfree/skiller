@@ -13,6 +13,7 @@ import { parse as parseToml } from "@iarna/toml";
 import simpleGit from "simple-git";
 import type { SkillJson } from "../shared/rpc-schema";
 import type { RepoEntryJson } from "../shared/rpc-schema";
+import { computeSkillFootprint } from "../shared/skill-footprint";
 import { installSkillFromPath } from "./install";
 import { parseSkillMdFile } from "./parser";
 import { writeProvenance } from "./provenance";
@@ -172,6 +173,14 @@ function listRepoSkillsSync(repoIdParam: string): Skill[] {
 
 		const dirName = basename(candidate.dir) || "unknown-skill";
 		const skillName = candidate.parsed_name ?? dirName;
+		const fp = computeSkillFootprint({
+			description: parsed.description,
+			when_to_use: parsed.when_to_use,
+			disable_model_invocation: parsed.disable_model_invocation,
+			skill_md_char_count: parsed.skill_md_char_count,
+			display_name: skillName,
+			skill_id: dirName,
+		});
 
 		const source = repoUrl
 			? ({
@@ -188,12 +197,18 @@ function listRepoSkillsSync(repoIdParam: string): Skill[] {
 			id: dirName,
 			name: skillName,
 			description: parsed.description,
+			when_to_use: parsed.when_to_use ?? null,
 			canonical_path: candidate.dir,
 			source,
 			metadata: parsed.metadata,
 			collection: null,
 			scope: { kind: "SharedGlobal" },
 			installations: [],
+			footprint_listing_source_chars: fp.footprint_listing_source_chars,
+			footprint_listing_slice_chars: fp.footprint_listing_slice_chars,
+			footprint_name_chars: fp.footprint_name_chars,
+			footprint_skill_md_chars: fp.footprint_skill_md_chars,
+			listing_excluded: fp.listing_excluded,
 		});
 	}
 

@@ -25,5 +25,5 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
-  "exclude": ["src/electron-main", "src/preload"]
+  "exclude": ["src/electron-main", "src/preload", "**/*.test.ts", "**/*.test.tsx"]
 }

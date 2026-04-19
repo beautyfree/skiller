@@ -20,5 +20,6 @@
     "src/preload/**/*",
     "src/main/**/*",
     "src/shared/**/*"
-  ]
+  ],
+  "exclude": ["**/*.test.ts", "**/*.test.tsx"]
 }

@@ -1,11 +1,28 @@
 import { readFileSync, statSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
 
+function parseFrontmatterBool(v: unknown): boolean | undefined {
+	if (v === true) return true;
+	if (v === false) return false;
+	if (typeof v === "string") {
+		const s = v.trim().toLowerCase();
+		if (s === "true" || s === "1" || s === "yes") return true;
+		if (s === "false" || s === "0" || s === "no") return false;
+	}
+	return undefined;
+}
+
 export type ParsedSkillMd = {
 	name?: string;
 	description?: string;
+	/** Combined with description for listing-size estimates (capped per skill in footprint). */
+	when_to_use?: string;
+	/** When true, description slice is omitted from normal listing (manual invoke). */
+	disable_model_invocation?: boolean;
 	metadata?: unknown;
 	body: string;
+	/** Full SKILL.md character count (entire file). */
+	skill_md_char_count: number;
 };
 
 type ParsedSkillCacheEntry = {
@@ -59,10 +76,22 @@ export function parseSkillMdFile(path: string): ParsedSkillMd {
 
 export function parseSkillMdContent(content: string): ParsedSkillMd {
 	const { fm, body } = splitFrontmatter(content);
+	const whenRaw =
+		typeof fm.when_to_use === "string"
+			? fm.when_to_use
+			: typeof (fm as { whenToUse?: unknown }).whenToUse === "string"
+				? ((fm as { whenToUse: string }).whenToUse as string)
+				: undefined;
+	const disableRaw =
+		parseFrontmatterBool(fm.disable_model_invocation) ??
+		parseFrontmatterBool((fm as { disableModelInvocation?: unknown }).disableModelInvocation);
 	return {
 		name: typeof fm.name === "string" ? fm.name : undefined,
 		description: typeof fm.description === "string" ? fm.description : undefined,
+		when_to_use: whenRaw,
+		disable_model_invocation: disableRaw,
 		metadata: fm.metadata,
 		body,
+		skill_md_char_count: content.length,
 	};
 }

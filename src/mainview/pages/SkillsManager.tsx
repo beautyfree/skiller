@@ -28,8 +28,15 @@ import {
   Users,
   MoreHorizontal,
   Trash2,
+  LayoutList,
+  FileText,
+  Ban,
 } from "lucide-react";
 import { invoke, listen, revealItemInDir, openUrl } from "@/mainview/lib/native";
+import {
+	approxTokensFromChars,
+	formatApproxTok,
+} from "@/shared/skill-footprint";
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { useSkills, installedAgents, allAgents, type Skill } from "@/mainview/hooks/useSkills";
 import { SkillAgentList, installedAgentCount, busyKey, type BusyOp } from "@/mainview/components/SkillAgentList";
@@ -186,7 +193,6 @@ export default function SkillsManager() {
   const { data: skills, isLoading } = useSkills();
   const { data: agents } = useAgents();
   const { data: repos } = useRepos();
-
   // Fetch skills from all subscribed repos
   const repoSkillQueries = useQueries({
     queries: (repos ?? []).map((repo) => ({
@@ -287,6 +293,21 @@ export default function SkillsManager() {
       : available?.filter((s) => allAgents(s).includes(filter));
     return byAgent?.filter((s) => matchesInstallFilter(s, installFilter));
   }, [mergedSkills, filter, installFilter]);
+
+  /** Sum of listing-slice ~tok and full-file ~tok for skills visible under the agent filter (no budget / caps in UI). */
+  const agentTokenTotals = useMemo(() => {
+    if (filter === "all" || !listWithoutSearch?.length) return null;
+    let sumListingChars = 0;
+    let sumFullChars = 0;
+    for (const s of listWithoutSearch) {
+      sumListingChars += s.footprint_listing_slice_chars ?? 0;
+      sumFullChars += s.footprint_skill_md_chars ?? 0;
+    }
+    return {
+      listingTok: approxTokensFromChars(sumListingChars),
+      fullTok: approxTokensFromChars(sumFullChars),
+    };
+  }, [filter, listWithoutSearch]);
 
   // Apply ?skill= deep link or auto-select first row when nothing is selected (deps exclude selectedId so closing the panel does not re-trigger auto-select)
   useEffect(() => {
@@ -680,6 +701,29 @@ export default function SkillsManager() {
           placeholder={t("skills.filterPlaceholder")}
           debounce={0}
         />
+
+        {filter !== "all" && agentTokenTotals && (
+          <div
+            className="flex items-center justify-center gap-3 rounded-xl border border-border/50 bg-muted/25 px-2 py-1.5"
+            title={t("skills.agentTokensBarOverview")}
+          >
+            <div
+              className="flex cursor-help items-center gap-1.5 text-[11px] font-medium tabular-nums text-foreground/90"
+              title={t("skills.agentTokenTooltipListingSum")}
+            >
+              <LayoutList className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <span>{formatApproxTok(agentTokenTotals.listingTok)}</span>
+            </div>
+            <span className="h-3 w-px shrink-0 bg-border" aria-hidden />
+            <div
+              className="flex cursor-help items-center gap-1.5 text-[11px] font-medium tabular-nums text-foreground/90"
+              title={t("skills.agentTokenTooltipFullSum")}
+            >
+              <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <span>{formatApproxTok(agentTokenTotals.fullTok)}</span>
+            </div>
+          </div>
+        )}
         </div>
 
         {/* Skill list (virtualized) */}
@@ -1049,7 +1093,7 @@ const CollectionItem = memo(function CollectionItem({
               {directSlugs.map((slug) => (
                 <span
                   key={slug}
-                  className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground"
+                  className="rounded-full border border-border bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground"
                 >
                   {agents?.find((a) => a.slug === slug)?.name ?? slug}
                 </span>
@@ -1057,7 +1101,7 @@ const CollectionItem = memo(function CollectionItem({
               {inheritedSlugs.map((slug) => (
                 <span
                   key={slug}
-                  className="rounded-full border border-dashed border-muted-foreground/30 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                  className="rounded-full border border-muted-foreground/35 bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
                 >
                   {agents?.find((a) => a.slug === slug)?.name ?? slug}
                 </span>
@@ -1213,6 +1257,31 @@ const SkillListItem = memo(function SkillListItem({
             {skill.description}
           </p>
         )}
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-medium tabular-nums text-muted-foreground/90">
+          <span
+            className="inline-flex cursor-help items-center gap-0.5"
+            title={t("skills.tokenTooltipListing")}
+          >
+            <LayoutList className="size-3 shrink-0 opacity-80" aria-hidden />
+            {formatApproxTok(approxTokensFromChars(skill.footprint_listing_slice_chars ?? 0))}
+          </span>
+          <span className="text-border">·</span>
+          <span
+            className="inline-flex cursor-help items-center gap-0.5"
+            title={t("skills.tokenTooltipFull")}
+          >
+            <FileText className="size-3 shrink-0 opacity-80" aria-hidden />
+            {formatApproxTok(approxTokensFromChars(skill.footprint_skill_md_chars ?? 0))}
+          </span>
+          {(skill.listing_excluded ?? false) && (
+            <span
+              className="inline-flex cursor-help items-center gap-0.5 text-muted-foreground/70"
+              title={t("skills.listingExcludedTooltip")}
+            >
+              <Ban className="size-3 shrink-0" aria-hidden />
+            </span>
+          )}
+        </div>
         {inheritedOnly && (
           <p className="mt-1 text-[11px] text-muted-foreground/80">
             {t("skills.inheritedOnlyHint")}
@@ -1222,7 +1291,7 @@ const SkillListItem = memo(function SkillListItem({
           {directSlugs.map((slug) => (
             <span
               key={slug}
-              className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground"
+              className="rounded-full border border-border bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground"
             >
               {agents?.find((a) => a.slug === slug)?.name ?? slug}
             </span>
@@ -1230,7 +1299,7 @@ const SkillListItem = memo(function SkillListItem({
           {inheritedSlugs.map((slug) => (
             <span
               key={slug}
-              className="rounded-full border border-dashed border-muted-foreground/30 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+              className="rounded-full border border-muted-foreground/35 bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
             >
               {agents?.find((a) => a.slug === slug)?.name ?? slug}
             </span>
@@ -1492,6 +1561,40 @@ function SkillDetail({
                 ? t("skills.scopeGlobal")
                 : t("skills.scopeLocal", { name: detectedAgents.find((a) => a.slug === (skill.scope as { agent: string }).agent)?.name ?? "Local" })}
             </span>
+            <span className="self-center text-xs text-muted-foreground">{t("skills.packageSizeLabel")}</span>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 self-center text-[11px] font-medium tabular-nums text-foreground/90">
+              <span
+                className="inline-flex cursor-help items-center gap-1"
+                title={t("skills.tokenTooltipListing")}
+              >
+                <LayoutList className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+                {formatApproxTok(approxTokensFromChars(skill.footprint_listing_slice_chars ?? 0))}
+              </span>
+              <span className="text-muted-foreground/40 select-none" aria-hidden>
+                ·
+              </span>
+              <span
+                className="inline-flex cursor-help items-center gap-1"
+                title={t("skills.tokenTooltipFull")}
+              >
+                <FileText className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+                {formatApproxTok(approxTokensFromChars(skill.footprint_skill_md_chars ?? 0))}
+              </span>
+              {(skill.listing_excluded ?? false) && (
+                <>
+                  <span className="text-muted-foreground/40 select-none" aria-hidden>
+                    ·
+                  </span>
+                  <span
+                    className="inline-flex cursor-help items-center gap-0.5 font-normal text-muted-foreground"
+                    title={t("skills.listingExcludedTooltip")}
+                  >
+                    <Ban className="size-3 shrink-0" aria-hidden />
+                    {t("skills.listingExcludedShort")}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         </DetailSection>
 

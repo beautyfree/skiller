@@ -170,6 +170,20 @@ const en = {
     skillRowMenu: "Skill actions",
     expandCollection: "Expand collection",
     collapseCollection: "Collapse collection",
+    packageSizeLabel: "Size",
+    tokenTooltipListing:
+      "Listing side: description + when_to_use (capped per skill). Approximate tokens = character count ÷ 4; not your model tokenizer.",
+    tokenTooltipFull:
+      "Full skill file (SKILL.md). Approximate tokens = character count ÷ 4; not your model tokenizer.",
+    agentTokensBarOverview:
+      "Approximate token totals for skills in this view. Hover each value for what it measures.",
+    agentTokenTooltipListingSum:
+      "Sum of listing-side estimates: each skill’s description + when_to_use slice (capped), then chars ÷ 4.",
+    agentTokenTooltipFullSum:
+      "Sum of full-file estimates: entire SKILL.md per skill, chars ÷ 4.",
+    listingExcludedTooltip:
+      "Hidden from the agent’s automatic skill list; invoke manually if your tool supports it.",
+    listingExcludedShort: "Excluded from listing",
   },
 
   // === Marketplace ===

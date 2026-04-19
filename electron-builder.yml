@@ -26,6 +26,12 @@ extraResources:
 asarUnpack:
   - "**/*.node"
 
+# After every platform finishes, run post-processing. Currently: swap the
+# stock AppImage runtime for the static one from AppImage/type2-runtime so
+# the AppImage works on distros without libfuse2 (CachyOS and other Arch
+# spin-offs). Also recomputes sha512/size in latest-linux.yml.
+afterAllArtifactBuild: scripts/patch-appimage-runtime.mjs
+
 # Notarization: electron-builder 26+ handles it natively when the expected env
 # vars are present (APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER for the
 # API-key flow; APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID as

@@ -74,6 +74,16 @@ linux:
   # explicit so we don't get bitten again if someone simplifies the author
   # field back to a plain string.
   maintainer: "Skiller Contributors <skiller@beautyfree.dev>"
+  # Dropped alongside the executable. Only relevant for the `tar.xz` target:
+  # .deb runs its own postinst chmod, AppImage's runtime handles sandbox via
+  # bind-mount. The tar.xz install flow is:
+  #   tar xf Skiller-*.tar.xz
+  #   cd Skiller-*
+  #   ./install.sh   # chmods chrome-sandbox, registers .desktop entry
+  # `install.sh` bytes come from `build-resources/linux-install.sh`.
+  extraFiles:
+    - from: build-resources/linux-install.sh
+      to: install.sh
   target:
     - target: AppImage
       arch: [x64]

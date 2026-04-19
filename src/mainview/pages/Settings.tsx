@@ -24,6 +24,8 @@ interface AppSettings {
   path_overrides: Record<string, string[]> | null
   close_action: string | null
   macos_window_blur?: boolean | null
+  assumed_listing_char_budget?: number | null
+  assumed_context_window_chars?: number | null
 }
 
 const DEFAULT_SETTINGS: AppSettings = {

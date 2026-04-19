@@ -22,12 +22,18 @@ export type SkillJson = {
   id: string;
   name: string;
   description?: string | null;
+  when_to_use?: string | null;
   canonical_path: string;
   source?: SkillSourceJson | null;
   metadata?: unknown;
   collection?: string | null;
   scope: SkillScopeJson;
   installations: SkillInstallationJson[];
+  footprint_listing_source_chars?: number | null;
+  footprint_listing_slice_chars?: number | null;
+  footprint_name_chars?: number | null;
+  footprint_skill_md_chars?: number | null;
+  listing_excluded?: boolean | null;
 };
 
 export type AgentConfigJson = {
@@ -64,6 +70,10 @@ export type AppSettingsJson = {
   close_action?: string | null;
   /** macOS translucent window + NSVisualEffectView; default true when omitted */
   macos_window_blur?: boolean | null;
+  /** Optional global character budget for aggregated listing text (legacy / advanced use). */
+  assumed_listing_char_budget?: number | null;
+  /** Optional context window size (chars); 1% can derive a listing budget when budget is unset. */
+  assumed_context_window_chars?: number | null;
 };
 
 export type MarketplaceSkillJson = {

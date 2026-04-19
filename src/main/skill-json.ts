@@ -43,12 +43,18 @@ export function skillToJson(s: Skill): SkillJson {
 		id: s.id,
 		name: s.name,
 		description: s.description ?? null,
+		when_to_use: s.when_to_use ?? null,
 		canonical_path: s.canonical_path,
 		source: s.source ? skillSourceToJson(s.source) : null,
 		metadata: s.metadata ?? null,
 		collection: s.collection ?? null,
 		scope: skillScopeToJson(s.scope),
 		installations: s.installations.map(skillInstallationToJson),
+		footprint_listing_source_chars: s.footprint_listing_source_chars,
+		footprint_listing_slice_chars: s.footprint_listing_slice_chars,
+		footprint_name_chars: s.footprint_name_chars,
+		footprint_skill_md_chars: s.footprint_skill_md_chars,
+		listing_excluded: s.listing_excluded,
 	};
 }
 

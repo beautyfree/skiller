@@ -17,12 +17,19 @@ export interface Skill {
   id: string;
   name: string;
   description: string | null;
+  when_to_use?: string | null;
   canonical_path: string;
   source: unknown;
   metadata: unknown;
   collection: string | null;
   scope: SkillScope;
   installations: SkillInstallation[];
+  /** Listing estimate: raw len(description + when_to_use) before per-skill cap. */
+  footprint_listing_source_chars?: number;
+  footprint_listing_slice_chars?: number;
+  footprint_name_chars?: number;
+  footprint_skill_md_chars?: number;
+  listing_excluded?: boolean;
 }
 
 /** Direct (non-inherited) agent slugs */

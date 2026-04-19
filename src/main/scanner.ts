@@ -1,5 +1,7 @@
 import { existsSync, lstatSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { computeSkillFootprint } from "../shared/skill-footprint";
+import type { ParsedSkillMd } from "./parser";
 import type { AgentConfig } from "./types";
 import { parseSkillMdFile } from "./parser";
 import { readProvenanceRaw } from "./provenance";
@@ -96,6 +98,25 @@ function collectionFromRealPath(realOrLink: string, skillsRoot: string): string 
 	return undefined;
 }
 
+function listingFootprintFromParsed(parsed: ParsedSkillMd, rawName: string, dirName: string) {
+	const fp = computeSkillFootprint({
+		description: parsed.description,
+		when_to_use: parsed.when_to_use,
+		disable_model_invocation: parsed.disable_model_invocation,
+		skill_md_char_count: parsed.skill_md_char_count,
+		display_name: rawName,
+		skill_id: dirName,
+	});
+	return {
+		when_to_use: parsed.when_to_use ?? null,
+		footprint_listing_source_chars: fp.footprint_listing_source_chars,
+		footprint_listing_slice_chars: fp.footprint_listing_slice_chars,
+		footprint_name_chars: fp.footprint_name_chars,
+		footprint_skill_md_chars: fp.footprint_skill_md_chars,
+		listing_excluded: fp.listing_excluded,
+	};
+}
+
 function resolveSource(
 	skillId: string,
 	canonical: string,
@@ -173,6 +194,7 @@ function scanInheritedRoot(
 		const dirName = basename(skillDir);
 		const collection = detectCollection(skillDir, root);
 		const skillName = parsed.name ?? dirName;
+		const fp = listingFootprintFromParsed(parsed, skillName, dirName);
 
 		const installation: SkillInstallation = {
 			agent_slug: agent.slug,
@@ -186,6 +208,7 @@ function scanInheritedRoot(
 			id: dirName,
 			name: skillName,
 			description: parsed.description,
+			...fp,
 			canonical_path: canonical,
 			source: resolveSource(dirName, canonical, provenance),
 			metadata: parsed.metadata,
@@ -234,6 +257,7 @@ function scanSkillMdRoot(
 		const symlink = isSymlink(skillDir);
 		const collection = detectCollection(skillDir, root);
 		const skillId = dirName;
+		const fp = listingFootprintFromParsed(parsed, rawName, dirName);
 
 		const installation: SkillInstallation = {
 			agent_slug: agent.slug,
@@ -249,6 +273,7 @@ function scanSkillMdRoot(
 			id: skillId,
 			name: rawName,
 			description: parsed.description,
+			...fp,
 			canonical_path: canonical,
 			source: resolveSource(skillId, canonical, provenance),
 			metadata: parsed.metadata,

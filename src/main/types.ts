@@ -30,7 +30,9 @@ export interface AgentConfig {
 	cli_command?: string | null;
 	install_command?: string | null;
 	install_command_windows?: string | null;
+	install_command_linux?: string | null;
 	install_docs_url?: string | null;
+	install_docs_url_linux?: string | null;
 	install_source_label?: string | null;
 	detect_paths: string[];
 	detected: boolean;

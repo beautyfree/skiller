@@ -11,7 +11,12 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { getAgentIcon } from "@/mainview/lib/agentIcons";
-import { useAgents } from "@/mainview/hooks/useAgents";
+import {
+  getInstallCommand,
+  getInstallDocsUrl,
+  useAgents,
+  type AgentConfig,
+} from "@/mainview/hooks/useAgents";
 import { useSkills, installedAgents } from "@/mainview/hooks/useSkills";
 import LiquidGlass from "@/mainview/components/LiquidGlass";
 import { Button } from "@/mainview/components/ui/button";
@@ -393,16 +398,7 @@ function InstallGuideModal({
   agent,
   onClose,
 }: {
-  agent: {
-    slug: string;
-    name: string;
-    cli_command: string | null;
-    install_command: string | null;
-    install_command_windows: string | null;
-    install_docs_url: string | null;
-    install_source_label: string | null;
-    global_paths: string[];
-  } | null;
+  agent: AgentConfig | null;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -449,11 +445,10 @@ function InstallGuideModal({
   }, [agent]);
 
   if (!agent) return null;
-  const isWindows = navigator.userAgent.includes("Windows");
-  const installCommand = (isWindows
-    ? agent.install_command_windows ?? agent.install_command
-    : agent.install_command
-  )?.trim();
+  // Route through the shared helper so Windows/Linux/macOS all get the
+  // correct command (Linux no longer silently falls back to `brew ...`).
+  const installCommand = getInstallCommand(agent)?.trim();
+  const docsUrl = getInstallDocsUrl(agent)?.trim();
 
   function formatInstallSourceLabel(label: string | null): string {
     switch (label) {
@@ -519,12 +514,12 @@ function InstallGuideModal({
           {installCommand ? (
             <CommandBlock label={t("dashboard.installCommand")} command={installCommand} />
           ) : null}
-          {agent.install_docs_url?.trim() ? (
+          {docsUrl ? (
             <Button
               variant="outline"
               size="sm"
               className="w-full"
-              onClick={() => openUrl(agent.install_docs_url!)}
+              onClick={() => openUrl(docsUrl)}
             >
               {t("dashboard.openDocs")}
             </Button>

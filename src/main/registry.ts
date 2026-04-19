@@ -66,7 +66,9 @@ export function loadAgentConfigs(dir: string): AgentConfig[] {
 			cli_command: parsed.cli_command as string | null | undefined,
 			install_command: parsed.install_command as string | null | undefined,
 			install_command_windows: parsed.install_command_windows as string | null | undefined,
+			install_command_linux: parsed.install_command_linux as string | null | undefined,
 			install_docs_url: parsed.install_docs_url as string | null | undefined,
+			install_docs_url_linux: parsed.install_docs_url_linux as string | null | undefined,
 			install_source_label: parsed.install_source_label as string | null | undefined,
 			detect_paths: (parsed.detect_paths as string[] | undefined)?.map((p) => expandHome(p)) ?? [],
 		});

@@ -14,6 +14,9 @@ build
 out
 artifacts
 
+# Cached AppImage static runtime (downloaded by scripts/patch-appimage-runtime.mjs)
+/build-resources/appimage-runtime-*
+
 # TypeScript project references incremental build output
 *.tsbuildinfo
 # Emitted by `tsc --build` for root config files (kept as side-effects)

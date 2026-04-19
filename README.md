@@ -81,7 +81,7 @@ Grab the installer for your OS from the [**latest release**](https://github.com/
 | --- | --- | --- |
 | macOS (Apple Silicon) | `Skiller-<version>-macos-arm64.dmg` | Signed + notarized. Open the DMG and drag Skiller to Applications. |
 | Windows (x64) | `Skiller-<version>-win-x64.exe` | NSIS installer. SmartScreen may show a one-time warning — click "More info" → "Run anyway". |
-| Linux (x64) | `Skiller-<version>-linux-x86_64.AppImage`, `.deb`, or `.tar.xz` | AppImage for most distros (`chmod +x`, run — needs `libfuse2`). `.deb` for Ubuntu/Debian. `.tar.xz` is the no-dependency escape hatch for Arch-based distros (CachyOS, Manjaro, EndeavourOS) — extract, run `./skiller`. |
+| Linux (x64) | `Skiller-<version>-linux-x86_64.AppImage`, `.deb`, or `.tar.xz` | AppImage: `chmod +x`, run — ships a static runtime with squashfuse built in, so no `libfuse2` required (works on CachyOS/Manjaro/EndeavourOS out of the box). `.deb` for Ubuntu/Debian. `.tar.xz` is the no-auto-integration extract-and-run alternative. |
 
 Every release is built and published by the CI matrix in `.github/workflows/release.yml` — tagging `vX.Y.Z` produces all three platforms automatically.
 

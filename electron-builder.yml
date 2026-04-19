@@ -79,6 +79,12 @@ linux:
       arch: [x64]
     - target: deb
       arch: [x64]
+    # Plain tarball — escape hatch for distros where AppImage refuses to run
+    # because of missing libfuse2 (Arch-based like CachyOS, some NixOS setups,
+    # minimal container images). No install, no packaging assumptions: extract,
+    # `./skiller`, done.
+    - target: tar.xz
+      arch: [x64]
 
 # GitHub Releases backend — `dist:*` scripts produce artifacts that CI
 # attaches to the tagged release, which electron-updater then reads in

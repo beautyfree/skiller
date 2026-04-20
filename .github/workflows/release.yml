@@ -56,7 +56,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - label: macos-arm64
+          - label: macos
             runner: macos-14
             script: dist:mac
           - label: windows-x64

@@ -1,0 +1,10 @@
+slug = "kode"
+name = "Kode"
+enabled = true
+project_skills_dir = ".kode/skills"
+global_paths = ["~/.kode/skills"]
+skill_format = "skill-md"
+cli_command = "kode"
+install_command = "npm install -g @shareai-lab/kode"
+install_docs_url = "https://github.com/shareAI-lab/Kode"
+detect_paths = ["~/.kode"]

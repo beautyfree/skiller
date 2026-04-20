@@ -1,0 +1,7 @@
+slug = "mux"
+name = "Mux"
+enabled = true
+project_skills_dir = ".mux/skills"
+global_paths = ["~/.mux/skills"]
+skill_format = "skill-md"
+detect_paths = ["~/.mux"]

@@ -1,6 +1,7 @@
 slug = "qoder"
 name = "Qoder"
 enabled = true
+project_skills_dir = ".qoder/skills"
 global_paths = ["~/.qoder/skills"]
 skill_format = "skill-md"
 cli_command = "qodercli"

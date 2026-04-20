@@ -1,0 +1,8 @@
+slug = "roo"
+name = "Roo Code"
+enabled = true
+project_skills_dir = ".roo/skills"
+global_paths = ["~/.roo/skills"]
+skill_format = "skill-md"
+install_docs_url = "https://roocode.com"
+detect_paths = ["~/.roo"]

@@ -1,0 +1,8 @@
+slug = "pi"
+name = "Pi"
+enabled = true
+project_skills_dir = ".pi/skills"
+global_paths = ["~/.pi/agent/skills"]
+skill_format = "skill-md"
+install_docs_url = "https://shittycodingagent.ai"
+detect_paths = ["~/.pi/agent"]

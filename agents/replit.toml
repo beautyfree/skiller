@@ -1,0 +1,8 @@
+slug = "replit"
+name = "Replit"
+enabled = true
+project_skills_dir = ".agents/skills"
+global_paths = ["~/.config/agents/skills"]
+skill_format = "skill-md"
+install_docs_url = "https://replit.com"
+detect_paths = [".replit"]

@@ -1,6 +1,7 @@
 slug = "windsurf"
 name = "Windsurf"
 enabled = true
+project_skills_dir = ".windsurf/skills"
 global_paths = ["~/.codeium/windsurf/skills"]
 skill_format = "skill-md"
 cli_command = "windsurf"

@@ -1,6 +1,7 @@
 slug = "openclaw"
 name = "OpenClaw"
 enabled = true
+project_skills_dir = "skills"
 global_paths = ["~/.openclaw/skills"]
 skill_format = "skill-md"
 cli_command = "openclaw"

@@ -1,0 +1,8 @@
+slug = "pochi"
+name = "Pochi"
+enabled = true
+project_skills_dir = ".pochi/skills"
+global_paths = ["~/.pochi/skills"]
+skill_format = "skill-md"
+install_docs_url = "https://getpochi.com"
+detect_paths = ["~/.pochi"]

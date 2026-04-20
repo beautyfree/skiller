@@ -1,0 +1,10 @@
+slug = "openhands"
+name = "OpenHands"
+enabled = true
+project_skills_dir = ".openhands/skills"
+global_paths = ["~/.openhands/skills"]
+skill_format = "skill-md"
+cli_command = "openhands"
+install_command = "pip install openhands-ai"
+install_docs_url = "https://docs.all-hands.dev/modules/usage/getting-started"
+detect_paths = ["~/.openhands"]

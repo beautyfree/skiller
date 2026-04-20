@@ -1,6 +1,7 @@
 slug = "cursor"
 name = "Cursor"
 enabled = true
+project_skills_dir = ".agents/skills"
 global_paths = ["~/.cursor/skills"]
 skill_format = "skill-md"
 cli_command = "agent"

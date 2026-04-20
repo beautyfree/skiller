@@ -1,0 +1,8 @@
+slug = "mistral-vibe"
+name = "Mistral Vibe"
+enabled = true
+project_skills_dir = ".vibe/skills"
+global_paths = ["~/.vibe/skills"]
+skill_format = "skill-md"
+install_docs_url = "https://mistral.ai"
+detect_paths = ["~/.vibe"]

@@ -1,6 +1,7 @@
 slug = "antigravity"
 name = "Antigravity"
 enabled = true
+project_skills_dir = ".agents/skills"
 global_paths = ["~/.gemini/antigravity/skills"]
 skill_format = "skill-md"
 cli_command = "antigravity"

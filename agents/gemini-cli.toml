@@ -1,6 +1,7 @@
 slug = "gemini-cli"
 name = "Gemini"
 enabled = true
+project_skills_dir = ".agents/skills"
 global_paths = ["~/.gemini/skills"]
 skill_format = "skill-md"
 cli_command = "gemini"

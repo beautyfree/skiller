@@ -1,6 +1,7 @@
 slug = "factory"
 name = "Factory"
 enabled = true
+project_skills_dir = ".factory/skills"
 global_paths = ["~/.factory/skills"]
 skill_format = "skill-md"
 cli_command = "droid"

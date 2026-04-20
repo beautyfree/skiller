@@ -1,0 +1,7 @@
+slug = "command-code"
+name = "Command Code"
+enabled = true
+project_skills_dir = ".commandcode/skills"
+global_paths = ["~/.commandcode/skills"]
+skill_format = "skill-md"
+detect_paths = ["~/.commandcode"]

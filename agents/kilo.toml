@@ -1,0 +1,8 @@
+slug = "kilo"
+name = "Kilo Code"
+enabled = true
+project_skills_dir = ".kilocode/skills"
+global_paths = ["~/.kilocode/skills"]
+skill_format = "skill-md"
+install_docs_url = "https://kilocode.ai"
+detect_paths = ["~/.kilocode"]

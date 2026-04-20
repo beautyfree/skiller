@@ -1,0 +1,10 @@
+slug = "crush"
+name = "Crush"
+enabled = true
+project_skills_dir = ".crush/skills"
+global_paths = ["~/.config/crush/skills"]
+skill_format = "skill-md"
+cli_command = "crush"
+install_command = "go install github.com/charmbracelet/crush@latest"
+install_docs_url = "https://github.com/charmbracelet/crush"
+detect_paths = ["~/.config/crush"]

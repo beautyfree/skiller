@@ -1,0 +1,7 @@
+slug = "trae-cn"
+name = "Trae CN"
+enabled = true
+project_skills_dir = ".trae/skills"
+global_paths = ["~/.trae-cn/skills"]
+skill_format = "skill-md"
+detect_paths = ["~/.trae-cn"]

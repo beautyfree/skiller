@@ -1,0 +1,10 @@
+slug = "amp"
+name = "Amp"
+enabled = true
+project_skills_dir = ".agents/skills"
+global_paths = ["~/.config/agents/skills"]
+skill_format = "skill-md"
+cli_command = "amp"
+install_command = "npm install -g @sourcegraph/amp"
+install_docs_url = "https://ampcode.com/manual"
+detect_paths = ["~/.config/amp"]

@@ -1,6 +1,7 @@
 slug = "cline"
 name = "Cline"
 enabled = true
+project_skills_dir = ".agents/skills"
 global_paths = ["~/.cline/skills"]
 skill_format = "skill-md"
 cli_command = "cline"

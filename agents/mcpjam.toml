@@ -1,0 +1,9 @@
+slug = "mcpjam"
+name = "MCPJam"
+enabled = true
+project_skills_dir = ".mcpjam/skills"
+global_paths = ["~/.mcpjam/skills"]
+skill_format = "skill-md"
+install_command = "npm install -g @mcpjam/inspector"
+install_docs_url = "https://mcpjam.com"
+detect_paths = ["~/.mcpjam"]

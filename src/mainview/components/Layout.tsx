@@ -10,6 +10,7 @@ import {
   Settings,
   GitBranch,
   FolderOpen,
+  FolderKanban,
 } from 'lucide-react'
 import { AgentIcon } from '@/mainview/components/AgentIcon'
 import { Button } from '@/mainview/components/ui/button'
@@ -20,6 +21,7 @@ import { useResizable } from '@/mainview/hooks/useResizable'
 import ResizeHandle from '@/mainview/components/ResizeHandle'
 import { useAgents } from '@/mainview/hooks/useAgents'
 import { useSkills, allAgents } from '@/mainview/hooks/useSkills'
+import { useProjects } from '@/mainview/hooks/useProjects'
 
 const GITHUB_REPO_URL =
   'https://github.com/beautyfree/skiller-skills-desktop-manager'
@@ -61,6 +63,7 @@ export default function Layout() {
   const pickingFolder = useRef(false)
   const { data: agents, isLoading: agentsLoading } = useAgents()
   const { data: skills, isLoading: skillsLoading } = useSkills()
+  const { data: projects } = useProjects()
   const [searchParams] = useSearchParams()
 
   const detectedAgents = useMemo(
@@ -206,6 +209,16 @@ export default function Layout() {
                   <NavLink to="/marketplace" className={navLinkClass}>
                     <Store className="size-4" aria-hidden="true" />
                     {t('sidebar.marketplace')}
+                  </NavLink>
+
+                  <NavLink to="/projects" className={navLinkClass}>
+                    <FolderKanban className="size-4" aria-hidden="true" />
+                    {t('sidebar.projects')}
+                    {projects && projects.length > 0 && (
+                      <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/60">
+                        {projects.length}
+                      </span>
+                    )}
                   </NavLink>
 
                   {detectedAgents.length > 0 && (

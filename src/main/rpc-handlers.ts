@@ -51,6 +51,22 @@ import {
   removeSkillRepo,
   syncSkillRepo,
 } from './repos'
+import {
+  addProject,
+  addProjectFolder,
+  installMarketplaceSkillToProject,
+  installRepoSkillToProject,
+  installSkillToProjectFromGit,
+  installSkillToProjectFromPath,
+  listProjectFolders,
+  listProjectSkills,
+  listProjects,
+  removeProject,
+  removeProjectFolder,
+  renameProjectFolder,
+  setProjectGroup,
+  uninstallProjectSkill,
+} from './projects'
 import { resolveSkillSourcePath } from './skill-paths'
 import {
   effectiveMacOSWindowBlur,
@@ -508,6 +524,80 @@ export function createRequestHandlers(ctx: {
     reveal_path_in_folder: async (params: { path: string }) => {
       platform.showItemInFolder(params.path)
     },
+    list_projects: async () => listProjects(),
+    add_project: async (params: { path: string }) => addProject(params.path),
+    remove_project: async (params: { path: string }) => {
+      removeProject(params.path)
+    },
+    list_project_skills: async (params: { path: string }) =>
+      listProjectSkills(params.path),
+    install_skill_to_project: async (params: {
+      source: SkillSourceParam
+      projectPath: string
+    }) => {
+      const { source, projectPath } = params
+      const src = skillSourceParamToInternal(source)
+      switch (src.kind) {
+        case 'LocalPath':
+          installSkillToProjectFromPath(src.path, projectPath)
+          return
+        case 'GitRepository': {
+          const rel = src.skill_path?.trim() || '.'
+          await installSkillToProjectFromGit(src.repo_url, rel, projectPath)
+          return
+        }
+        case 'SkillsSh':
+        case 'ClawHub': {
+          const repo = src.repository?.trim()
+          if (!repo) throw new Error('repository url is required')
+          await installSkillToProjectFromGit(repo, '.', projectPath)
+          return
+        }
+        case 'Unknown':
+          throw new Error('unsupported skill source')
+      }
+    },
+    install_repo_skill_to_project: async (params: {
+      repoIdParam: string
+      skillId: string
+      projectPath: string
+    }) => {
+      installRepoSkillToProject(
+        params.repoIdParam,
+        params.skillId,
+        params.projectPath,
+      )
+    },
+    install_marketplace_skill_to_project: async (params: {
+      skill: MarketplaceSkillJson
+      projectPath: string
+    }) => {
+      const s = params.skill
+      const internal: MarketplaceSkill = {
+        name: s.name,
+        description: s.description ?? null,
+        author: s.author ?? null,
+        repository: s.repository ?? null,
+        installs: s.installs ?? null,
+        source: s.source,
+      }
+      await installMarketplaceSkillToProject(internal, params.projectPath)
+    },
+    uninstall_project_skill: async (params: {
+      projectPath: string
+      skillId: string
+    }) => {
+      uninstallProjectSkill(params.projectPath, params.skillId)
+    },
+    set_project_group: async (params: { path: string; group: string | null }) =>
+      setProjectGroup(params.path, params.group),
+    list_project_folders: async () => listProjectFolders(),
+    add_project_folder: async (params: { name: string }) =>
+      addProjectFolder(params.name),
+    remove_project_folder: async (params: { name: string }) =>
+      removeProjectFolder(params.name),
+    rename_project_folder: async (params: { from: string; to: string }) =>
+      renameProjectFolder(params.from, params.to),
   }
 
   return handlers

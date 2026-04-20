@@ -69,6 +69,35 @@ export function createAppRouter(ctx: {
     reveal_path_in_folder: proc.input(anyIn).mutation(({ input }) =>
       h.reveal_path_in_folder(input),
     ),
+    list_projects: proc.query(() => h.list_projects()),
+    add_project: proc.input(anyIn).mutation(({ input }) => h.add_project(input)),
+    remove_project: proc.input(anyIn).mutation(({ input }) => h.remove_project(input)),
+    list_project_skills: proc.input(anyIn).query(({ input }) => h.list_project_skills(input)),
+    install_skill_to_project: proc.input(anyIn).mutation(({ input }) =>
+      h.install_skill_to_project(input),
+    ),
+    install_repo_skill_to_project: proc.input(anyIn).mutation(({ input }) =>
+      h.install_repo_skill_to_project(input),
+    ),
+    install_marketplace_skill_to_project: proc.input(anyIn).mutation(({ input }) =>
+      h.install_marketplace_skill_to_project(input),
+    ),
+    uninstall_project_skill: proc.input(anyIn).mutation(({ input }) =>
+      h.uninstall_project_skill(input),
+    ),
+    set_project_group: proc.input(anyIn).mutation(({ input }) =>
+      h.set_project_group(input),
+    ),
+    list_project_folders: proc.query(() => h.list_project_folders()),
+    add_project_folder: proc.input(anyIn).mutation(({ input }) =>
+      h.add_project_folder(input),
+    ),
+    remove_project_folder: proc.input(anyIn).mutation(({ input }) =>
+      h.remove_project_folder(input),
+    ),
+    rename_project_folder: proc.input(anyIn).mutation(({ input }) =>
+      h.rename_project_folder(input),
+    ),
   })
 }
 

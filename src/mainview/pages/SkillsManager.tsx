@@ -31,6 +31,7 @@ import {
   LayoutList,
   FileText,
   Ban,
+  FolderKanban,
 } from "lucide-react";
 import { invoke, listen, revealItemInDir, openUrl } from "@/mainview/lib/native";
 import {
@@ -49,6 +50,7 @@ import { useResizable } from "@/mainview/hooks/useResizable";
 import ResizeHandle from "@/mainview/components/ResizeHandle";
 import { InsetScrollArea } from "@/mainview/components/InsetScrollArea";
 import { Button } from "@/mainview/components/ui/button";
+import InstallToProjectPicker from "@/mainview/components/InstallToProjectPicker";
 import SearchInput from "@/mainview/components/SearchInput";
 import MarkdownContent from "@/mainview/components/MarkdownContent";
 import { useToast } from "@/mainview/components/ToastProvider";
@@ -1287,24 +1289,11 @@ const SkillListItem = memo(function SkillListItem({
             {t("skills.inheritedOnlyHint")}
           </p>
         )}
-        <div className="flex flex-wrap gap-1 mt-1.5">
-          {directSlugs.map((slug) => (
-            <span
-              key={slug}
-              className="rounded-full border border-border bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground"
-            >
-              {agents?.find((a) => a.slug === slug)?.name ?? slug}
-            </span>
-          ))}
-          {inheritedSlugs.map((slug) => (
-            <span
-              key={slug}
-              className="rounded-full border border-muted-foreground/35 bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
-            >
-              {agents?.find((a) => a.slug === slug)?.name ?? slug}
-            </span>
-          ))}
-        </div>
+        <AgentChipsCompact
+          directSlugs={directSlugs}
+          inheritedSlugs={inheritedSlugs}
+          agents={agents}
+        />
       </button>
       <button
         type="button"
@@ -1372,6 +1361,58 @@ const SkillListItem = memo(function SkillListItem({
     </div>
   );
 });
+
+const AGENT_CHIPS_MAX = 8;
+
+function AgentChipsCompact({
+  directSlugs,
+  inheritedSlugs,
+  agents,
+}: {
+  directSlugs: string[];
+  inheritedSlugs: string[];
+  agents: import("@/mainview/hooks/useAgents").AgentConfig[] | undefined;
+}) {
+  const nameOf = (slug: string) => agents?.find((a) => a.slug === slug)?.name ?? slug;
+  const total = directSlugs.length + inheritedSlugs.length;
+  if (total === 0) return null;
+
+  // Direct first (full color), then inherited (dimmed). Cap combined count.
+  const ordered: Array<{ slug: string; inherited: boolean }> = [
+    ...directSlugs.map((s) => ({ slug: s, inherited: false })),
+    ...inheritedSlugs.map((s) => ({ slug: s, inherited: true })),
+  ];
+  const visible = ordered.slice(0, AGENT_CHIPS_MAX);
+  const overflow = total - visible.length;
+  const overflowTitle = overflow > 0
+    ? ordered.slice(AGENT_CHIPS_MAX).map((o) => nameOf(o.slug)).join(", ")
+    : "";
+
+  return (
+    <div className="mt-1.5 flex items-center gap-1">
+      {visible.map(({ slug, inherited }) => (
+        <span
+          key={slug}
+          title={inherited ? `${nameOf(slug)} (inherited)` : nameOf(slug)}
+          className={cn(
+            "inline-flex size-4 items-center justify-center",
+            inherited && "opacity-40",
+          )}
+        >
+          <AgentIcon slug={slug} className="size-3.5" />
+        </span>
+      ))}
+      {overflow > 0 && (
+        <span
+          title={overflowTitle}
+          className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border bg-secondary px-1 text-[9px] font-medium tabular-nums text-secondary-foreground"
+        >
+          +{overflow}
+        </span>
+      )}
+    </div>
+  );
+}
 
 function directInstallSlugs(skill: Skill): string[] {
   return skill.installations
@@ -1471,6 +1512,8 @@ function SkillDetail({
   const sourceLabel = getSourceLabel(skill.source, t);
   const sourceRepo = getSourceRepo(skill.source);
   const metadata = skill.metadata as Record<string, unknown> | null;
+
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 
   // Defer the heavy markdown rendering so the panel paints instantly
   const deferredSkillPath = useDeferredValue(skill.canonical_path);
@@ -1656,6 +1699,15 @@ function SkillDetail({
                   <Pencil className="size-3.5 shrink-0" />
                   <span className="min-w-0">{t("skills.editSkillMd")}</span>
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-auto min-h-9 w-full min-w-0 justify-start gap-2 py-2 text-left whitespace-normal [text-wrap:balance]"
+                  onClick={() => setProjectPickerOpen(true)}
+                >
+                  <FolderKanban className="size-3.5 shrink-0" />
+                  <span className="min-w-0">{t("skills.installToProject")}</span>
+                </Button>
                 {sourceRepo && (
                   <Button
                     variant="outline"
@@ -1742,6 +1794,19 @@ function SkillDetail({
           )}
         </DetailSection>
       </InsetScrollArea>
+
+      {projectPickerOpen && (
+        <InstallToProjectPicker
+          skillName={skill.name}
+          onInstall={async (projectPath) => {
+            await invoke("install_skill_to_project", {
+              source: { LocalPath: { path: skill.canonical_path } },
+              projectPath,
+            });
+          }}
+          onClose={() => setProjectPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }

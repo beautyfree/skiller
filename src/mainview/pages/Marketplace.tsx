@@ -9,6 +9,7 @@ import {
   User,
   Tag,
   Check,
+  FolderKanban,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke, openUrl } from "@/mainview/lib/native";
@@ -22,6 +23,7 @@ import { InsetScrollArea } from "@/mainview/components/InsetScrollArea";
 import SearchInput from "@/mainview/components/SearchInput";
 import { Button } from "@/mainview/components/ui/button";
 import { useToast } from "@/mainview/components/ToastProvider";
+import InstallToProjectPicker from "@/mainview/components/InstallToProjectPicker";
 import { cn } from "@/mainview/lib/utils";
 import { extractMarkdownBody } from "@/mainview/lib/markdown";
 
@@ -444,6 +446,7 @@ function MarketplaceSkillDetail({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const anyBusy = busyAgents.size > 0;
   const isInstalling = [...busyAgents.values()].some((op) => op === "installing" || op === "syncing");
   // Find the matching local skill (if any agent has it installed)
@@ -506,29 +509,41 @@ function MarketplaceSkillDetail({
             <h2 className="text-base font-[590] leading-tight">
               {skill.name}
             </h2>
-            {hasAnyInstalled ? (
-              <span className="shrink-0 inline-flex items-center gap-1 rounded-full badge-success px-2.5 py-1 text-xs font-medium">
-                <Check className="size-3" />
-                {allInstalled ? t("marketplace.installed") : `${installedCount}/${detectedAgents.length}`}
-              </span>
-            ) : (
+            <div className="flex shrink-0 items-center gap-2">
+              {hasAnyInstalled ? (
+                <span className="inline-flex items-center gap-1 rounded-full badge-success px-2.5 py-1 text-xs font-medium">
+                  <Check className="size-3" />
+                  {allInstalled ? t("marketplace.installed") : `${installedCount}/${detectedAgents.length}`}
+                </span>
+              ) : (
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="gap-1.5 min-w-[100px]"
+                  disabled={anyBusy || !detectedAgents.length || !skill.repository}
+                  onClick={() =>
+                    onInstall(notInstalledAgents.map((a) => a.slug))
+                  }
+                >
+                  {isInstalling ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Download className="size-3.5" />
+                  )}
+                  {isInstalling ? t("marketplace.installing") : t("marketplace.installAll")}
+                </Button>
+              )}
               <Button
-                variant="default"
+                variant="outline"
                 size="sm"
-                className="shrink-0 gap-1.5 min-w-[100px]"
-                disabled={anyBusy || !detectedAgents.length || !skill.repository}
-                onClick={() =>
-                  onInstall(notInstalledAgents.map((a) => a.slug))
-                }
+                disabled={!skill.repository}
+                onClick={() => setProjectPickerOpen(true)}
+                title={t("marketplace.installToProject")}
               >
-                {isInstalling ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Download className="size-3.5" />
-                )}
-                {isInstalling ? t("marketplace.installing") : t("marketplace.installAll")}
+                <FolderKanban className="size-3.5" />
+                {t("marketplace.installToProject")}
               </Button>
-            )}
+            </div>
           </div>
           {/* Author + source badge inline */}
           <div className="flex items-center gap-2 mt-1.5">
@@ -654,6 +669,19 @@ function MarketplaceSkillDetail({
           )}
         </InfoSection>
       </InsetScrollArea>
+
+      {projectPickerOpen && (
+        <InstallToProjectPicker
+          skillName={skill.name}
+          onInstall={async (projectPath) => {
+            await invoke("install_marketplace_skill_to_project", {
+              skill,
+              projectPath,
+            });
+          }}
+          onClose={() => setProjectPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }

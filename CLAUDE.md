@@ -58,6 +58,17 @@ bun install
 
 See `docs/DEVELOPMENT.md` for signing env vars and artifact locations.
 
+## Releases
+
+Releases are driven by **[release-please](https://github.com/googleapis/release-please)** and **conventional commits**.
+
+- Every commit to `main` should use a conventional prefix: `feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `chore:`, `ci:`, `build:`, `test:`, `style:`, `revert:`. Breaking changes: add `!` (`feat!:`) or a `BREAKING CHANGE:` footer.
+- `.github/workflows/release-please.yml` watches `main` and opens a **Release PR** that bumps `package.json`, updates `CHANGELOG.md`, and drafts the GitHub Release notes from commit messages.
+- Merging the Release PR pushes a `vX.Y.Z` tag → `.github/workflows/release.yml` builds the installers (macOS / Windows / Linux) and attaches them to the same release.
+- `electron-updater` reads release metadata for auto-updates on launch.
+
+Version source of truth: `package.json` + `.release-please-manifest.json`. Never bump manually — let release-please do it.
+
 ## Icons
 
 1. Edit canonical layer: `assets/icons/Skiller.icon/Assets/Image.png` (optionally run `python3 scripts/normalize-skiller-icon-layer.py`).

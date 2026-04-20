@@ -1,0 +1,32 @@
+name: Release Please
+
+# Opens / updates a "Release PR" whenever conventional-commits land on main.
+# On merge, release-please bumps `package.json`, updates `CHANGELOG.md`, creates
+# a GitHub Release and pushes a matching `v<version>` tag. The tag push then
+# triggers `.github/workflows/release.yml` which builds & uploads the desktop
+# installers. Release notes come from the conventional commit messages.
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          # Use the default token — tag push is what re-triggers downstream
+          # build workflow (release.yml) on the same commit.
+          token: ${{ secrets.GITHUB_TOKEN }}

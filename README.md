@@ -80,6 +80,7 @@ Grab the installer for your OS from the [**latest release**](https://github.com/
 | OS | File | Notes |
 | --- | --- | --- |
 | macOS (Apple Silicon) | `Skiller-<version>-macos-arm64.dmg` | Signed + notarized. Open the DMG and drag Skiller to Applications. |
+| macOS (Intel) | `Skiller-<version>-macos-x64.dmg` | Signed + notarized. Same flow as the Apple Silicon build. |
 | Windows (x64) | `Skiller-<version>-win-x64.exe` | NSIS installer. SmartScreen may show a one-time warning — click "More info" → "Run anyway". |
 | Linux (x64) | `Skiller-<version>-linux-x86_64.AppImage`, `.deb`, or `.tar.xz` | AppImage: `chmod +x`, run — static squashfuse runtime, no `libfuse2` required (works on CachyOS/Manjaro/EndeavourOS out of the box). `.deb` for Ubuntu/Debian. `.tar.xz`: extract, `cd Skiller-*`, run `./install.sh` once (sets SUID on `chrome-sandbox`, registers a `.desktop` entry). Passing `--uninstall` to the same script removes the menu entry. |
 

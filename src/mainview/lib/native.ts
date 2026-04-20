@@ -203,9 +203,12 @@ async function callTrpcProcedure<T>(
     if (input !== undefined) {
       url += `?input=${encodeURIComponent(JSON.stringify(input))}`
     }
-  } else if (input !== undefined) {
+  } else {
+    // tRPC v11 requires Content-Type: application/json on every mutation,
+    // even ones with no input (it rejects the body-less POST with 415
+    // UNSUPPORTED_MEDIA_TYPE before reaching the procedure).
     init.headers = { 'Content-Type': 'application/json' }
-    init.body = JSON.stringify(input)
+    init.body = input === undefined ? '{}' : JSON.stringify(input)
   }
   const res = await trpcFetch(url, init)
   const payload = (await res.json()) as TrpcSingleResponse<T>

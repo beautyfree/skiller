@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { useTranslation } from "react-i18next";
-import { X, Loader2, GitBranch, FolderOpen, Check, Puzzle } from "lucide-react";
+import { X, Loader2, GitBranch, FolderOpen, Check, Puzzle, FolderPlus } from "lucide-react";
 import { listen, pickFolder as pickDirectory, invoke } from "@/mainview/lib/native";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/mainview/components/ui/button";
@@ -8,12 +8,15 @@ import { useAddRepo, useAddLocalDir, useRemoveRepo, type SkillRepo, type AddRepo
 import { useAgents, type AgentConfig } from "@/mainview/hooks/useAgents";
 import { type Skill } from "@/mainview/hooks/useSkills";
 import { getAgentIcon } from "@/mainview/lib/agentIcons";
+import { useAddProject, useProjects } from "@/mainview/hooks/useProjects";
 
-type WizardStep = "source" | "indexing" | "skills" | "agents" | "installing";
+type WizardStep = "source" | "indexing" | "skills" | "scope" | "agents" | "installing";
+type InstallScope = "user" | "project";
 
 interface ImportWizardProps {
   mode: "git" | "local";
   initialLocalPath?: string | null;
+  initialProjectPath?: string | null;
   onClose: () => void;
 }
 
@@ -27,7 +30,7 @@ const INDEX_STAGE_KEYS: Record<string, string> = {
   saving: "repos.savingConfig",
 };
 
-export default function ImportWizard({ mode, initialLocalPath, onClose }: ImportWizardProps) {
+export default function ImportWizard({ mode, initialLocalPath, initialProjectPath, onClose }: ImportWizardProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -51,6 +54,12 @@ export default function ImportWizard({ mode, initialLocalPath, onClose }: Import
   // Skills step
   const [skills, setSkills] = useState<Skill[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(new Set());
+
+  // Scope step
+  const [scope, setScope] = useState<InstallScope>(initialProjectPath ? "project" : "user");
+  const { data: projects } = useProjects();
+  const addProject = useAddProject();
+  const [projectPath, setProjectPath] = useState<string | null>(initialProjectPath ?? null);
 
   // Agents step
   const { data: allAgents } = useAgents();
@@ -160,11 +169,19 @@ export default function ImportWizard({ mode, initialLocalPath, onClose }: Import
       setCurrentSkill(skill?.name ?? skillId);
       setInstallDone(i);
       try {
-        await invoke("install_repo_skill", {
-          repoIdParam: repo.id,
-          skillId,
-          targetAgents: agentSlugs,
-        });
+        if (scope === "project" && projectPath) {
+          await invoke("install_repo_skill_to_project", {
+            repoIdParam: repo.id,
+            skillId,
+            projectPath,
+          });
+        } else {
+          await invoke("install_repo_skill", {
+            repoIdParam: repo.id,
+            skillId,
+            targetAgents: agentSlugs,
+          });
+        }
       } catch (e) {
         console.error(`Failed to install ${skillId}:`, e);
       }
@@ -178,8 +195,18 @@ export default function ImportWizard({ mode, initialLocalPath, onClose }: Import
     await queryClient.invalidateQueries({ queryKey: ["skills"] });
     await queryClient.invalidateQueries({ queryKey: ["repos"] });
     await queryClient.invalidateQueries({ queryKey: ["repo-skills"] });
+    if (scope === "project" && projectPath) {
+      await queryClient.invalidateQueries({ queryKey: ["project-skills", projectPath] });
+    }
 
     onClose();
+  }
+
+  async function pickProjectFolder() {
+    const picked = await pickDirectory();
+    if (!picked) return;
+    await addProject.mutateAsync(picked);
+    setProjectPath(picked);
   }
 
   // Checkbox helpers
@@ -214,8 +241,10 @@ export default function ImportWizard({ mode, initialLocalPath, onClose }: Import
   }, [detectedAgents]);
 
   // Step indicators
-  const stepKeys: WizardStep[] = ["source", "indexing", "skills", "agents"];
-  const stepIdx = stepKeys.indexOf(step === "installing" ? "agents" : step);
+  const stepKeys: WizardStep[] = ["source", "indexing", "skills", "scope"];
+  const stepIdx = stepKeys.indexOf(
+    step === "installing" ? "scope" : step === "agents" ? "scope" : step
+  );
 
   return (
     <div
@@ -393,13 +422,109 @@ export default function ImportWizard({ mode, initialLocalPath, onClose }: Import
                   <Button
                     size="sm"
                     disabled={selectedSkillIds.size === 0}
-                    onClick={() => setStep("agents")}
+                    onClick={() => setStep("scope")}
                   >
                     {t("repos.next", { count: selectedSkillIds.size })}
                   </Button>
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {/* Step: Select Scope */}
+        {step === "scope" && (
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              {t("repos.selectScope")}
+            </p>
+            <div className="space-y-2">
+              <label className="flex items-start gap-3 rounded-lg border border-border/60 px-3 py-2.5 cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.04]">
+                <input
+                  type="radio"
+                  checked={scope === "user"}
+                  onChange={() => setScope("user")}
+                  className="mt-0.5 accent-primary"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{t("repos.scopeUser")}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {t("repos.scopeUserDesc")}
+                  </p>
+                </div>
+              </label>
+              <label className="flex items-start gap-3 rounded-lg border border-border/60 px-3 py-2.5 cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.04]">
+                <input
+                  type="radio"
+                  checked={scope === "project"}
+                  onChange={() => setScope("project")}
+                  className="mt-0.5 accent-primary"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{t("repos.scopeProject")}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {t("repos.scopeProjectDesc")}
+                  </p>
+                  {scope === "project" && (
+                    <div className="mt-2 space-y-1.5">
+                      {projects && projects.length > 0 && (
+                        <select
+                          value={projectPath ?? ""}
+                          onChange={(e) => setProjectPath(e.target.value || null)}
+                          className="w-full rounded-md border border-input bg-transparent px-2 py-1.5 text-xs"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <option value="">{t("repos.selectProjectPlaceholder")}</option>
+                          {projects.map((p) => (
+                            <option key={p.path} value={p.path}>
+                              {p.name} — {p.path}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full justify-start gap-1.5"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void pickProjectFolder();
+                        }}
+                      >
+                        <FolderPlus className="size-3.5" />
+                        {t("repos.addProject")}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setStep("skills")}
+              >
+                {t("repos.back")}
+              </Button>
+              {scope === "user" ? (
+                <Button
+                  size="sm"
+                  onClick={() => setStep("agents")}
+                >
+                  {t("repos.next", { count: selectedSkillIds.size })}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  disabled={!projectPath}
+                  onClick={runBatchInstall}
+                >
+                  {t("repos.installCount", { count: selectedSkillIds.size })}
+                </Button>
+              )}
+            </div>
           </div>
         )}
 
@@ -444,7 +569,7 @@ export default function ImportWizard({ mode, initialLocalPath, onClose }: Import
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setStep("skills")}
+                onClick={() => setStep("scope")}
               >
                 {t("repos.back")}
               </Button>

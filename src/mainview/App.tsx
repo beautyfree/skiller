@@ -7,6 +7,7 @@ import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import SkillsManager from './pages/SkillsManager'
 import Marketplace from './pages/Marketplace'
+import ProjectsPage from './pages/Projects'
 import SettingsPage from './pages/Settings'
 import { useTheme } from './hooks/useTheme'
 import CloseConfirmDialog from './components/CloseConfirmDialog'
@@ -122,6 +123,7 @@ function AppInner() {
           <Route index element={<Dashboard />} />
           <Route path="skills" element={<SkillsManager />} />
           <Route path="marketplace" element={<Marketplace />} />
+          <Route path="projects" element={<ProjectsPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>

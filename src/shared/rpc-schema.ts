@@ -62,11 +62,30 @@ export type RepoEntryJson = {
   last_synced?: string | null;
 };
 
+export type ProjectEntryJson = {
+  path: string;
+  name: string;
+  /** Optional user-defined group (folder) label. Null/undefined = "Ungrouped". */
+  group?: string | null;
+  added_at?: string | null;
+  last_used_at?: string | null;
+};
+
+export type ProjectSkillJson = {
+  id: string;
+  name: string;
+  description?: string | null;
+  path: string;
+};
+
 export type AppSettingsJson = {
   theme?: string | null;
   language?: string | null;
   path_overrides?: Record<string, string[]> | null;
   repos?: RepoEntryJson[] | null;
+  projects?: ProjectEntryJson[] | null;
+  /** Folder labels for grouping projects. A folder may exist without any projects yet. */
+  project_folders?: string[] | null;
   close_action?: string | null;
   /** macOS translucent window + NSVisualEffectView; default true when omitted */
   macos_window_blur?: boolean | null;
@@ -199,6 +218,37 @@ export type AppRPCSchema = {
       install_repo_skill: {
         params: { repoIdParam: string; skillId: string; targetAgents: string[] };
         response: void;
+      };
+      list_projects: { params?: void; response: ProjectEntryJson[] };
+      add_project: { params: { path: string }; response: ProjectEntryJson };
+      remove_project: { params: { path: string }; response: void };
+      list_project_skills: { params: { path: string }; response: ProjectSkillJson[] };
+      install_skill_to_project: {
+        params: { source: SkillSourceParam; projectPath: string };
+        response: void;
+      };
+      install_repo_skill_to_project: {
+        params: { repoIdParam: string; skillId: string; projectPath: string };
+        response: void;
+      };
+      install_marketplace_skill_to_project: {
+        params: { skill: MarketplaceSkillJson; projectPath: string };
+        response: void;
+      };
+      uninstall_project_skill: {
+        params: { projectPath: string; skillId: string };
+        response: void;
+      };
+      set_project_group: {
+        params: { path: string; group: string | null };
+        response: ProjectEntryJson;
+      };
+      list_project_folders: { params?: void; response: string[] };
+      add_project_folder: { params: { name: string }; response: string[] };
+      remove_project_folder: { params: { name: string }; response: string[] };
+      rename_project_folder: {
+        params: { from: string; to: string };
+        response: string[];
       };
       get_app_version: { params?: void; response: string };
       window_minimize: { params?: void; response: void };

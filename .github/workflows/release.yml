@@ -35,6 +35,7 @@ jobs:
             Desktop installers — download the one that matches your OS:
 
             - **macOS (Apple Silicon):** `Skiller-<version>-macos-arm64.dmg` (signed + notarized — drag to Applications)
+            - **macOS (Intel):** `Skiller-<version>-macos-x64.dmg` (signed + notarized — drag to Applications)
             - **Windows (x64):** `Skiller-<version>-win-x64.exe` (NSIS installer)
             - **Linux (x64):** `Skiller-<version>-linux-x86_64.AppImage` or `.deb`
 

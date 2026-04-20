@@ -158,15 +158,20 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
+          # GitHub Releases shows assets in reverse upload order (newest on
+          # top). Upload the auto-updater plumbing (yml, blockmap, zip) FIRST
+          # and the human-facing installers LAST so the download list leads
+          # with .dmg / .exe / .AppImage instead of the .zip that
+          # electron-updater needs but end users should ignore.
           files: |
-            artifacts/*.dmg
-            artifacts/*.zip
-            artifacts/*.exe
-            artifacts/*.AppImage
-            artifacts/*.deb
-            artifacts/*.tar.xz
             artifacts/*.yml
             artifacts/*.blockmap
+            artifacts/*.zip
+            artifacts/*.tar.xz
+            artifacts/*.deb
+            artifacts/*.AppImage
+            artifacts/*.exe
+            artifacts/*.dmg
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

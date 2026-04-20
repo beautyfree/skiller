@@ -1,0 +1,8 @@
+slug = "zencoder"
+name = "Zencoder"
+enabled = true
+project_skills_dir = ".zencoder/skills"
+global_paths = ["~/.zencoder/skills"]
+skill_format = "skill-md"
+install_docs_url = "https://zencoder.ai"
+detect_paths = ["~/.zencoder"]

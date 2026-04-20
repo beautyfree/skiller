@@ -1,0 +1,7 @@
+slug = "neovate"
+name = "Neovate"
+enabled = true
+project_skills_dir = ".neovate/skills"
+global_paths = ["~/.neovate/skills"]
+skill_format = "skill-md"
+detect_paths = ["~/.neovate"]

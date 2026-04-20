@@ -23,6 +23,13 @@ export interface AgentConfig {
 	name: string;
 	enabled: boolean;
 	global_paths: string[];
+	/**
+	 * Relative project path (from repo root) where this agent reads skills.
+	 * Examples: ".claude/skills" (Claude Code), ".agents/skills" (universal), ".cursor/skills".
+	 * Agents with `.agents/skills` are considered "universal" — they share the canonical
+	 * project skills directory and do not need a symlink.
+	 */
+	project_skills_dir?: string;
 	skill_format?: SkillFormat;
 	extra_config?: ExtraConfig[];
 	hooks?: AgentHooks;

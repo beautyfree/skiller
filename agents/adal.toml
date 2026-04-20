@@ -1,0 +1,7 @@
+slug = "adal"
+name = "AdaL"
+enabled = true
+project_skills_dir = ".adal/skills"
+global_paths = ["~/.adal/skills"]
+skill_format = "skill-md"
+detect_paths = ["~/.adal"]

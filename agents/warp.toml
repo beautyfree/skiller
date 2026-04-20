@@ -1,6 +1,7 @@
 slug = "warp"
 name = "Warp"
 enabled = true
+project_skills_dir = ".agents/skills"
 global_paths = ["~/.warp/skills"]
 skill_format = "skill-md"
 install_command = "brew install --cask warp"

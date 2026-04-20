@@ -1,0 +1,8 @@
+slug = "junie"
+name = "Junie"
+enabled = true
+project_skills_dir = ".junie/skills"
+global_paths = ["~/.junie/skills"]
+skill_format = "skill-md"
+install_docs_url = "https://www.jetbrains.com/junie/"
+detect_paths = ["~/.junie"]

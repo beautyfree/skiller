@@ -1,0 +1,8 @@
+slug = "cortex"
+name = "Cortex Code"
+enabled = true
+project_skills_dir = ".cortex/skills"
+global_paths = ["~/.snowflake/cortex/skills"]
+skill_format = "skill-md"
+install_docs_url = "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-code"
+detect_paths = ["~/.snowflake/cortex"]

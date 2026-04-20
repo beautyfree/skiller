@@ -1,0 +1,9 @@
+slug = "continue"
+name = "Continue"
+enabled = true
+project_skills_dir = ".continue/skills"
+global_paths = ["~/.continue/skills"]
+skill_format = "skill-md"
+cli_command = "continue"
+install_docs_url = "https://docs.continue.dev"
+detect_paths = ["~/.continue"]

@@ -1,0 +1,10 @@
+slug = "iflow-cli"
+name = "iFlow CLI"
+enabled = true
+project_skills_dir = ".iflow/skills"
+global_paths = ["~/.iflow/skills"]
+skill_format = "skill-md"
+cli_command = "iflow"
+install_command = "npm install -g @iflow-ai/iflow-cli"
+install_docs_url = "https://platform.iflow.cn/docs"
+detect_paths = ["~/.iflow"]

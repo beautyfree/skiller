@@ -1,0 +1,10 @@
+slug = "goose"
+name = "Goose"
+enabled = true
+project_skills_dir = ".goose/skills"
+global_paths = ["~/.config/goose/skills"]
+skill_format = "skill-md"
+cli_command = "goose"
+install_command = "curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash"
+install_docs_url = "https://block.github.io/goose"
+detect_paths = ["~/.config/goose"]

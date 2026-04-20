@@ -1,0 +1,10 @@
+slug = "augment"
+name = "Augment"
+enabled = true
+project_skills_dir = ".augment/skills"
+global_paths = ["~/.augment/skills"]
+skill_format = "skill-md"
+cli_command = "augment"
+install_command = "curl -fsSL https://install.augmentcode.com | bash"
+install_docs_url = "https://docs.augmentcode.com"
+detect_paths = ["~/.augment"]

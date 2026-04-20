@@ -1,0 +1,10 @@
+slug = "kimi-cli"
+name = "Kimi Code CLI"
+enabled = true
+project_skills_dir = ".agents/skills"
+global_paths = ["~/.config/agents/skills"]
+skill_format = "skill-md"
+cli_command = "kimi"
+install_command = "pip install kimi-cli"
+install_docs_url = "https://github.com/MoonshotAI/kimi-cli"
+detect_paths = ["~/.kimi"]

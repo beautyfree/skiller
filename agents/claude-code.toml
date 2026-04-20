@@ -1,6 +1,7 @@
 slug = "claude-code"
 name = "Claude Code"
 enabled = true
+project_skills_dir = ".claude/skills"
 global_paths = ["~/.claude/skills"]
 skill_format = "skill-md"
 cli_command = "claude"

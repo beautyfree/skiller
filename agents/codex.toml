@@ -1,6 +1,7 @@
 slug = "codex"
 name = "Codex"
 enabled = true
+project_skills_dir = ".agents/skills"
 global_paths = ["~/.codex/skills"]
 skill_format = "skill-md"
 cli_command = "codex"

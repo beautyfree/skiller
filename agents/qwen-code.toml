@@ -1,0 +1,10 @@
+slug = "qwen-code"
+name = "Qwen Code"
+enabled = true
+project_skills_dir = ".qwen/skills"
+global_paths = ["~/.qwen/skills"]
+skill_format = "skill-md"
+cli_command = "qwen"
+install_command = "npm install -g @qwen-code/qwen-code"
+install_docs_url = "https://github.com/QwenLM/qwen-code"
+detect_paths = ["~/.qwen"]

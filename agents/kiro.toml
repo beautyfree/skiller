@@ -1,6 +1,7 @@
 slug = "kiro"
 name = "Kiro"
 enabled = true
+project_skills_dir = ".kiro/skills"
 global_paths = ["~/.kiro/skills"]
 skill_format = "skill-md"
 cli_command = "kiro-cli"

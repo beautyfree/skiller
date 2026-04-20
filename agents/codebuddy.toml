@@ -1,6 +1,7 @@
 slug = "codebuddy"
 name = "CodeBuddy"
 enabled = true
+project_skills_dir = ".codebuddy/skills"
 global_paths = ["~/.codebuddy/skills"]
 skill_format = "skill-md"
 cli_command = "codebuddy"

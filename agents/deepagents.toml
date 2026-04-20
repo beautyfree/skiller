@@ -1,0 +1,9 @@
+slug = "deepagents"
+name = "Deep Agents"
+enabled = true
+project_skills_dir = ".agents/skills"
+global_paths = ["~/.deepagents/agent/skills"]
+skill_format = "skill-md"
+install_command = "pip install deepagents"
+install_docs_url = "https://github.com/langchain-ai/deepagents"
+detect_paths = ["~/.deepagents"]

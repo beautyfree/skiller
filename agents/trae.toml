@@ -1,6 +1,7 @@
 slug = "trae"
 name = "Trae"
 enabled = true
+project_skills_dir = ".trae/skills"
 global_paths = ["~/.trae/skills"]
 skill_format = "skill-md"
 cli_command = "trae"

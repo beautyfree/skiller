@@ -1,6 +1,7 @@
 slug = "copilot-cli"
 name = "GitHub Copilot CLI"
 enabled = true
+project_skills_dir = ".agents/skills"
 global_paths = ["~/.copilot/skills"]
 skill_format = "skill-md"
 cli_command = "copilot"

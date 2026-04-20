@@ -1,0 +1,7 @@
+slug = "bob"
+name = "IBM Bob"
+enabled = true
+project_skills_dir = ".bob/skills"
+global_paths = ["~/.bob/skills"]
+skill_format = "skill-md"
+detect_paths = ["~/.bob"]

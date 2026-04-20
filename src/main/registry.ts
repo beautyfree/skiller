@@ -55,6 +55,7 @@ export function loadAgentConfigs(dir: string): AgentConfig[] {
 			name: displayName,
 			enabled: parsed.enabled !== false,
 			global_paths: (parsed.global_paths as string[] | undefined)?.map((p) => expandHome(p)) ?? [],
+			project_skills_dir: parsed.project_skills_dir as string | undefined,
 			skill_format: (parsed.skill_format as AgentConfig["skill_format"]) ?? "skill-md",
 			extra_config: parsed.extra_config as AgentConfig["extra_config"],
 			hooks: parsed.hooks as AgentConfig["hooks"],

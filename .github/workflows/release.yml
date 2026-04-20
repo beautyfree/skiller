@@ -1,11 +1,12 @@
 name: Release
 
-# Triggered by pushing a tag like v0.2.0. Builds the Electron app natively on
-# each OS (electron-builder + node-gyp native modules don't cross-compile
-# cleanly) and uploads every artifact to the GitHub Release directly so the
-# workflow keeps working even if the account-wide Actions artifact quota is
-# full. electron-updater reads `latest-{mac,linux,win}.yml` from the same
-# release to drive auto-updates in production.
+# Triggered by pushing a tag like v0.2.0. release-please (see
+# .github/workflows/release-please.yml) creates the GitHub Release + tag when
+# its "Release PR" is merged; this workflow then builds the Electron app
+# natively on each OS (electron-builder + node-gyp native modules don't
+# cross-compile cleanly) and uploads every artifact to that same release.
+# electron-updater reads `latest-{mac,linux,win}.yml` from the same release
+# to drive auto-updates in production.
 
 on:
   push:
@@ -20,37 +21,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  prepare-release:
-    name: Prepare draft release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Create or reset draft release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: Skiller ${{ github.ref_name }}
-          body: |
-            Desktop installers — download the one that matches your OS:
-
-            - **macOS (Apple Silicon):** `Skiller-<version>-macos-arm64.dmg` (signed + notarized — drag to Applications)
-            - **macOS (Intel):** `Skiller-<version>-macos-x64.dmg` (signed + notarized — drag to Applications)
-            - **Windows (x64):** `Skiller-<version>-win-x64.exe` (NSIS installer)
-            - **Linux (x64):** `Skiller-<version>-linux-x86_64.AppImage` or `.deb`
-
-            After the first install, Skiller checks this release on launch and
-            via **Settings → App Updates**. Updates are downloaded on demand
-            and applied on next restart — powered by `electron-updater`.
-          draft: true
-          prerelease: false
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   build-desktop:
     name: Build ${{ matrix.label }}
-    needs: prepare-release
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -153,11 +125,12 @@ jobs:
 
       # Upload every artifact (including latest-*.yml and .blockmap files —
       # electron-updater needs them alongside the binaries).
+      # The release itself (with CHANGELOG body) was already created by
+      # release-please when the Release PR merged — we only attach assets.
       - name: Upload build outputs to Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          draft: true
           # GitHub Releases shows assets in reverse upload order (newest on
           # top). Upload the auto-updater plumbing (yml, blockmap, zip) FIRST
           # and the human-facing installers LAST so the download list leads
@@ -173,21 +146,5 @@ jobs:
             artifacts/*.exe
             artifacts/*.dmg
           fail_on_unmatched_files: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  publish-release:
-    name: Publish release
-    needs: build-desktop
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          draft: false
-          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

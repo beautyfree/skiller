@@ -46,9 +46,9 @@ mac:
   # and auto-updates silently break for macOS users.
   target:
     - target: dir
-      arch: [arm64]
+      arch: [arm64, x64]
     - target: zip
-      arch: [arm64]
+      arch: [arm64, x64]
 
 # Electron-builder's own DMG creation is disabled on macOS (see target: dir
 # above). scripts/repack-dmg.sh produces the styled, drag-to-Applications DMG

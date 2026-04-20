@@ -6,17 +6,32 @@
 # the bug doesn't exist, but the styled DMG stays as industry-standard UX
 # (see Slack, Chrome, Notion — all do this).
 #
-# Expected input: artifacts/mac-arm64/Skiller.app (from `electron-builder --mac`
-# with mac.target = dir).
-# Output: artifacts/Skiller-<version>-macos-arm64.dmg — signed, notarized,
+# Expected input: artifacts/mac-<arch>/Skiller.app (from `electron-builder --mac`
+# with mac.target = dir). Pass the target arch as the first arg: arm64 or x64.
+# Defaults to the host arch for backwards compat with local one-shot runs.
+# Output: artifacts/Skiller-<version>-macos-<arch>.dmg — signed, notarized,
 # stapled.
 #
 # Requires: create-dmg (brew install create-dmg), xcrun, codesign.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ARCH="$(uname -m)"
+
+# Normalize: accept arm64|x64 as input; the DMG filename uses that, and
+# electron-builder's output dir uses the same tokens (mac-arm64, mac-x64)
+# when multiple arches are built in one invocation. When only one arch is
+# built, electron-builder drops the suffix (just `mac/`) — handle that too.
+RAW_ARCH="${1:-$(uname -m)}"
+case "$RAW_ARCH" in
+	arm64|aarch64) ARCH="arm64" ;;
+	x64|x86_64|amd64) ARCH="x64" ;;
+	*) echo "error: unknown arch '$RAW_ARCH'" >&2; exit 1 ;;
+esac
+
 BUILD_DIR="$ROOT_DIR/artifacts/mac-${ARCH}"
+if [[ ! -d "$BUILD_DIR" && -d "$ROOT_DIR/artifacts/mac" ]]; then
+	BUILD_DIR="$ROOT_DIR/artifacts/mac"
+fi
 APP_PATH="$BUILD_DIR/Skiller.app"
 BG_IMG="$ROOT_DIR/assets/dmg/background.png"
 APP_ICON="$ROOT_DIR/assets/icons/app.icns"

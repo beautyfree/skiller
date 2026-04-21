@@ -9,6 +9,7 @@ import SkillsManager from './pages/SkillsManager'
 import Marketplace from './pages/Marketplace'
 import ProjectsPage from './pages/Projects'
 import SettingsPage from './pages/Settings'
+import OnboardingWizard from './components/OnboardingWizard'
 import { useTheme } from './hooks/useTheme'
 import CloseConfirmDialog from './components/CloseConfirmDialog'
 
@@ -17,6 +18,25 @@ function AppInner() {
   const { i18n } = useTranslation()
   useTheme()
   const [closeDialogOpen, setCloseDialogOpen] = useState(false)
+  // Onboarding shows on very first launch (or when user explicitly replays it
+  // from Settings). Guarded by a localStorage flag — we respect privacy mode
+  // by falling back to "not done" if storage throws, which still shows once.
+  const [onboardingOpen, setOnboardingOpen] = useState(() => {
+    try {
+      return localStorage.getItem('skiller.onboarding.done') !== '1'
+    } catch {
+      return true
+    }
+  })
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ force?: boolean }>).detail
+      if (detail?.force) setOnboardingOpen(true)
+    }
+    window.addEventListener('skiller:open-onboarding', handler)
+    return () => window.removeEventListener('skiller:open-onboarding', handler)
+  }, [])
 
   // macOS Electrobun: translucent shell when native blur is on (see shell_runtime + macos-window-effects.ts)
   useEffect(() => {
@@ -115,6 +135,9 @@ function AppInner() {
         open={closeDialogOpen}
         onDone={() => setCloseDialogOpen(false)}
       />
+      {onboardingOpen && (
+        <OnboardingWizard onClose={() => setOnboardingOpen(false)} />
+      )}
       <Routes>
         {/* Electrobun / file URLs often use .../index.html as the pathname; SPA routes are /. */}
         <Route path="/index.html" element={<Navigate to="/" replace />} />

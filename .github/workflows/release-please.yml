@@ -27,6 +27,13 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          # Use the default token — tag push is what re-triggers downstream
-          # build workflow (release.yml) on the same commit.
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # IMPORTANT: tags created by GITHUB_TOKEN do NOT trigger other
+          # workflows (GitHub deliberately breaks action→action chains). We
+          # need release.yml to fire on the v* tag push so bins get built,
+          # so use a fine-grained PAT with Contents:write + PRs:write on
+          # this repo, stored as repo secret RELEASE_PLEASE_TOKEN.
+          # Fallback to GITHUB_TOKEN so the workflow doesn't hard-fail when
+          # the secret isn't configured; you'll just have to re-push tags
+          # manually (git push --delete origin vX.Y.Z && git push origin
+          # vX.Y.Z) to trigger the build.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.10](https://github.com/beautyfree/skiller-desktop-skills-manager/compare/v0.2.9...v0.2.10) (2026-04-21)
+
+
+### Features
+
+* **updater:** show progress bar while download is running ([e2ac03b](https://github.com/beautyfree/skiller-desktop-skills-manager/commit/e2ac03b5c48194e74839e25589ed5808b31f118b))
+
+
+### Bug Fixes
+
+* **updater:** adopt returned snapshot so "Restart & install" shows at once ([7b43a21](https://github.com/beautyfree/skiller-desktop-skills-manager/commit/7b43a21ecc470a6927531c473bfe5553c59e5f22))
+* **updater:** show update errors as a persistent destructive panel ([f799df7](https://github.com/beautyfree/skiller-desktop-skills-manager/commit/f799df7ccfd36dc4ebcf33882694b365720451a7))
+* **updater:** surface download failures and dev-mode no-op in UI ([ca36927](https://github.com/beautyfree/skiller-desktop-skills-manager/commit/ca36927457738092fc88e98d8dc9777bfd75c1bb))
+
 ## [0.2.9](https://github.com/beautyfree/skiller-desktop-skills-manager/compare/v0.2.8...v0.2.9) (2026-04-21)
 
 

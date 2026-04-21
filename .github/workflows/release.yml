@@ -131,6 +131,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
+          # release-please creates the Release as a draft (see config). We
+          # keep it a draft here too so softprops doesn't accidentally flip
+          # it to published — the final publish-release job does that after
+          # all three OS builds finish.
+          draft: true
           # GitHub Releases shows assets in reverse upload order (newest on
           # top). Upload the auto-updater plumbing (yml, blockmap, zip) FIRST
           # and the human-facing installers LAST so the download list leads
@@ -148,3 +153,21 @@ jobs:
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Flip the release from draft to published ONLY after every matrix build
+  # succeeded and uploaded its artifacts. This avoids the awkward window where
+  # a user lands on the Releases page with only the Linux installer visible
+  # because mac/win builds are still running.
+  publish-release:
+    needs: build-desktop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --draft=false

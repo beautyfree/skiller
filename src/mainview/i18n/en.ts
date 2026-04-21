@@ -305,6 +305,7 @@ const en = {
     updateStateDownloading: "Downloading update…",
     updateStateReady: "Update ready — restart to install",
     updateStateError: "Update check failed",
+    updateErrorTitle: "Update failed",
     updateCheckNow: "Check for updates",
     updateDownload: "Download update",
     updateRestart: "Restart & install",

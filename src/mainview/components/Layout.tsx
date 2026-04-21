@@ -1,6 +1,8 @@
 import { NavLink, Outlet, useSearchParams } from 'react-router-dom'
-import { useMemo, useState, useCallback, useRef } from 'react'
+import { useMemo, useState, useCallback, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
+import { useQueryClient } from '@tanstack/react-query'
 
 import { pickFolder, invoke, openUrl } from '@/mainview/lib/native'
 import {
@@ -11,6 +13,9 @@ import {
   GitBranch,
   FolderOpen,
   FolderKanban,
+  Copy,
+  Trash2,
+  ChevronRight,
 } from 'lucide-react'
 import { AgentIcon } from '@/mainview/components/AgentIcon'
 import { Button } from '@/mainview/components/ui/button'
@@ -79,6 +84,28 @@ export default function Layout() {
       }
     }
     return counts
+  }, [skills])
+
+  // Direct vs inherited breakdown for the sidebar tooltip. The visible number
+  // is "everything visible to the agent" (matches user's mental model of
+  // "what Claude sees"), but many agents read from the shared ~/.agents
+  // library so the breakdown reveals how many are actually owned by the
+  // agent vs inherited. Without this the same number on two agents could
+  // mean very different things.
+  const skillBreakdownByAgent = useMemo(() => {
+    const breakdown = new Map<string, { direct: number; inherited: number }>()
+    for (const skill of skills ?? []) {
+      for (const inst of skill.installations) {
+        const prev = breakdown.get(inst.agent_slug) ?? {
+          direct: 0,
+          inherited: 0,
+        }
+        if (inst.is_inherited) prev.inherited += 1
+        else prev.direct += 1
+        breakdown.set(inst.agent_slug, prev)
+      }
+    }
+    return breakdown
   }, [skills])
 
   const sidebar = useResizable({
@@ -229,19 +256,32 @@ export default function Layout() {
                       <div className="flex flex-col gap-0.5">
                         {detectedAgents.map((agent) => {
                           const count = skillCountByAgent.get(agent.slug) ?? 0
+                          const breakdown = skillBreakdownByAgent.get(
+                            agent.slug,
+                          ) ?? { direct: 0, inherited: 0 }
                           const isActive = activeAgentSlug === agent.slug
+                          const tooltip =
+                            breakdown.inherited > 0
+                              ? t('sidebar.agentSkillsTooltip', {
+                                  direct: breakdown.direct,
+                                  inherited: breakdown.inherited,
+                                  name: agent.name,
+                                })
+                              : t('sidebar.agentSkillsTooltipDirectOnly', {
+                                  count: breakdown.direct,
+                                  name: agent.name,
+                                })
                           return (
-                            <NavLink
+                            <AgentSidebarRow
                               key={agent.slug}
-                              to={`/skills?agent=${agent.slug}`}
-                              className={() => navLinkClass({ isActive })}
-                            >
-                              <AgentIcon slug={agent.slug} />
-                              <span className="truncate">{agent.name}</span>
-                              <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/60">
-                                {count}
-                              </span>
-                            </NavLink>
+                              agent={agent}
+                              allAgents={detectedAgents}
+                              directCount={breakdown.direct}
+                              totalCount={count}
+                              isActive={isActive}
+                              tooltip={tooltip}
+                              navLinkClass={navLinkClass}
+                            />
                           )
                         })}
                       </div>
@@ -312,5 +352,278 @@ export default function Layout() {
         />
       )}
     </div>
+  )
+}
+
+/**
+ * Sidebar agent entry with a right-click context menu for bulk operations.
+ *
+ * Left-click navigates to the filtered skills view (same as before).
+ * Right-click opens a menu with:
+ *   - "Copy all skills here from… → {any | each detected agent}"
+ *   - "Remove all skills (N)" — only enabled when the agent has direct installs.
+ *
+ * Rationale: the previous toolbar above the skill list was always visible and
+ * added noise. Moving it to a right-click menu keeps the sidebar quiet but
+ * still discoverable (native affordance — most desktop apps work this way).
+ */
+function AgentSidebarRow({
+  agent,
+  allAgents: detectedAgents,
+  directCount,
+  totalCount,
+  isActive,
+  tooltip,
+  navLinkClass,
+}: {
+  agent: import('@/mainview/hooks/useAgents').AgentConfig
+  allAgents: import('@/mainview/hooks/useAgents').AgentConfig[]
+  directCount: number
+  totalCount: number
+  isActive: boolean
+  tooltip: string
+  navLinkClass: (p: { isActive: boolean }) => string
+}) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const [copySubmenu, setCopySubmenu] = useState<
+    null | { openLeft: boolean; openUp: boolean }
+  >(null)
+  const [busy, setBusy] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const submenuRef = useRef<HTMLDivElement>(null)
+
+  // After the main menu renders, nudge its position so it fits inside the
+  // viewport. Electron window clips anything outside its bounds, and without
+  // this the right-click menu could land half-offscreen near the bottom of
+  // the sidebar when lots of agents are listed.
+  useEffect(() => {
+    if (!menu || !menuRef.current) return
+    const el = menuRef.current
+    const rect = el.getBoundingClientRect()
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const margin = 8
+    let x = menu.x
+    let y = menu.y
+    if (rect.right > vw - margin) x = Math.max(margin, vw - rect.width - margin)
+    if (rect.bottom > vh - margin) y = Math.max(margin, vh - rect.height - margin)
+    if (x !== menu.x || y !== menu.y) {
+      el.style.left = `${x}px`
+      el.style.top = `${y}px`
+    }
+  }, [menu])
+
+  // Same trick for the submenu: decide whether to open it to the left/up
+  // based on where the main menu item sits. Submenus naturally fly to the
+  // right & down; if they'd overflow we flip.
+  function openCopySubmenu(anchor: HTMLElement) {
+    const rect = anchor.getBoundingClientRect()
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    // Guess submenu size — 220 wide, max 60vh tall. If the right edge + 220
+    // would overflow, open to the left. If bottom would overflow, align
+    // bottom-up.
+    const wouldOverflowRight = rect.right + 220 > vw - 8
+    const submenuMaxHeight = Math.floor(vh * 0.6)
+    const wouldOverflowBottom = rect.top + submenuMaxHeight > vh - 8
+    setCopySubmenu({
+      openLeft: wouldOverflowRight,
+      openUp: wouldOverflowBottom,
+    })
+  }
+
+  // Close on outside click / Escape.
+  useEffect(() => {
+    if (!menu) return
+    function onDown(e: MouseEvent) {
+      if (menuRef.current?.contains(e.target as Node)) return
+      setMenu(null)
+      setCopySubmenu(null)
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setMenu(null)
+        setCopySubmenu(null)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menu])
+
+  function openContextMenu(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    setMenu({ x: e.clientX, y: e.clientY })
+    setCopySubmenu(null)
+  }
+
+  async function handleCopyFrom(sourceSlug: string | null) {
+    setMenu(null)
+    setCopySubmenu(null)
+    const sourceLabel =
+      sourceSlug === null
+        ? t('sidebar.agentContextCopyFromAny')
+        : detectedAgents.find((a) => a.slug === sourceSlug)?.name ?? sourceSlug
+    if (
+      !window.confirm(
+        t('skills.bulkCopyConfirm', {
+          target: agent.name,
+          source: sourceLabel,
+        }),
+      )
+    )
+      return
+    setBusy(true)
+    try {
+      const result = (await invoke('sync_all_skills_to_agent', {
+        targetAgent: agent.slug,
+        sourceAgent: sourceSlug,
+      })) as {
+        copied: string[]
+        skipped: string[]
+        failed: { id: string; error: string }[]
+      }
+      if (result.copied.length === 0 && result.skipped.length === 0) {
+        alert(t('skills.bulkCopyNoCandidates', { source: sourceLabel }))
+      } else if (result.copied.length === 0 && result.failed.length === 0) {
+        alert(
+          t('skills.bulkCopyAllPresent', {
+            count: result.skipped.length,
+            target: agent.name,
+          }),
+        )
+      } else {
+        alert(
+          t('skills.bulkCopyDone', {
+            copied: result.copied.length,
+            skipped: result.skipped.length,
+            failed: result.failed.length,
+          }),
+        )
+      }
+      queryClient.invalidateQueries({ queryKey: ['skills'] })
+    } catch (err) {
+      alert(`Failed: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRemoveAll() {
+    setMenu(null)
+    if (directCount === 0) return
+    if (
+      !window.confirm(
+        t('skills.bulkClearConfirm', {
+          count: directCount,
+          agent: agent.name,
+        }),
+      )
+    )
+      return
+    setBusy(true)
+    try {
+      const result = (await invoke('uninstall_all_skills_from_agent', {
+        agentSlug: agent.slug,
+      })) as { removed: string[]; failed: { id: string; error: string }[] }
+      alert(
+        t('skills.bulkClearDone', {
+          removed: result.removed.length,
+          failed: result.failed.length,
+        }),
+      )
+      queryClient.invalidateQueries({ queryKey: ['skills'] })
+    } catch (err) {
+      alert(`Failed: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Pre-filter source agents to those with at least one direct install;
+  // picking "Figma" as source when Figma has 0 skills is a no-op and
+  // shouldn't be offered.
+  const sourceAgents = detectedAgents.filter((a) => a.slug !== agent.slug)
+
+  return (
+    <>
+      <NavLink
+        to={`/skills?agent=${agent.slug}`}
+        className={() => navLinkClass({ isActive })}
+        title={tooltip}
+        onContextMenu={openContextMenu}
+      >
+        <AgentIcon slug={agent.slug} />
+        <span className="truncate">{agent.name}</span>
+        <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/60">
+          {busy ? '…' : totalCount}
+        </span>
+      </NavLink>
+      {menu &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="fixed z-[300] min-w-[220px] rounded-xl glass-elevated p-1 shadow-lg animate-fade-in-up text-sm"
+            style={{ left: menu.x, top: menu.y }}
+            role="menu"
+          >
+            <div
+              className="relative flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] cursor-pointer"
+              onMouseEnter={(e) => openCopySubmenu(e.currentTarget)}
+              onMouseLeave={() => setCopySubmenu(null)}
+            >
+              <Copy className="size-3.5 text-muted-foreground" />
+              <span className="flex-1">
+                {t('sidebar.agentContextCopyHere')}
+              </span>
+              <ChevronRight className="size-3 text-muted-foreground" />
+              {copySubmenu && (
+                <div
+                  ref={submenuRef}
+                  className={`absolute z-[301] min-w-[220px] max-h-[60vh] overflow-y-auto rounded-xl glass-elevated p-1 shadow-lg ${
+                    copySubmenu.openLeft ? 'right-full mr-1' : 'left-full ml-1'
+                  } ${copySubmenu.openUp ? 'bottom-0' : 'top-0'}`}
+                  role="menu"
+                >
+                  <button
+                    type="button"
+                    className="w-full rounded-lg px-2.5 py-1.5 text-left hover:bg-black/[0.05] dark:hover:bg-white/[0.06]"
+                    onClick={() => void handleCopyFrom(null)}
+                  >
+                    {t('sidebar.agentContextCopyFromAny')}
+                  </button>
+                  {sourceAgents.map((a) => (
+                    <button
+                      key={a.slug}
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-black/[0.05] dark:hover:bg-white/[0.06]"
+                      onClick={() => void handleCopyFrom(a.slug)}
+                    >
+                      <AgentIcon slug={a.slug} className="size-4 shrink-0" />
+                      <span className="truncate">{a.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              disabled={directCount === 0}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+              onClick={() => void handleRemoveAll()}
+            >
+              <Trash2 className="size-3.5" />
+              {t('sidebar.agentContextRemoveAll', { count: directCount })}
+            </button>
+          </div>,
+          document.body,
+        )}
+    </>
   )
 }

@@ -30,6 +30,8 @@ export interface Skill {
   footprint_name_chars?: number;
   footprint_skill_md_chars?: number;
   listing_excluded?: boolean;
+  /** When set, skill is mirrored into the sync repo at this relative path (Phase-4 bundling). */
+  bundled_path?: string | null;
 }
 
 /** Direct (non-inherited) agent slugs */

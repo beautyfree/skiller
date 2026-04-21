@@ -276,8 +276,16 @@ export default function SkillsManager() {
     storageKey: "skills-list-width",
   });
 
-  // Sync agent filter from URL (do not clear selection here — skill deep links need stable state)
+  // Sync agent filter from URL. When the agent changes (e.g. sidebar click), drop the
+  // selected skill so the auto-select effect below picks the first skill applicable to
+  // the new agent. First render doesn't clear so deep links (?skill=) still work.
+  const prevAgentParam = useRef(agentParam);
   useEffect(() => {
+    if (prevAgentParam.current !== agentParam) {
+      setSelectedId(null);
+      setSelectedSkill(null);
+      prevAgentParam.current = agentParam;
+    }
     setFilter(agentParam);
   }, [agentParam]);
 
@@ -311,7 +319,10 @@ export default function SkillsManager() {
     };
   }, [filter, listWithoutSearch]);
 
-  // Apply ?skill= deep link or auto-select first row when nothing is selected (deps exclude selectedId so closing the panel does not re-trigger auto-select)
+  // Apply ?skill= deep link or auto-select first row when nothing is selected.
+  // Prefer a skill that is actually visible in the tree: a top-level row (either
+  // standalone or a collection parent). A collection child whose parent isn't in the
+  // filtered list is not directly visible, so skip it.
   useEffect(() => {
     if (!listWithoutSearch?.length) return;
 
@@ -325,14 +336,14 @@ export default function SkillsManager() {
       }
     }
 
-    setSelectedId((current) => {
-      if (current != null) return current;
-      return listWithoutSearch[0].id;
-    });
-    setSelectedSkill((current) => {
-      if (current != null) return current;
-      return listWithoutSearch[0];
-    });
+    // Prefer a top-level (non-child) skill — collection children are only visible when
+    // their parent is expanded, and are hidden entirely when the parent isn't in the
+    // filtered list. Fall back to the first item if there's nothing top-level.
+    const firstTopLevel =
+      listWithoutSearch.find((s) => !s.collection) ?? listWithoutSearch[0];
+
+    setSelectedId((current) => (current != null ? current : firstTopLevel.id));
+    setSelectedSkill((current) => (current != null ? current : firstTopLevel));
   }, [mergedSkills, filter, skillParam, listWithoutSearch]);
 
   // Keep selectedSkill in sync when underlying data refreshes (e.g. filesystem changes)
@@ -754,10 +765,74 @@ export default function SkillsManager() {
             skills={filtered}
             selectedId={selectedId}
             agents={agents}
+            activeAgentSlug={filter !== "all" && filter !== "installed-anywhere" ? filter : null}
             onSelect={selectSkill}
             onReveal={revealItemInDir}
             onUninstallAll={requestUninstallAll}
             onUnlinkInherited={requestUnlinkInherited}
+            onUninstallFromAgent={async (skill, agentSlug) => {
+              // Composite remove: uninstall direct + detach shared if both
+              // exist. Mirrors the detail-panel smart-remove so the list
+              // menu behaves the same way.
+              const agent = detectedAgents.find((a) => a.slug === agentSlug);
+              if (!agent) return;
+              const installedOnActive = skill.installations.some(
+                (i) => i.agent_slug === agentSlug && !i.is_inherited,
+              );
+              const inheritedOnActive = skill.installations.some(
+                (i) => i.agent_slug === agentSlug && i.is_inherited,
+              );
+              const preservedAgents = detectedAgents.filter(
+                (a) =>
+                  a.slug !== agentSlug &&
+                  skill.installations.some(
+                    (i) => i.agent_slug === a.slug && i.is_inherited,
+                  ),
+              );
+              let confirmMsg: string;
+              if (installedOnActive && inheritedOnActive) {
+                confirmMsg = t("skills.removeFromAgentConfirmBoth", {
+                  skill: skill.name || skill.id,
+                  agent: agent.name,
+                  preservedNames:
+                    preservedAgents.map((a) => a.name).join(", ") ||
+                    t("skills.detachNoOthers"),
+                  preservedCount: preservedAgents.length,
+                });
+              } else if (inheritedOnActive) {
+                confirmMsg = t("skills.detachConfirm", {
+                  skill: skill.name || skill.id,
+                  agent: agent.name,
+                  preservedCount: preservedAgents.length,
+                  preservedNames:
+                    preservedAgents.map((a) => a.name).join(", ") ||
+                    t("skills.detachNoOthers"),
+                });
+              } else {
+                confirmMsg = t("skills.removeFromAgentConfirmDirect", {
+                  skill: skill.name || skill.id,
+                  agent: agent.name,
+                });
+              }
+              if (!window.confirm(confirmMsg)) return;
+              try {
+                if (installedOnActive) {
+                  await handleUninstall(skill.id, agentSlug);
+                }
+                if (inheritedOnActive) {
+                  await invoke("detach_shared_skill", {
+                    skillId: skill.id,
+                    removeFromAgent: agentSlug,
+                  });
+                }
+                await refreshAndReselect();
+              } catch (err) {
+                toast(
+                  `Remove failed: ${err instanceof Error ? err.message : String(err)}`,
+                  "destructive",
+                );
+              }
+            }}
             isSearchStale={isSearchStale}
           />
         )}
@@ -791,6 +866,7 @@ export default function SkillsManager() {
           <SkillDetail
             skill={selectedSkill}
             detectedAgents={detectedAgents}
+            activeAgentSlug={filter !== "all" && filter !== "installed-anywhere" ? filter : null}
             busyAgents={busyAgents}
             updating={updating}
             readOnly={collectionSkillIds.has(selectedSkill.id)}
@@ -842,19 +918,23 @@ function SkillListGrouped({
   skills,
   selectedId,
   agents,
+  activeAgentSlug,
   onSelect,
   onReveal,
   onUninstallAll,
   onUnlinkInherited,
+  onUninstallFromAgent,
   isSearchStale,
 }: {
   skills: SkillWithRepo[];
   selectedId: string | null;
   agents: import("@/mainview/hooks/useAgents").AgentConfig[] | undefined;
+  activeAgentSlug?: string | null;
   onSelect: (skill: SkillWithRepo) => void;
   onReveal: (path: string) => void;
   onUninstallAll: (skill: SkillWithRepo) => void;
   onUnlinkInherited: (skill: SkillWithRepo) => void;
+  onUninstallFromAgent?: (skill: SkillWithRepo, agentSlug: string) => void;
   isSearchStale: boolean;
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -970,10 +1050,12 @@ function SkillListGrouped({
                     skill={row.skill}
                     selected={selectedId === row.skill.id}
                     agents={agents}
+                    activeAgentSlug={activeAgentSlug}
                     onSelect={onSelect}
                     onReveal={onReveal}
                     onUninstallAll={onUninstallAll}
                     onUnlinkInherited={onUnlinkInherited}
+                    onUninstallFromAgent={onUninstallFromAgent}
                   />
                 ) : row.kind === "collection_header" ? (
                   <CollectionItem
@@ -1063,10 +1145,10 @@ const CollectionItem = memo(function CollectionItem({
     <div className="relative" ref={rowRef}>
       <div
         className={cn(
-          "rounded-xl px-3 py-2.5 transition-all duration-200 select-none",
+          "rounded-xl px-3 py-2.5 transition-all duration-200 select-none border-[0.5px]",
           selected
-            ? "glass border border-border/50"
-            : "border border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]",
+            ? "glass"
+            : "border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]",
         )}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -1197,18 +1279,24 @@ const SkillListItem = memo(function SkillListItem({
   skill,
   selected,
   agents,
+  activeAgentSlug,
   onSelect,
   onReveal,
   onUninstallAll,
   onUnlinkInherited,
+  onUninstallFromAgent,
 }: {
   skill: SkillWithRepo;
   selected: boolean;
   agents: import("@/mainview/hooks/useAgents").AgentConfig[] | undefined;
+  /** Non-null when the list is filtered to a single agent. The row then hides
+   *  the agent chip strip (redundant — every row would show the same icon). */
+  activeAgentSlug?: string | null;
   onSelect: (skill: SkillWithRepo) => void;
   onReveal: (path: string) => void;
   onUninstallAll: (skill: SkillWithRepo) => void;
   onUnlinkInherited: (skill: SkillWithRepo) => void;
+  onUninstallFromAgent?: (skill: SkillWithRepo, agentSlug: string) => void;
 }) {
   const { t } = useTranslation();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -1241,10 +1329,10 @@ const SkillListItem = memo(function SkillListItem({
       <button
         type="button"
         className={cn(
-          "w-full rounded-xl px-3 py-2.5 pr-9 text-left transition-all duration-200 select-none",
+          "w-full rounded-xl px-3 py-2.5 pr-9 text-left transition-all duration-200 select-none border-[0.5px]",
           selected
-            ? "glass border border-border/50"
-            : "border border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]",
+            ? "glass"
+            : "border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]",
         )}
         onClick={() => onSelect(skill)}
         onContextMenu={(e) => {
@@ -1289,11 +1377,13 @@ const SkillListItem = memo(function SkillListItem({
             {t("skills.inheritedOnlyHint")}
           </p>
         )}
-        <AgentChipsCompact
-          directSlugs={directSlugs}
-          inheritedSlugs={inheritedSlugs}
-          agents={agents}
-        />
+        {!activeAgentSlug && (
+          <AgentChipsCompact
+            directSlugs={directSlugs}
+            inheritedSlugs={inheritedSlugs}
+            agents={agents}
+          />
+        )}
       </button>
       <button
         type="button"
@@ -1329,20 +1419,55 @@ const SkillListItem = memo(function SkillListItem({
             >
               {t("skills.revealInFinder")}
             </button>
-            {hasDirectInstall && (
-              <button
-                type="button"
-                role="menuitem"
-                className="w-full px-2.5 py-1.5 text-[13px] text-left rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
-                onClick={() => {
-                  onUninstallAll(skill);
-                  setMenu(null);
-                }}
-              >
-                {t("skills.uninstallAll")}
-              </button>
-            )}
-            {inheritedOnly && (
+            {(() => {
+              // Row-menu destructive action, scoped to the active filter:
+              //   - filter=X, skill visible on X (direct OR inherited) →
+              //     single "Remove from X" that runs the composite flow
+              //     (uninstall direct + detach shared as needed).
+              //   - filter=All, skill has any direct install anywhere →
+              //     "Uninstall from All Agents".
+              const agent =
+                activeAgentSlug && agents
+                  ? agents.find((a) => a.slug === activeAgentSlug)
+                  : undefined;
+              if (agent && onUninstallFromAgent) {
+                const visibleOnActive = skill.installations.some(
+                  (i) => i.agent_slug === agent.slug,
+                );
+                if (visibleOnActive) {
+                  return (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="w-full px-2.5 py-1.5 text-[13px] text-left rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
+                      onClick={() => {
+                        onUninstallFromAgent(skill, agent.slug);
+                        setMenu(null);
+                      }}
+                    >
+                      {t("skills.removeFromAgent", { agent: agent.name })}
+                    </button>
+                  );
+                }
+              }
+              if (hasDirectInstall) {
+                return (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="w-full px-2.5 py-1.5 text-[13px] text-left rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
+                    onClick={() => {
+                      onUninstallAll(skill);
+                      setMenu(null);
+                    }}
+                  >
+                    {t("skills.uninstallAll")}
+                  </button>
+                );
+              }
+              return null;
+            })()}
+            {inheritedOnly && !activeAgentSlug && (
               <button
                 type="button"
                 role="menuitem"
@@ -1475,6 +1600,7 @@ function getSourceRepo(source: unknown): string | null {
 function SkillDetail({
   skill,
   detectedAgents,
+  activeAgentSlug,
   busyAgents,
   updating,
   readOnly = false,
@@ -1487,6 +1613,8 @@ function SkillDetail({
 }: {
   skill: Skill;
   detectedAgents: AgentConfig[];
+  /** Currently-filtered agent in the sidebar (or null when "All"). */
+  activeAgentSlug?: string | null;
   busyAgents: Map<string, BusyOp>;
   updating: boolean;
   readOnly?: boolean;
@@ -1573,6 +1701,34 @@ function SkillDetail({
             </p>
           )}
         </div>
+
+        {activeAgentSlug && (() => {
+          const agent = detectedAgents.find((a) => a.slug === activeAgentSlug);
+          if (!agent) return null;
+          const isInstalled = skill.installations.some((i) => i.agent_slug === activeAgentSlug);
+          if (isInstalled) return null;
+          const isBusy = busyAgents.has(busyKey(skill.id, activeAgentSlug));
+          return (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs">
+              <div className="flex min-w-0 items-center gap-2">
+                <AgentIcon slug={activeAgentSlug} className="size-4" />
+                <span className="truncate">
+                  {t("skills.notInstalledForAgent", { name: agent.name })}
+                </span>
+              </div>
+              <Button
+                size="sm"
+                disabled={isBusy || readOnly}
+                onClick={() => onSync(skill.id, [activeAgentSlug])}
+              >
+                {isBusy ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : null}
+                {t("skills.installForAgent", { name: agent.name })}
+              </Button>
+            </div>
+          );
+        })()}
 
         <hr className="border-border" />
 
@@ -1741,7 +1897,125 @@ function SkillDetail({
                     </span>
                   </Button>
                 )}
-                {hasDirectInstall && (
+                {/*
+                 * If the user is filtering by a single agent AND this skill is
+                 * directly installed there, the primary destructive action
+                 * removes it from THAT agent only. Without this scoping, a
+                 * user on the Gemini tab clicking Uninstall would nuke it from
+                 * Claude/Cursor too — surprising and hard to undo.
+                 * The "Uninstall from all agents" fallback kicks in when
+                 * viewing "All" or when the skill isn't on the active agent.
+                 */}
+                {(() => {
+                  const agent =
+                    activeAgentSlug &&
+                    detectedAgents.find((a) => a.slug === activeAgentSlug);
+                  if (!agent) return null;
+                  const installedOnActive = skill.installations.some(
+                    (i) => i.agent_slug === agent.slug && !i.is_inherited,
+                  );
+                  const inheritedOnActive = skill.installations.some(
+                    (i) => i.agent_slug === agent.slug && i.is_inherited,
+                  );
+                  if (!installedOnActive && !inheritedOnActive) return null;
+
+                  const preservedAgents = detectedAgents.filter(
+                    (a) =>
+                      a.slug !== agent.slug &&
+                      skill.installations.some(
+                        (i) => i.agent_slug === a.slug && i.is_inherited,
+                      ),
+                  );
+                  const isBusy = busyAgents.has(busyKey(skill.id, agent.slug));
+                  // DWIM "Remove from X": the user's mental model is
+                  // "I don't want this skill in {agent}". Two surprises we
+                  // had to fix:
+                  //   1. Uninstalling only the direct copy left the shared
+                  //      copy visible → skill "reappeared" after click.
+                  //   2. Detaching without first removing the direct copy
+                  //      would leave a stale direct copy behind after the
+                  //      shared tree was restructured.
+                  // Solution: one button, one confirm, composite action that
+                  // does whatever's needed so the skill genuinely vanishes
+                  // from {agent}.
+                  return (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-auto min-h-9 w-full min-w-0 justify-start gap-2 border-destructive/30 py-2 text-left text-destructive whitespace-normal [text-wrap:balance] hover:bg-destructive/10 hover:text-destructive"
+                      disabled={isBusy || busyAgents.size > 0}
+                      onClick={async () => {
+                        // Build a confirm string that fits the situation:
+                        // direct only, shared only, or both.
+                        let confirmMsg: string;
+                        if (installedOnActive && inheritedOnActive) {
+                          confirmMsg = t("skills.removeFromAgentConfirmBoth", {
+                            skill: skill.name || skill.id,
+                            agent: agent.name,
+                            preservedNames:
+                              preservedAgents.map((a) => a.name).join(", ") ||
+                              t("skills.detachNoOthers"),
+                            preservedCount: preservedAgents.length,
+                          });
+                        } else if (inheritedOnActive) {
+                          confirmMsg = t("skills.detachConfirm", {
+                            skill: skill.name || skill.id,
+                            agent: agent.name,
+                            preservedCount: preservedAgents.length,
+                            preservedNames:
+                              preservedAgents.map((a) => a.name).join(", ") ||
+                              t("skills.detachNoOthers"),
+                          });
+                        } else {
+                          confirmMsg = t("skills.removeFromAgentConfirmDirect", {
+                            skill: skill.name || skill.id,
+                            agent: agent.name,
+                          });
+                        }
+                        if (!window.confirm(confirmMsg)) return;
+                        try {
+                          if (installedOnActive) {
+                            await onUninstall(skill.id, agent.slug);
+                          }
+                          if (inheritedOnActive) {
+                            await invoke("detach_shared_skill", {
+                              skillId: skill.id,
+                              removeFromAgent: agent.slug,
+                            });
+                          }
+                        } catch (err) {
+                          alert(
+                            `Remove failed: ${err instanceof Error ? err.message : String(err)}`,
+                          );
+                        }
+                      }}
+                    >
+                      <Trash2 className="size-3.5 shrink-0" />
+                      <span className="min-w-0">
+                        {isBusy
+                          ? t("marketplace.uninstalling")
+                          : t("skills.removeFromAgent", { agent: agent.name })}
+                        {installedOnActive && inheritedOnActive && (
+                          <span className="ml-1 text-[10px] font-normal text-muted-foreground block">
+                            {t("skills.removeFromAgentHintBoth")}
+                          </span>
+                        )}
+                        {!installedOnActive && inheritedOnActive && (
+                          <span className="ml-1 text-[10px] font-normal text-muted-foreground block">
+                            {t("skills.detachHint", { count: preservedAgents.length })}
+                          </span>
+                        )}
+                      </span>
+                    </Button>
+                  );
+                })()}
+                {/*
+                 * "Uninstall from all agents" only shows in the All-agents view.
+                 * When scoped to a specific agent, offering it would be
+                 * visually dominant and out of context — the user just wants
+                 * to pull it out of that one agent.
+                 */}
+                {hasDirectInstall && !activeAgentSlug && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -1772,6 +2046,7 @@ function SkillDetail({
                   </Button>
                 )}
               </div>
+
             </DetailSection>
           </>
         )}

@@ -19,6 +19,7 @@ import type { SkillSource } from './skill-types'
 import { scanAllSkills } from './scanner'
 import { installSkillFromGit, installSkillFromPath } from './install'
 import {
+  detachSharedSkill,
   uninstallSkill,
   uninstallSkillFromAll,
   unlinkInheritedSkillFromAgentConfigs,
@@ -92,6 +93,7 @@ export type BunSideRpc = {
       | { macosWindowBlur: boolean }
       | { active: boolean }
       | { baseUrl: string }
+      | { path: string }
       | import('../shared/rpc-schema').AppUpdateStatusJson
   ) => void
 }
@@ -248,6 +250,104 @@ export function createRequestHandlers(ctx: {
     uninstall_skill_all: async (params: { skillId: string }) => {
       const { skillId } = params
       uninstallSkillFromAll(skillId, loadDetectedAgents())
+    },
+    /**
+     * Remove every directly-installed skill from a single agent. Used by
+     * "Clean up Gemini / Codex / …" in the agent header, for the case where
+     * the user no longer uses that agent and wants it empty (or hidden from
+     * the sidebar because a zero-count agent collapses).
+     */
+    uninstall_all_skills_from_agent: async (params: { agentSlug: string }) => {
+      const agents = loadDetectedAgents()
+      const skills = scanAllSkills(agents)
+      const removed: string[] = []
+      const failed: { id: string; error: string }[] = []
+      for (const skill of skills) {
+        const direct = skill.installations.some(
+          (i) => i.agent_slug === params.agentSlug && !i.is_inherited,
+        )
+        if (!direct) continue
+        try {
+          uninstallSkill(skill.id, params.agentSlug, agents)
+          removed.push(skill.id)
+        } catch (err) {
+          failed.push({
+            id: skill.id,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }
+      return { removed, failed }
+    },
+    /**
+     * Copy every skill that's directly installed on `sourceAgent` (or on any
+     * agent when sourceAgent is null) into `targetAgent`. Uses the canonical
+     * dir as the source for each skill, same path as individual Sync To X.
+     */
+    sync_all_skills_to_agent: async (params: {
+      targetAgent: string
+      sourceAgent: string | null
+    }) => {
+      const agents = loadDetectedAgents()
+      const skills = scanAllSkills(agents)
+      const copied: string[] = []
+      const skipped: string[] = []
+      const alreadyPresent: string[] = []
+      const failed: { id: string; error: string }[] = []
+      for (const skill of skills) {
+        // STEP 1: candidacy — is this skill actually on the source agent?
+        // Only directly-installed skills count (inherited skills aren't
+        // "owned" by the source; they come from a shared library that the
+        // target may or may not already read). If the user picked "any",
+        // we accept anything with at least one direct install somewhere.
+        const presentOnSource = params.sourceAgent
+          ? skill.installations.some(
+              (i) =>
+                i.agent_slug === params.sourceAgent && !i.is_inherited,
+            )
+          : skill.installations.some((i) => !i.is_inherited)
+        if (!presentOnSource) continue
+
+        // STEP 2: is it already on the target? Count separately so the
+        // summary can tell the user "your target already has N of them via
+        // the shared dir" — different meaning from "we considered it and
+        // dropped it for another reason".
+        const onTarget = skill.installations.some(
+          (i) => i.agent_slug === params.targetAgent,
+        )
+        if (onTarget) {
+          alreadyPresent.push(skill.id)
+          continue
+        }
+        try {
+          const source = resolveSkillSourcePath(skill.id, agents)
+          installSkillFromPath(source, [params.targetAgent], agents)
+          copied.push(skill.id)
+        } catch (err) {
+          failed.push({
+            id: skill.id,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }
+      // Keep the shared-response shape stable — fold "already present" into
+      // skipped so existing callers still read the summary the same way,
+      // while copied/failed stay precise.
+      return {
+        copied,
+        skipped: [...alreadyPresent, ...skipped],
+        failed,
+      }
+    },
+    detach_shared_skill: async (params: {
+      skillId: string
+      removeFromAgent: string
+    }) => {
+      return detachSharedSkill(
+        params.skillId,
+        params.removeFromAgent,
+        loadDetectedAgents(),
+      )
     },
     unlink_inherited_skill: async (params: { skillId: string }) => {
       const { skillId } = params

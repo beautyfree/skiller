@@ -15,7 +15,7 @@ import type { AgentConfig } from "./types";
 import { copyDirRecursive, expandHome, linkOrCopy, removePath } from "./fsutil";
 import { isSymlink } from "./fsutil";
 import { getTemplatesDir } from "./paths";
-import { writeProvenance } from "./provenance";
+import { readProvenance, writeProvenance } from "./provenance";
 import { sharedSkillsDir } from "./shared-skills";
 
 export { sharedSkillsDir };
@@ -126,6 +126,15 @@ export function installSkillFromPath(
 		}
 	}
 
+	// Preserve any existing provenance from a prior git-based install. Only
+	// write a minimal "local" stub when there's nothing recorded — callers
+	// like installSkillFromGit override this with the real repo info right
+	// after. Without this, a skill installed from a local folder has no
+	// provenance at all and later update_skill fails with "no provenance".
+	if (!readProvenance()[skillName]) {
+		writeProvenance(skillName, "local", sourceSkillDir, null, null);
+	}
+
 	return canonicalDir;
 }
 
@@ -170,12 +179,29 @@ export async function installSkillFromGit(
 	targetAgentSlugs: string[],
 	agents: AgentConfig[],
 	sourceLabel: string,
+	/** Optional git ref (branch, tag, or SHA) to check out before copying. */
+	ref?: string | null,
 ): Promise<string> {
 	const tempDir = join(
 		tmpdir(),
 		`skills-app-install-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 	);
 	await simpleGit().clone(repoUrl, tempDir);
+	if (ref && ref.trim()) {
+		try {
+			await simpleGit(tempDir).checkout(ref.trim());
+		} catch (err) {
+			throw new Error(`Failed to checkout ref "${ref}" in ${repoUrl}: ${err}`);
+		}
+	}
+	// Capture the resolved HEAD SHA so we can pin it in the lockfile.
+	let resolvedSha: string | null = null;
+	try {
+		resolvedSha = (await simpleGit(tempDir).revparse(["HEAD"])).trim();
+	} catch {
+		/* keep null */
+	}
+
 	const source = join(tempDir, skillRelativePath);
 	const skillName = deriveGitTargetSkillName(repoUrl, skillRelativePath, source);
 	const installed = installSkillFromPath(source, targetAgentSlugs, agents, skillName);
@@ -188,6 +214,6 @@ export async function installSkillFromGit(
 	const skillId = basename(installed);
 	const rel = skillRelativePath.trim();
 	const skillPath = !rel || rel === "." ? null : rel;
-	writeProvenance(skillId, sourceLabel, repoUrl, skillPath);
+	writeProvenance(skillId, sourceLabel, repoUrl, skillPath, resolvedSha);
 	return installed;
 }

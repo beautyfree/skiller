@@ -215,6 +215,7 @@ function scanInheritedRoot(
 			collection,
 			scope: { kind: "SharedGlobal" },
 			installations: [installation],
+			bundled_path: (provenance[dirName]?.bundled_path as string | undefined) ?? null,
 		});
 	}
 }
@@ -280,6 +281,7 @@ function scanSkillMdRoot(
 			collection,
 			scope,
 			installations: [installation],
+			bundled_path: (provenance[skillId]?.bundled_path as string | undefined) ?? null,
 		});
 	}
 }

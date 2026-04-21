@@ -41,6 +41,8 @@ export interface Skill {
 	footprint_skill_md_chars: number;
 	/** True when model listing omits description slice (manual invoke). */
 	listing_excluded: boolean;
+	/** When set, skill content is mirrored into the sync repo at this relative path. */
+	bundled_path?: string | null;
 }
 
 export interface UpdateProgress {

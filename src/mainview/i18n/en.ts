@@ -19,6 +19,11 @@ const en = {
     dashboard: "Dashboard",
     skills: "All Skills",
     agents: "Agents",
+    agentSkillsTooltip: "{{name}} — {{direct}} own · {{inherited}} from shared library",
+    agentSkillsTooltipDirectOnly: "{{name}} — {{count}} skills",
+    agentContextCopyHere: "Copy all skills here from…",
+    agentContextCopyFromAny: "…any agent",
+    agentContextRemoveAll: "Remove all skills ({{count}})",
     marketplace: "Marketplace",
     projects: "Projects",
     settings: "Settings",
@@ -124,6 +129,8 @@ const en = {
     // Actions (legacy key; prefer `action` for the detail section heading)
     actions: "Actions",
     editSkillMd: "Edit SKILL.md",
+    notInstalledForAgent: "Not installed for {{name}}",
+    installForAgent: "Install for {{name}}",
     installToProject: "Install to project",
     installToProjectTitle: "Install \"{{name}}\" into a project",
     installToProjectNone: "No projects yet. Add one to continue.",
@@ -151,6 +158,35 @@ const en = {
     syncFailed: "Could not sync skill.",
     uninstallFailed: "Could not uninstall skill.",
     uninstallAll: "Uninstall from All Agents",
+    bulkLabel: "Bulk:",
+    bulkCopyHere: "Copy all skills here",
+    bulkCopyFromAny: "…from any agent",
+    bulkCopyConfirm:
+      "Copy every skill from {{source}} into {{target}}? Skills already on {{target}} stay put.",
+    bulkCopyDone: "Copied {{copied}} · skipped {{skipped}} · failed {{failed}}",
+    bulkCopyNoCandidates:
+      "{{source}} has no skills you could copy here (skills inherited from a shared library don't count — only direct installs).",
+    bulkCopyAllPresent:
+      "Nothing to copy — {{target}} already sees all {{count}} skills (likely via the shared ~/.agents library).",
+    bulkClear: "Remove all ({{count}})",
+    bulkClearConfirm:
+      "Remove {{count}} skills from {{agent}}? Canonical dirs stay if other agents still use them.",
+    bulkClearDone: "Removed {{removed}} · failed {{failed}}",
+    uninstallFromAgent: "Uninstall from {{agent}}",
+    removeFromAgent: "Remove from {{agent}}",
+    removeFromAgentHintBoth: "direct + shared copy — both go",
+    removeFromAgentConfirmDirect:
+      "Remove \"{{skill}}\" from {{agent}}? Other agents that also have it stay untouched.",
+    removeFromAgentConfirmBoth:
+      "\"{{skill}}\" is installed on {{agent}} two ways:\n  • Directly in {{agent}}'s own folder\n  • Via the shared ~/.agents library (read by {{preservedCount}} other agent(s): {{preservedNames}})\n\nSkiller will remove the direct copy AND detach the shared one (copying it into those other agents first so they keep it). After this {{agent}} won't see the skill at all.\n\nFuture shared-library updates won't reach the copied-out versions. Continue?",
+    detachFromAgent: "Remove from {{agent}} only",
+    detachHint: "copies into {{count}} other agents first",
+    detachHint_other: "copies into {{count}} other agents first",
+    detachNoOthers: "no other agents",
+    detachConfirm:
+      "\"{{skill}}\" lives in the shared ~/.agents library — every agent that reads from it sees it.\n\nTo remove it only from {{agent}}, Skiller will first copy the skill into: {{preservedNames}} (so those agents keep it), then delete the shared copy. {{agent}} will no longer see it.\n\nAfter detach, future updates to the shared version won't reach the copied ones. Continue?",
+    uninstallKeepsOtherAgents: "stays on {{count}} other",
+    uninstallKeepsOtherAgents_other: "stays on {{count}} others",
     uninstallAllSuccess: "Skill uninstalled from all agents.",
     uninstallAllDirectDoneInheritedRemains:
       "Direct installs were removed, but this skill is still visible via an inherited source link.",
@@ -276,6 +312,10 @@ const en = {
     updateVersionOnly: "Version {{version}}",
     updateLastChecked: "Last checked {{time}}",
     // Marketplace Cache
+    onboardingTitle: "Onboarding",
+    onboardingDescription:
+      "Replay the first-run wizard — useful when setting up a new machine or exploring what Skiller can do.",
+    onboardingReplay: "Show again",
     marketplaceCache: "Marketplace Cache",
     cacheDescription: "Marketplace results are cached locally for 5 minutes. Clear the cache to force a fresh fetch.",
     clearCache: "Clear Cache",
@@ -394,6 +434,44 @@ const en = {
     minimize: "Minimize to tray",
     quit: "Quit application",
   },
+
+  // === Onboarding ===
+  onboarding: {
+    // Title and body are split into pre/highlight/post so we can style the
+    // focus words in accent color without shoving HTML into i18n strings.
+    welcomeTitlePre: "Your",
+    welcomeTitleHighlight: "skills HQ",
+    welcomeTitlePost: "for every",
+    welcomeBodyPre: "One desktop app to",
+    welcomeBodyHighlight: "install, sync, and edit",
+    welcomeBodyPost: "SKILL.md across Claude Code, Cursor, Codex, and every other agent you use.",
+    agentsTitle: "Detected agents",
+    agentsBody:
+      "We found {{count}} coding agents on this machine. Skills you install will be wired up to all of them automatically.",
+    agentsBodyEmpty: "We didn't detect any coding agents on this machine yet.",
+    agentsEmptyHint:
+      "Install Claude Code, Cursor, or any supported agent, then reopen Skiller — detection runs on every launch.",
+    marketplaceTitle: "A peek at the Marketplace",
+    marketplaceBody:
+      "Here's what's popular on skills.sh right now. Don't install anything yet — come back when you know what you actually need.",
+    skillsLoading: "Loading top skills from skills.sh…",
+    skillsLoadFailed: "Couldn't fetch from skills.sh: {{error}}",
+    loadingDescription: "Loading description…",
+    noDescription: "No description available — check the repo before installing.",
+    doneTitle: "You're ready",
+    doneBody: "Jump straight into the app — here's where to go first:",
+    ctaSkillsTitle: "Manage skills",
+    ctaSkillsBody: "See what's installed, copy a skill to another agent, or clean house.",
+    ctaMarketplaceTitle: "Open Marketplace",
+    ctaMarketplaceBody: "Browse popular skills and install the ones you want.",
+    ctaProjectsTitle: "Add a project",
+    ctaProjectsBody: "Wire skills into a specific repo so iPhone/remote agents see them too.",
+    next: "Next",
+    back: "Back",
+    skip: "Skip",
+    finish: "Close",
+  },
+
 } as const;
 
 export default en;

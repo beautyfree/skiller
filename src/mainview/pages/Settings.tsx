@@ -129,7 +129,13 @@ export default function SettingsPage() {
   async function handleUpdateDownload() {
     setUpdateBusy('downloading')
     try {
-      await invoke('app_update_download')
+      // Returns a status snapshot; if the final state is 'error', the
+      // autoUpdater rejected (network, signature, etc.) and we should surface
+      // that to the user instead of just re-enabling the button.
+      const snapshot = await invoke('app_update_download')
+      if (snapshot?.state === 'error' && snapshot.error) {
+        toast(snapshot.error, 'destructive')
+      }
     } catch (e) {
       toast(
         t('settings.updateStateError') +

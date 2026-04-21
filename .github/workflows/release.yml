@@ -1,14 +1,22 @@
 name: Release
 
-# Triggered by pushing a tag like v0.2.0. release-please (see
-# .github/workflows/release-please.yml) creates the GitHub Release + tag when
-# its "Release PR" is merged; this workflow then builds the Electron app
-# natively on each OS (electron-builder + node-gyp native modules don't
-# cross-compile cleanly) and uploads every artifact to that same release.
-# electron-updater reads `latest-{mac,linux,win}.yml` from the same release
-# to drive auto-updates in production.
-
+# Two triggers that cover the two ways a release lands here:
+#
+#   1. `release: [created]` — fires when release-please creates the draft
+#      release after its PR is merged. This is the normal path. Draft
+#      releases don't create a git tag until they're published, so tag
+#      push alone wouldn't fire (see commit 4032f11 for the draft switch).
+#
+#   2. `push: tags: v*` — fallback for when a maintainer hand-creates a
+#      tag locally (e.g. to rebuild a release whose assets got corrupted).
+#      Also covers anyone using a PAT-based release-please flow where the
+#      tag push genuinely does trigger workflows.
+#
+# Both paths resolve the tag/release via TAG_NAME below so the downstream
+# softprops/gh-release steps don't care which trigger fired.
 on:
+  release:
+    types: [created]
   push:
     tags:
       - "v*"
@@ -17,7 +25,9 @@ permissions:
   contents: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Deduplicate by tag so the `release: created` + late `push: tags` never
+  # run simultaneously for the same version.
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -39,6 +49,12 @@ jobs:
             script: dist:linux
     steps:
       - uses: actions/checkout@v5
+        with:
+          # On `release: created` for a draft, there's no git tag yet — use
+          # the release's target commit sha. On tag push, github.ref resolves
+          # to the tag itself (checkout picks that up by default).
+          ref: ${{ github.event.release.target_commitish || github.ref }}
+
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -130,7 +146,7 @@ jobs:
       - name: Upload build outputs to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
           # release-please creates the Release as a draft (see config). We
           # keep it a draft here too so softprops doesn't accidentally flip
           # it to published — the final publish-release job does that after
@@ -168,6 +184,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release edit "${{ github.ref_name }}" \
+          gh release edit "${{ github.event.release.tag_name || github.ref_name }}" \
             --repo "${{ github.repository }}" \
             --draft=false

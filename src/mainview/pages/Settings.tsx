@@ -560,6 +560,33 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+          {/* Download progress bar — the percentage is already in the
+           *  subtitle, but a visual bar gives actual feedback on long
+           *  downloads (200+ MB DMG can take minutes on slow networks).
+           *  Indeterminate stripe when progress is null (handshake phase). */}
+          {updateStatus?.state === 'downloading' && (
+            <div className="space-y-1">
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className={`h-full bg-primary transition-[width] duration-300 ${
+                    typeof updateStatus.progress !== 'number'
+                      ? 'animate-pulse w-1/3'
+                      : ''
+                  }`}
+                  style={
+                    typeof updateStatus.progress === 'number'
+                      ? { width: `${updateStatus.progress}%` }
+                      : undefined
+                  }
+                />
+              </div>
+              {typeof updateStatus.progress === 'number' && (
+                <p className="text-[10px] tabular-nums text-muted-foreground">
+                  {updateStatus.progress}%
+                </p>
+              )}
+            </div>
+          )}
           {/* Persistent error surface — the inline muted paragraph above was
            *  too easy to miss. Errors from autoUpdater (signature, disk full,
            *  network) stay visible here with an explicit destructive style

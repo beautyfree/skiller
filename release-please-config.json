@@ -21,7 +21,8 @@
   "packages": {
     ".": {
       "package-name": "skiller",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "draft": true
     }
   }
 }

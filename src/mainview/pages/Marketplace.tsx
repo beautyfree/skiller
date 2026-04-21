@@ -393,10 +393,10 @@ const MarketplaceListItem = memo(function MarketplaceListItem({
     <button
       type="button"
       className={cn(
-        "w-full rounded-xl px-3 py-2.5 text-left transition-all duration-200",
+        "w-full rounded-xl px-3 py-2.5 text-left transition-all duration-200 border-[0.5px]",
         selected
-          ? "glass border border-border/50"
-          : "border border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]",
+          ? "glass"
+          : "border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]",
       )}
       onClick={() => onSelect(key)}
     >

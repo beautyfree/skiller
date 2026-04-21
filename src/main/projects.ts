@@ -272,12 +272,20 @@ export async function installSkillToProjectFromGit(
 	repoUrl: string,
 	skillRelativePath: string,
 	projectPath: string,
+	ref?: string | null,
 ): Promise<string> {
 	const tempDir = join(
 		tmpdir(),
 		`skills-app-project-install-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 	);
 	await simpleGit().clone(repoUrl, tempDir);
+	if (ref && ref.trim()) {
+		try {
+			await simpleGit(tempDir).checkout(ref.trim());
+		} catch (err) {
+			throw new Error(`Failed to checkout ref "${ref}" in ${repoUrl}: ${err}`);
+		}
+	}
 	try {
 		const source = join(tempDir, skillRelativePath);
 		const rel = skillRelativePath.trim();

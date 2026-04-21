@@ -10,14 +10,15 @@ Managing skills separately in every agent is repetitive and error-prone.
 Skiller gives you one control center to:
 
 - **See everything at once** — agents, installed skills, and status in one dashboard
-- **Install once, sync everywhere** — propagate skills across your agent stack
+- **Install once, use everywhere** — propagate skills across your agent stack with one click
+- **Clean house per-agent** — right-click an agent to copy every skill from another or wipe them all
+- **Project-scoped skills** — pin a skill to a specific repo without polluting your global setup
 - **Edit confidently** — update `SKILL.md` content with immediate local visibility
 - **Discover faster** — browse marketplace sources like [skills.sh](https://skills.sh) and [ClawHub](https://clawhub.ai)
-- **Stay up to date** — refresh and manage skills without manual filesystem work
 
 ## Supported agents
 
-Skiller talks to every listed agent natively — dropping a skill into one place propagates it to all of them.
+Skiller supports **44 agents** natively — drop a skill into one place and it propagates to all of them.
 
 <table>
   <tr>
@@ -46,12 +47,22 @@ Skiller talks to every listed agent natively — dropping a skill into one place
   </tr>
 </table>
 
+<details>
+<summary><b>+ 28 more agents</b> (click to expand)</summary>
+
+Adal · Amp · Augment · Bob · Command Code · Continue · Cortex · Crush · DeepAgents · Firebender · Goose · iFlow CLI · Junie · Kilo · Kimi CLI · Kode · MCPJam · Mistral Vibe · Mux · Neovate · OpenHands · Pi · Pochi · Qwen Code · Replit · Roo · Trae (CN) · Zencoder
+
+Skiller auto-detects any of these the moment they're installed — no setup required.
+
+</details>
+
 ## Product Tour
 
 ### Core experience
 
 - **Dashboard** — system-wide visibility into your skill environment
-- **Skills Manager** — inspect, edit, sync, and remove skills
+- **Skills Manager** — inspect, edit, sync, and remove skills (per-agent or everywhere)
+- **Projects** — group skills under specific repos so `.claude/skills/` etc. stays scoped
 - **Marketplace** — search and install community skills quickly
 - **Settings** — configure behavior, sources, and runtime preferences
 

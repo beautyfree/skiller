@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   Trash2,
@@ -11,7 +12,9 @@ import {
   RotateCw,
 } from 'lucide-react'
 import { openUrl, invoke, listen } from '@/mainview/lib/native'
-import type { AppUpdateStatusJson } from '@/shared/rpc-schema'
+import type {
+  AppUpdateStatusJson,
+} from '@/shared/rpc-schema'
 import { useAccentColor } from '@/mainview/hooks/useAccentColor'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/mainview/components/ui/button'
@@ -62,6 +65,21 @@ export default function SettingsPage() {
   const [updateBusy, setUpdateBusy] = useState<
     'idle' | 'checking' | 'downloading' | 'applying'
   >('idle')
+  const [searchParams] = useSearchParams()
+
+  // Scroll to the section named by `?section=<id>` after mount. Used when the
+  // footer sync indicator or SyncBanner deep-links here.
+  useEffect(() => {
+    const section = searchParams.get('section')
+    if (!section) return
+    // Wait a tick so the section has rendered (data fetches inside may still be
+    // pending but the target <section id> is always in the initial DOM tree).
+    const t = setTimeout(() => {
+      const el = document.getElementById(section)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
+    return () => clearTimeout(t)
+  }, [searchParams])
 
   useEffect(() => {
     invoke('get_app_version')
@@ -535,6 +553,39 @@ export default function SettingsPage() {
           </div>
         </section>
 
+
+        {/* Onboarding replay */}
+        <section className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h2 className="text-sm font-medium">
+                {t('settings.onboardingTitle')}
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                {t('settings.onboardingDescription')}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                try {
+                  localStorage.removeItem('skiller.onboarding.done')
+                } catch {
+                  /* ignore */
+                }
+                window.dispatchEvent(
+                  new CustomEvent('skiller:open-onboarding', {
+                    detail: { force: true },
+                  }),
+                )
+              }}
+            >
+              {t('settings.onboardingReplay')}
+            </Button>
+          </div>
+        </section>
+
         {/* Cache */}
         <section className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
           <div className="flex items-start justify-between gap-4">
@@ -683,6 +734,8 @@ export default function SettingsPage() {
           </button>
         </section>
       </div>
+
     </div>
   )
 }
+

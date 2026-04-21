@@ -11,6 +11,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { getAgentIcon } from "@/mainview/lib/agentIcons";
+import { AgentIcon } from "@/mainview/components/AgentIcon";
 import {
   getInstallCommand,
   getInstallDocsUrl,
@@ -337,16 +338,10 @@ export default function Dashboard() {
                     </p>
                   )}
                 </div>
-                <div className="flex gap-1 shrink-0 ml-3 relative z-[3]">
-                  {installedAgents(skill).map((slug) => (
-                    <span
-                      key={slug}
-                      className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground"
-                    >
-                      {agents?.find((a) => a.slug === slug)?.name ?? slug}
-                    </span>
-                  ))}
-                </div>
+                <SkillAgentsBadge
+                  slugs={installedAgents(skill)}
+                  agents={agents ?? []}
+                />
               </LiquidGlass>
             ))}
           </div>
@@ -357,6 +352,50 @@ export default function Dashboard() {
         agent={selectedGuide}
         onClose={() => setGuideAgent(null)}
       />
+    </div>
+  );
+}
+
+/**
+ * Compact agent badge row for Recent Skills cards. Shows up to N logos
+ * stacked; anything beyond collapses into a "+K" pill so cards with 10+
+ * targeted agents don't vomit pills across the row.
+ */
+function SkillAgentsBadge({
+  slugs,
+  agents,
+  max = 4,
+}: {
+  slugs: string[];
+  agents: AgentConfig[];
+  max?: number;
+}) {
+  if (slugs.length === 0) return null;
+  const visible = slugs.slice(0, max);
+  const overflow = slugs.length - visible.length;
+  const title = slugs
+    .map((s) => agents.find((a) => a.slug === s)?.name ?? s)
+    .join(", ");
+  return (
+    <div
+      className="flex shrink-0 items-center ml-3 relative z-[3]"
+      title={title}
+    >
+      <div className="flex -space-x-1.5">
+        {visible.map((slug) => (
+          <div
+            key={slug}
+            className="flex size-5 items-center justify-center rounded-full bg-background ring-1 ring-border/60"
+          >
+            <AgentIcon slug={slug} className="size-3.5" />
+          </div>
+        ))}
+      </div>
+      {overflow > 0 && (
+        <span className="ml-1.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+          +{overflow}
+        </span>
+      )}
     </div>
   );
 }
@@ -565,3 +604,4 @@ function CommandBlock({
     </div>
   );
 }
+

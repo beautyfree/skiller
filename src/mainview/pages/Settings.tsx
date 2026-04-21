@@ -129,10 +129,12 @@ export default function SettingsPage() {
   async function handleUpdateDownload() {
     setUpdateBusy('downloading')
     try {
-      // Returns a status snapshot; if the final state is 'error', the
-      // autoUpdater rejected (network, signature, etc.) and we should surface
-      // that to the user instead of just re-enabling the button.
       const snapshot = await invoke('app_update_download')
+      // Adopt the returned snapshot immediately so the button flips to
+      // "Restart & install" without waiting for the push event to race
+      // through — previously the busy reset happened before the event
+      // arrived and the UI briefly showed "Download update" again.
+      if (snapshot) setUpdateStatus(snapshot)
       if (snapshot?.state === 'error' && snapshot.error) {
         toast(snapshot.error, 'destructive')
       }

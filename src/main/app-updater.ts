@@ -157,10 +157,31 @@ export async function checkForUpdate(): Promise<AppUpdateStatusJson> {
 }
 
 export async function downloadUpdate(): Promise<AppUpdateStatusJson> {
-	if (!app.isPackaged) return snapshot();
+	// In dev the autoUpdater is a no-op — surface that as a clear error state
+	// so the UI shows something instead of the button silently re-enabling.
+	if (!app.isPackaged) {
+		lastError =
+			"Updates only work in a packaged build (bun run dist:mac / :win / :linux).";
+		setState("error");
+		return snapshot();
+	}
+	console.log("[updater] downloadUpdate() invoked; state=", state);
+	// Optimistic transition so the renderer UI reflects work-in-progress even
+	// before the first `download-progress` event fires (those can lag 2–3s on
+	// slow networks).
+	setState("downloading");
 	try {
-		await autoUpdater.downloadUpdate();
+		const result = await autoUpdater.downloadUpdate();
+		console.log("[updater] downloadUpdate() resolved with:", result);
+		// If update-downloaded event didn't fire yet (race on some platforms),
+		// force the state transition based on the promise resolution.
+		if (state !== "ready") {
+			updateDownloaded = true;
+			downloadProgress = 100;
+			setState("ready");
+		}
 	} catch (err) {
+		console.warn("[updater] downloadUpdate() rejected:", err);
 		lastError = (err as Error)?.message ?? String(err);
 		setState("error");
 	}

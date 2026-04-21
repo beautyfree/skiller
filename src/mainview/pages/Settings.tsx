@@ -10,6 +10,7 @@ import {
   ExternalLink,
   Download,
   RotateCw,
+  AlertTriangle,
 } from 'lucide-react'
 import { openUrl, invoke, listen } from '@/mainview/lib/native'
 import type {
@@ -559,6 +560,24 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+          {/* Persistent error surface — the inline muted paragraph above was
+           *  too easy to miss. Errors from autoUpdater (signature, disk full,
+           *  network) stay visible here with an explicit destructive style
+           *  until the user runs a successful check/download that clears the
+           *  state. */}
+          {updateStatus?.error && (
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-destructive">
+                  {t('settings.updateErrorTitle')}
+                </p>
+                <p className="mt-0.5 text-muted-foreground break-words font-mono">
+                  {updateStatus.error}
+                </p>
+              </div>
+            </div>
+          )}
         </section>
 
 

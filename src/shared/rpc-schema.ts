@@ -34,6 +34,8 @@ export type SkillJson = {
   footprint_name_chars?: number | null;
   footprint_skill_md_chars?: number | null;
   listing_excluded?: boolean | null;
+  /** When set, the skill content is mirrored into the sync repo at this relative path. */
+  bundled_path?: string | null;
 };
 
 export type AgentConfigJson = {
@@ -182,6 +184,25 @@ export type AppRPCSchema = {
       install_skill: { params: { source: SkillSourceParam; targetAgents: string[] }; response: void };
       uninstall_skill: { params: { skillId: string; agentSlug: string }; response: void };
       uninstall_skill_all: { params: { skillId: string }; response: void };
+      detach_shared_skill: {
+        params: { skillId: string; removeFromAgent: string };
+        response: { preservedOn: string[]; removedFrom: string };
+      };
+      uninstall_all_skills_from_agent: {
+        params: { agentSlug: string };
+        response: {
+          removed: string[];
+          failed: { id: string; error: string }[];
+        };
+      };
+      sync_all_skills_to_agent: {
+        params: { targetAgent: string; sourceAgent: string | null };
+        response: {
+          copied: string[];
+          skipped: string[];
+          failed: { id: string; error: string }[];
+        };
+      };
       unlink_inherited_skill: { params: { skillId: string }; response: void };
       sync_skill: { params: { skillId: string; targetAgents: string[] }; response: void };
       update_skill: { params: { skillId: string }; response: void };

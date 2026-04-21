@@ -55,6 +55,7 @@ export function skillToJson(s: Skill): SkillJson {
 		footprint_name_chars: s.footprint_name_chars,
 		footprint_skill_md_chars: s.footprint_skill_md_chars,
 		listing_excluded: s.listing_excluded,
+		bundled_path: s.bundled_path ?? null,
 	};
 }
 

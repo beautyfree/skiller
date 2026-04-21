@@ -82,6 +82,15 @@ export async function updateSingleSkill(skillId: string, agents: AgentConfig[]):
 	const rec = entry as Record<string, unknown>;
 	const sourceLabel = typeof rec.source === "string" ? rec.source : "";
 	const repoUrl = typeof rec.repository === "string" ? rec.repository : "";
+	// Skills installed from a local folder have provenance.source = "local"
+	// and `repository` set to the folder path, not a git URL. Trying to
+	// `simpleGit().clone()` a local dir that isn't a bare/init'd repo would
+	// fail with a confusing "not a valid git repo" error. Bail clearly.
+	if (sourceLabel === "local") {
+		throw new Error(
+			`Skill '${skillId}' was installed from a local folder — updates aren't supported. Reinstall from the source folder to pick up changes.`,
+		);
+	}
 	if (!repoUrl) {
 		throw new Error(`Skill '${skillId}' has no repository URL`);
 	}

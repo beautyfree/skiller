@@ -25,6 +25,15 @@ export function createAppRouter(ctx: {
     install_skill: proc.input(anyIn).mutation(({ input }) => h.install_skill(input)),
     uninstall_skill: proc.input(anyIn).mutation(({ input }) => h.uninstall_skill(input)),
     uninstall_skill_all: proc.input(anyIn).mutation(({ input }) => h.uninstall_skill_all(input)),
+    detach_shared_skill: proc.input(anyIn).mutation(({ input }) =>
+      h.detach_shared_skill(input),
+    ),
+    uninstall_all_skills_from_agent: proc.input(anyIn).mutation(({ input }) =>
+      h.uninstall_all_skills_from_agent(input),
+    ),
+    sync_all_skills_to_agent: proc.input(anyIn).mutation(({ input }) =>
+      h.sync_all_skills_to_agent(input),
+    ),
     unlink_inherited_skill: proc.input(anyIn).mutation(({ input }) =>
       h.unlink_inherited_skill(input),
     ),

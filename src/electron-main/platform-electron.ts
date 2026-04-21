@@ -63,7 +63,9 @@ export function createElectronPlatform(
 			const parent = getWindow();
 			const result = await dialog.showOpenDialog(parent, {
 				title: opts?.title,
-				properties: ["openDirectory"],
+				// `createDirectory` adds the "New Folder" button on macOS;
+				// `promptToCreate` lets the user type a non-existent path on Windows.
+				properties: ["openDirectory", "createDirectory", "promptToCreate"],
 				defaultPath: expandStartingFolder(opts?.startingFolder ?? "~/"),
 			});
 			if (result.canceled) return null;

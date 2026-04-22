@@ -10,6 +10,13 @@ on:
   push:
     branches:
       - main
+    # Avoid re-running release-please on the release PR merge itself
+    # (that commit only updates version/changelog/manifest and can race
+    # before the freshly-created draft release is fully observable).
+    paths-ignore:
+      - "CHANGELOG.md"
+      - "package.json"
+      - ".release-please-manifest.json"
 
 permissions:
   contents: write

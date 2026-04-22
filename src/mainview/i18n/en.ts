@@ -299,6 +299,12 @@ const en = {
       "Blur is off because window blur was disabled via environment variable. Your choice is still saved for next launch without it.",
     // Language
     language: "Language",
+    // Analytics
+    analytics: "Telemetry",
+    analyticsDescription:
+      "Anonymous product analytics and diagnostics powered by PostHog. Disable this to stop tracking events from this app.",
+    analyticsOn: "On",
+    analyticsOff: "Off",
     // App Updates
     appUpdates: "App Updates",
     updateStateIdle: "Up to date",

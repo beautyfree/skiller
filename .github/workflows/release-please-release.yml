@@ -1,0 +1,36 @@
+name: Release Please Tag and Release
+
+# Handles only release finalization for merged release PRs:
+# - creates/pushes vX.Y.Z tag
+# - creates draft GitHub release
+# Build/upload/publish is still done by release.yml (tag-triggered workflow).
+
+on:
+  push:
+    branches:
+      - main
+    # Release-PR merges modify only these metadata files.
+    paths:
+      - "CHANGELOG.md"
+      - "package.json"
+      - ".release-please-manifest.json"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-pull-request: true
+          # Use PAT so pushed tags can trigger downstream tag workflows.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}

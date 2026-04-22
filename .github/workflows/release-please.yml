@@ -1,15 +1,20 @@
-name: Release Please
+name: Release Please PR
 
 # Opens / updates a "Release PR" whenever conventional-commits land on main.
-# On merge, release-please bumps `package.json`, updates `CHANGELOG.md`, creates
-# a GitHub Release and pushes a matching `v<version>` tag. The tag push then
-# triggers `.github/workflows/release.yml` which builds & uploads the desktop
-# installers. Release notes come from the conventional commit messages.
+# This workflow only manages the PR itself. The actual tag + draft release
+# creation is handled by `release-please-release.yml` on release-PR merge
+# commits, which avoids release/PR race conditions.
 
 on:
   push:
     branches:
       - main
+    # Ignore release-PR merge commits (these only touch release metadata files).
+    # They are handled by release-please-release.yml.
+    paths-ignore:
+      - "CHANGELOG.md"
+      - "package.json"
+      - ".release-please-manifest.json"
 
 permissions:
   contents: write
@@ -27,6 +32,7 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          skip-github-release: true
           # IMPORTANT: tags created by GITHUB_TOKEN do NOT trigger other
           # workflows (GitHub deliberately breaks action→action chains). We
           # need release.yml to fire on the v* tag push so bins get built,

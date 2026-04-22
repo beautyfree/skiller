@@ -1,5 +1,6 @@
 import { isTrpcQueryProcedure } from '@/shared/trpc-query-procedures'
 import type { AppRPCSchema } from '@/shared/rpc-schema'
+import { captureTelemetry } from '@/mainview/lib/telemetry'
 
 /**
  * Renderer-side glue to the main process.
@@ -231,11 +232,32 @@ export async function invoke<K extends keyof BunRequests>(
 ): Promise<BunRequests[K]['response']> {
   const name = cmd as string
   const input = args[0]
-  return callTrpcProcedure<BunRequests[K]['response']>(
-    name,
-    input,
-    isTrpcQueryProcedure(name),
-  )
+  const isQuery = isTrpcQueryProcedure(name)
+  const startedAt = performance.now()
+  try {
+    const response = await callTrpcProcedure<BunRequests[K]['response']>(
+      name,
+      input,
+      isQuery,
+    )
+    if (!isQuery) {
+      captureTelemetry('rpc_mutation_called', {
+        command: name,
+        duration_ms: Math.round(performance.now() - startedAt),
+      })
+    }
+    return response
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message.slice(0, 240) : 'unknown'
+    captureTelemetry('rpc_call_failed', {
+      command: name,
+      is_query: isQuery,
+      duration_ms: Math.round(performance.now() - startedAt),
+      message,
+    })
+    throw error
+  }
 }
 
 export async function listen<T>(

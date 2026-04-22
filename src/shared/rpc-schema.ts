@@ -95,6 +95,8 @@ export type AppSettingsJson = {
   assumed_listing_char_budget?: number | null;
   /** Optional context window size (chars); 1% can derive a listing budget when budget is unset. */
   assumed_context_window_chars?: number | null;
+  /** Product telemetry and analytics (PostHog). Default true when omitted. */
+  analytics_enabled?: boolean | null;
   /** One-time GitHub star prompt cadence metadata. */
   github_star_prompt?: {
     first_seen_at?: string | null;

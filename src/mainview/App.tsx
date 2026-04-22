@@ -1,8 +1,13 @@
-import { useEffect, useState } from 'react'
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { listen, invoke } from '@/mainview/lib/native'
 import { useTranslation } from 'react-i18next'
+import {
+  captureTelemetry,
+  identifyTelemetry,
+  setTelemetryEnabled,
+} from '@/mainview/lib/telemetry'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import SkillsManager from './pages/SkillsManager'
@@ -22,8 +27,11 @@ const STAR_PROMPT_RESHOW_MS = 3 * 24 * 60 * 60 * 1000
 
 function AppInner() {
   const queryClient = useQueryClient()
+  const location = useLocation()
   const { i18n } = useTranslation()
   useTheme()
+  const appOpenedTrackedRef = useRef(false)
+  const [telemetryReady, setTelemetryReady] = useState(false)
   const [closeDialogOpen, setCloseDialogOpen] = useState(false)
   const [showGithubStarPrompt, setShowGithubStarPrompt] = useState(false)
   // Onboarding shows on very first launch (or when user explicitly replays it
@@ -36,6 +44,25 @@ function AppInner() {
       return true
     }
   })
+
+  useEffect(() => {
+    if (!telemetryReady || appOpenedTrackedRef.current) return
+    appOpenedTrackedRef.current = true
+    captureTelemetry('app_opened')
+    void invoke('get_app_version')
+      .then((version) => {
+        identifyTelemetry(`desktop:${version}`, { app_version: version })
+      })
+      .catch(() => {})
+  }, [telemetryReady])
+
+  useEffect(() => {
+    if (!telemetryReady) return
+    captureTelemetry('page_view', {
+      path: location.pathname,
+      search: location.search,
+    })
+  }, [location.pathname, location.search, telemetryReady])
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -96,8 +123,12 @@ function AppInner() {
         if (lang && lang !== i18n.language) {
           void i18n.changeLanguage(lang)
         }
+        setTelemetryEnabled(settings.analytics_enabled !== false)
+        setTelemetryReady(true)
       })
-      .catch(() => {})
+      .catch(() => {
+        setTelemetryReady(true)
+      })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ask for a GitHub star once after meaningful usage cadence.
@@ -161,6 +192,7 @@ function AppInner() {
 
   const handleGithubStarDismiss = () => {
     setShowGithubStarPrompt(false)
+    captureTelemetry('github_star_prompt_dismissed')
     void invoke('read_settings')
       .then((settings) => {
         const existing = settings.github_star_prompt ?? {}
@@ -182,6 +214,7 @@ function AppInner() {
 
   const handleGithubStarClick = () => {
     setShowGithubStarPrompt(false)
+    captureTelemetry('github_star_prompt_clicked')
     void invoke('open_external', { url: GITHUB_REPO_URL })
     void invoke('read_settings')
       .then((settings) =>
@@ -197,6 +230,12 @@ function AppInner() {
       )
       .catch(() => {})
   }
+
+  useEffect(() => {
+    if (showGithubStarPrompt) {
+      captureTelemetry('github_star_prompt_shown')
+    }
+  }, [showGithubStarPrompt])
 
   useEffect(() => {
     let cancelled = false

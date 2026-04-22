@@ -13,6 +13,7 @@ import {
   AlertTriangle,
 } from 'lucide-react'
 import { openUrl, invoke, listen } from '@/mainview/lib/native'
+import { setTelemetryEnabled } from '@/mainview/lib/telemetry'
 import type {
   AppUpdateStatusJson,
 } from '@/shared/rpc-schema'
@@ -27,6 +28,7 @@ interface AppSettings {
   language: string | null
   path_overrides: Record<string, string[]> | null
   close_action: string | null
+  analytics_enabled?: boolean | null
   macos_window_blur?: boolean | null
   assumed_listing_char_budget?: number | null
   assumed_context_window_chars?: number | null
@@ -37,6 +39,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   language: null,
   path_overrides: null,
   close_action: null,
+  analytics_enabled: null,
   macos_window_blur: null,
 }
 
@@ -421,6 +424,42 @@ export default function SettingsPage() {
                   {lang.label}
                 </Button>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Analytics */}
+        <section className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h2 className="text-sm font-medium">{t('settings.analytics')}</h2>
+              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                {t('settings.analyticsDescription')}
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-1.5">
+              {([true, false] as const).map((enabled) => {
+                const currentEnabled = settings?.analytics_enabled !== false
+                const isActive = currentEnabled === enabled
+                return (
+                  <Button
+                    key={enabled ? 'on' : 'off'}
+                    variant={isActive ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => {
+                      setTelemetryEnabled(enabled)
+                      saveMutation.mutate({
+                        ...(settings ?? DEFAULT_SETTINGS),
+                        analytics_enabled: enabled,
+                      })
+                    }}
+                  >
+                    {enabled
+                      ? t('settings.analyticsOn')
+                      : t('settings.analyticsOff')}
+                  </Button>
+                )
+              })}
             </div>
           </div>
         </section>

@@ -17,6 +17,7 @@ import SettingsPage from './pages/Settings'
 import OnboardingWizard from './components/OnboardingWizard'
 import { useTheme } from './hooks/useTheme'
 import CloseConfirmDialog from './components/CloseConfirmDialog'
+import { useToast } from './components/ToastProvider'
 
 const GITHUB_REPO_URL =
   'https://github.com/beautyfree/skiller-skills-desktop-manager'
@@ -24,11 +25,13 @@ const STAR_PROMPT_MIN_LAUNCHES = 3
 const STAR_PROMPT_MIN_AGE_MS = 24 * 60 * 60 * 1000
 const STAR_PROMPT_RESHOW_LAUNCHES = 3
 const STAR_PROMPT_RESHOW_MS = 3 * 24 * 60 * 60 * 1000
+const LAST_SEEN_VERSION_STORAGE_KEY = 'skiller.last_seen_app_version'
 
 function AppInner() {
   const queryClient = useQueryClient()
   const location = useLocation()
-  const { i18n } = useTranslation()
+  const { i18n, t } = useTranslation()
+  const { toast } = useToast()
   useTheme()
   const appOpenedTrackedRef = useRef(false)
   const [telemetryReady, setTelemetryReady] = useState(false)
@@ -44,6 +47,32 @@ function AppInner() {
       return true
     }
   })
+
+  useEffect(() => {
+    let cancelled = false
+    void invoke('get_app_version')
+      .then((currentVersion) => {
+        if (cancelled) return
+        try {
+          const previousVersion = localStorage.getItem(LAST_SEEN_VERSION_STORAGE_KEY)
+          if (previousVersion && previousVersion !== currentVersion) {
+            toast(
+              t('settings.updateWelcomeToast', {
+                from: previousVersion,
+                to: currentVersion,
+              }),
+            )
+          }
+          localStorage.setItem(LAST_SEEN_VERSION_STORAGE_KEY, currentVersion)
+        } catch {
+          // Ignore storage errors in private/locked environments.
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [t, toast])
 
   useEffect(() => {
     if (!telemetryReady || appOpenedTrackedRef.current) return

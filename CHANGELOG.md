@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.13](https://github.com/beautyfree/skiller-desktop-skills-manager/compare/v0.2.12...v0.2.13) (2026-04-22)
+
+
+### Features
+
+* **telemetry:** add PostHog analytics with runtime opt-out control ([a16baff](https://github.com/beautyfree/skiller-desktop-skills-manager/commit/a16baffb39870651b045b50c30e921fdb7a6c038))
+
+
+### Bug Fixes
+
+* **deps:** pin matching React and React DOM versions ([2122ada](https://github.com/beautyfree/skiller-desktop-skills-manager/commit/2122ada8858d62353c0b02d935b2e8edc689708c))
+
 ## [0.2.12](https://github.com/beautyfree/skiller-desktop-skills-manager/compare/v0.2.11...v0.2.12) (2026-04-22)
 
 

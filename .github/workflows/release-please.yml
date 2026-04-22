@@ -34,17 +34,34 @@ jobs:
 
       - id: gate
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           manifest_version="$(jq -r '.["."]' .release-please-manifest.json)"
           tag="v${manifest_version}"
-          if git ls-remote --tags "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${tag}" | rg -q .; then
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "Release baseline tag ${tag} exists; proceeding."
-          else
+
+          if ! git ls-remote --tags "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${tag}" | rg -q .; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "Release baseline tag ${tag} is missing; skipping PR generation to avoid changelog backfill."
+            exit 0
           fi
+
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" 2>/dev/null || true)"
+          if [[ -z "${release_json}" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Release ${tag} is not visible yet; skipping PR generation to avoid changelog backfill."
+            exit 0
+          fi
+
+          if [[ "$(jq -r '.draft' <<<"${release_json}")" == "true" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Release ${tag} is still draft; skipping PR generation until publish-release completes."
+            exit 0
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "Release baseline ${tag} is published; proceeding."
 
       - uses: googleapis/release-please-action@v4
         if: steps.gate.outputs.skip != 'true'

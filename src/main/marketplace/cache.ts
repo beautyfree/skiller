@@ -17,14 +17,14 @@ import type { MarketplaceSkill } from "../marketplace-types";
 function appCacheDir(): string {
 	const h = homedir();
 	if (process.platform === "darwin") {
-		return join(h, "Library", "Caches", "skills-app");
+		return join(h, "Library", "Caches", "skiller");
 	}
 	if (process.platform === "win32") {
-		return join(h, "AppData", "Local", "skills-app");
+		return join(h, "AppData", "Local", "skiller");
 	}
 	const xdg = process.env.XDG_CACHE_HOME;
-	if (xdg) return join(xdg, "skills-app");
-	return join(h, ".cache", "skills-app");
+	if (xdg) return join(xdg, "skiller");
+	return join(h, ".cache", "skiller");
 }
 
 export function marketplaceCacheDbPath(): string {

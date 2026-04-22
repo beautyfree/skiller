@@ -57,7 +57,7 @@ export async function installFromMarketplace(
 
 	const tempDir = join(
 		tmpdir(),
-		`skills-app-marketplace-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+		`skiller-marketplace-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 	);
 
 	await simpleGit().clone(repoUrl, tempDir);

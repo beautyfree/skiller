@@ -7,7 +7,6 @@ import {
 	rmSync,
 	statSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { parse as parseToml } from "@iarna/toml";
 import simpleGit from "simple-git";
@@ -24,6 +23,7 @@ import type { AgentConfig } from "./types";
 import { discoverSkillDirs } from "./scanner";
 import { detectAgents, loadAgentConfigs } from "./registry";
 import { getAgentsDir } from "./paths";
+import { appDataRootPath } from "./settings";
 
 type SkillsManifest = {
 	name?: string;
@@ -54,7 +54,7 @@ export function localDirId(path: string): string {
 }
 
 export function reposDir(): string {
-	return join(homedir(), ".skills-app", "repos");
+	return join(appDataRootPath(), "repos");
 }
 
 function parseManifest(repoPath: string): SkillsManifest {

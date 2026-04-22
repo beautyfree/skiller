@@ -61,7 +61,21 @@ const TITLE_BAR_DRAG_HEIGHT = 36
  */
 const DRAG_CLASSES = 'app-drag electrobun-webkit-app-region-drag'
 
-export default function Layout() {
+type LayoutProps = {
+  showGithubStarPrompt?: boolean
+  onDismissGithubStarPrompt?: () => void
+  onGithubStarPromptCta?: () => void
+}
+
+export default function Layout(props: LayoutProps) {
+  return <LayoutInner {...props} />
+}
+
+function LayoutInner({
+  showGithubStarPrompt = false,
+  onDismissGithubStarPrompt,
+  onGithubStarPromptCta,
+}: LayoutProps) {
   const { t } = useTranslation()
   const [importMode, setImportMode] = useState<'git' | 'local' | null>(null)
   const [importLocalPath, setImportLocalPath] = useState<string | null>(null)
@@ -330,6 +344,26 @@ export default function Layout() {
           </main>
 
           <footer className="flex h-7 shrink-0 items-center justify-end gap-3 pl-2 pr-2 text-[11px] text-muted-foreground/50">
+            {showGithubStarPrompt && (
+              <div className="mr-auto flex items-center gap-2 rounded-md border border-border/80 bg-card/85 px-2 py-1 text-[11px] text-foreground">
+                <span>{t('layout.starPromptText')}</span>
+                <button
+                  type="button"
+                  className="font-medium text-primary transition-colors hover:text-primary/80"
+                  onClick={onGithubStarPromptCta}
+                >
+                  {t('layout.starPromptAction')}
+                </button>
+                <button
+                  type="button"
+                  className="text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={onDismissGithubStarPrompt}
+                  aria-label={t('layout.starPromptDismiss')}
+                >
+                  {t('layout.starPromptDismiss')}
+                </button>
+              </div>
+            )}
             <button
               type="button"
               className="transition-colors hover:text-muted-foreground/85"

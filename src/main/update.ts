@@ -1,5 +1,4 @@
 import { existsSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import simpleGit from "simple-git";
@@ -10,6 +9,7 @@ import { writeProvenance } from "./provenance";
 import { discoverSkillDirs, scanAllSkills } from "./scanner";
 import type { SkillCandidate } from "./scanner";
 import type { UpdateAllResult, UpdateProgress } from "./skill-types";
+import { appDataRootPath } from "./settings";
 
 function persistentClonePath(repoUrl: string): string {
 	const name = repoUrl
@@ -18,7 +18,7 @@ function persistentClonePath(repoUrl: string): string {
 		.split("/")
 		.pop()
 		?.replace(/\.git$/, "") ?? "repo";
-	return join(homedir(), ".skills-app", "repos", name);
+	return join(appDataRootPath(), "repos", name);
 }
 
 export class RepoSession {
@@ -42,7 +42,7 @@ export class RepoSession {
 		}
 		const temp = join(
 			tmpdir(),
-			`skills-app-update-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+			`skiller-update-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 		);
 		await simpleGit().clone(repoUrl, temp);
 		const candidates = discoverSkillDirs(temp);

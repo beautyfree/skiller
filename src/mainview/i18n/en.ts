@@ -12,6 +12,9 @@ const en = {
     footerDocs: "Documentation",
     footerRepo: "GitHub",
     footerFork: "Fork on GitHub",
+    starPromptText: "Enjoying Skiller?",
+    starPromptAction: "Star on GitHub",
+    starPromptDismiss: "Not now",
   },
 
   sidebar: {

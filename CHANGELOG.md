@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.14](https://github.com/beautyfree/skiller-desktop-skills-manager/compare/v0.2.13...v0.2.14) (2026-04-22)
+
+
+### Bug Fixes
+
+* **ci:** re-enable release-please on release PR merges ([11785fd](https://github.com/beautyfree/skiller-desktop-skills-manager/commit/11785fdd01fb406f9e0e867661c882559f5db26a))
+* **updater:** make update downloads non-blocking and announce new version ([f6c292e](https://github.com/beautyfree/skiller-desktop-skills-manager/commit/f6c292e9290cf12d0d524b364ba2ee35233e0b25))
+
 ## [0.2.13](https://github.com/beautyfree/skiller-desktop-skills-manager/compare/v0.2.12...v0.2.13) (2026-04-22)
 
 

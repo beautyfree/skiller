@@ -184,7 +184,7 @@ export async function installSkillFromGit(
 ): Promise<string> {
 	const tempDir = join(
 		tmpdir(),
-		`skills-app-install-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+		`skiller-install-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 	);
 	await simpleGit().clone(repoUrl, tempDir);
 	if (ref && ref.trim()) {

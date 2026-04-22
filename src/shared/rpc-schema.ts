@@ -95,6 +95,16 @@ export type AppSettingsJson = {
   assumed_listing_char_budget?: number | null;
   /** Optional context window size (chars); 1% can derive a listing budget when budget is unset. */
   assumed_context_window_chars?: number | null;
+  /** One-time GitHub star prompt cadence metadata. */
+  github_star_prompt?: {
+    first_seen_at?: string | null;
+    launch_count?: number | null;
+    prompted_at?: string | null;
+    cta_clicked_at?: string | null;
+    dismissed_at?: string | null;
+    dismissed_launch_count?: number | null;
+    dismiss_count?: number | null;
+  } | null;
 };
 
 export type MarketplaceSkillJson = {

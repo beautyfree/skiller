@@ -28,7 +28,26 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest_version="$(jq -r '.["."]' .release-please-manifest.json)"
+          tag="v${manifest_version}"
+          if git ls-remote --tags "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${tag}" | rg -q .; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Release baseline tag ${tag} exists; proceeding."
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Release baseline tag ${tag} is missing; skipping PR generation to avoid changelog backfill."
+          fi
+
       - uses: googleapis/release-please-action@v4
+        if: steps.gate.outputs.skip != 'true'
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json

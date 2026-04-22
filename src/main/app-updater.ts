@@ -29,6 +29,7 @@ let remoteVersion: string | null = null;
 let lastError: string | null = null;
 let state: AppUpdateStatusJson["state"] = "idle";
 let updateDownloaded = false;
+let downloadPromise: Promise<string[]> | null = null;
 
 function snapshot(): AppUpdateStatusJson {
 	return {
@@ -170,20 +171,32 @@ export async function downloadUpdate(): Promise<AppUpdateStatusJson> {
 	// before the first `download-progress` event fires (those can lag 2–3s on
 	// slow networks).
 	setState("downloading");
-	try {
-		const result = await autoUpdater.downloadUpdate();
-		console.log("[updater] downloadUpdate() resolved with:", result);
-		// If update-downloaded event didn't fire yet (race on some platforms),
-		// force the state transition based on the promise resolution.
-		if (state !== "ready") {
-			updateDownloaded = true;
-			downloadProgress = 100;
-			setState("ready");
-		}
-	} catch (err) {
-		console.warn("[updater] downloadUpdate() rejected:", err);
-		lastError = (err as Error)?.message ?? String(err);
-		setState("error");
+	// Important UX behavior: return immediately so renderer request doesn't sit
+	// in pending for minutes on large updates. Progress/finish/error keeps coming
+	// through updater events pushed via `app_update_status_changed`.
+	if (!downloadPromise) {
+		downloadPromise = autoUpdater.downloadUpdate();
+		void downloadPromise
+			.then((result) => {
+				console.log("[updater] downloadUpdate() resolved with:", result);
+				// If update-downloaded event didn't fire yet (race on some
+				// platforms), force the state transition from the resolved promise.
+				if (state !== "ready") {
+					updateDownloaded = true;
+					downloadProgress = 100;
+					setState("ready");
+				}
+			})
+			.catch((err) => {
+				console.warn("[updater] downloadUpdate() rejected:", err);
+				lastError = (err as Error)?.message ?? String(err);
+				setState("error");
+			})
+			.finally(() => {
+				downloadPromise = null;
+			});
+	} else {
+		console.log("[updater] download already in progress");
 	}
 	return snapshot();
 }

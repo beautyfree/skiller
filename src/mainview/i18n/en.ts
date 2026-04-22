@@ -321,6 +321,7 @@ const en = {
     updateVersionLine: "Current {{current}} — latest {{latest}}",
     updateVersionOnly: "Version {{version}}",
     updateLastChecked: "Last checked {{time}}",
+    updateWelcomeToast: "Updated successfully: {{from}} → {{to}}",
     // Marketplace Cache
     onboardingTitle: "Onboarding",
     onboardingDescription:

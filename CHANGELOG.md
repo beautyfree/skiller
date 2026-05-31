@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.15](https://github.com/beautyfree/skiller/compare/v0.2.14...v0.2.15) (2026-05-31)
+
+
+### Bug Fixes
+
+* **ci:** gate release PR creation on existing baseline tag ([daa31db](https://github.com/beautyfree/skiller/commit/daa31dbc1070eec4a96bd655894ff5a24f479a8b))
+* **ci:** skip release PR updates until baseline release is published ([d8dbc75](https://github.com/beautyfree/skiller/commit/d8dbc754e4d81cd3c09ee01edff89f7692f59827))
+* **ci:** split release-please PR and release workflows ([ed1edb8](https://github.com/beautyfree/skiller/commit/ed1edb87dba39d73e11b5ff8f720a1ba0bb0258e))
+* **ci:** use grep in release baseline tag gate ([8077ac0](https://github.com/beautyfree/skiller/commit/8077ac074f6e344ac46e97203ece446234cd31f2))
+* **scanner:** detect skills in nested directories ([93db073](https://github.com/beautyfree/skiller/commit/93db07367b8efe864f43bc1d248893df4b249c9c))
+* **scanner:** detect skills in nested directories ([4f6289d](https://github.com/beautyfree/skiller/commit/4f6289d02daf80f181b2d786a6b45e5db9d134a3)), closes [#23](https://github.com/beautyfree/skiller/issues/23)
+
 ## [0.2.14](https://github.com/beautyfree/skiller-desktop-skills-manager/compare/v0.2.13...v0.2.14) (2026-04-22)
 
 

@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { computeSkillFootprint } from "../shared/skill-footprint";
 import type { ParsedSkillMd } from "./parser";
@@ -62,6 +62,48 @@ export function discoverSkillDirs(root: string): SkillCandidate[] {
 	}
 
 	return candidates;
+}
+
+/** Max directory depth walked when discovering nested skill packages. */
+const MAX_SCAN_DEPTH = 8;
+
+/**
+ * Recursively collect directories that contain a `SKILL.md`, supporting nested
+ * skill packages (e.g. `skills/Pkg/skills/className/leaf/SKILL.md`). Descent
+ * stops at the first `SKILL.md` so a skill's own resource subfolders are not
+ * mistaken for separate skills. Follows symlinks, skips `.git`, depth-capped.
+ */
+function collectSkillRoots(root: string): string[] {
+	const found: string[] = [];
+
+	function walk(dir: string, depth: number): void {
+		if (depth > MAX_SCAN_DEPTH) return;
+		let entries: string[];
+		try {
+			entries = readdirSync(dir);
+		} catch {
+			return;
+		}
+		for (const name of entries) {
+			if (name === ".git") continue;
+			const path = join(dir, name);
+			let st;
+			try {
+				st = statSync(path); // follow symlinks so symlinked skill dirs resolve
+			} catch {
+				continue;
+			}
+			if (!st.isDirectory()) continue;
+			if (existsSync(join(path, "SKILL.md"))) {
+				found.push(path);
+				continue; // a skill dir is a leaf — don't descend into its resources
+			}
+			walk(path, depth + 1);
+		}
+	}
+
+	walk(root, 0);
+	return found;
 }
 
 function detectCollection(skillDir: string, skillsRoot: string): string | undefined {
@@ -164,21 +206,7 @@ function scanInheritedRoot(
 	dedup: Map<string, Skill>,
 	provenance: Record<string, Record<string, unknown>>,
 ): void {
-	let entries: string[];
-	try {
-		entries = readdirSync(root);
-	} catch {
-		return;
-	}
-	for (const name of entries) {
-		const skillDir = join(root, name);
-		if (!existsSync(skillDir)) continue;
-		try {
-			const st = lstatSync(skillDir);
-			if (!st.isDirectory() && !st.isSymbolicLink()) continue;
-		} catch {
-			continue;
-		}
+	for (const skillDir of collectSkillRoots(root)) {
 		const canonical = resolveCanonical(skillDir);
 		const skillMd = join(canonical, "SKILL.md");
 		if (!existsSync(skillMd)) continue;
@@ -226,21 +254,7 @@ function scanSkillMdRoot(
 	dedup: Map<string, Skill>,
 	provenance: Record<string, Record<string, unknown>>,
 ): void {
-	let entries: string[];
-	try {
-		entries = readdirSync(root);
-	} catch {
-		return;
-	}
-	for (const name of entries) {
-		const skillDir = join(root, name);
-		if (!existsSync(skillDir)) continue;
-		try {
-			const st = lstatSync(skillDir);
-			if (!st.isDirectory() && !st.isSymbolicLink()) continue;
-		} catch {
-			continue;
-		}
+	for (const skillDir of collectSkillRoots(root)) {
 		const canonical = resolveCanonical(skillDir);
 		const skillMd = join(canonical, "SKILL.md");
 		if (!existsSync(skillMd)) continue;

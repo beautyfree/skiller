@@ -94,8 +94,8 @@ Inside a Windows 10/11 VM:
 
 ```powershell
 # Prereqs: Git, Bun, Visual Studio Build Tools (Desktop development with C++), Python 3
-git clone https://github.com/beautyfree/skiller-desktop-skills-manager
-cd skiller-desktop-skills-manager
+git clone https://github.com/beautyfree/skiller
+cd skiller
 bun install
 bunx electron-builder install-app-deps
 bun run dist:win
@@ -162,7 +162,7 @@ If UI renders in browser but not in Electron:
 
 `electron-updater` is wired in `src/main/app-updater.ts`:
 
-- **Config** — `electron-builder.yml` sets `publish.provider: github` pointing at `beautyfree/skiller-desktop-skills-manager`. When you `bun run dist:mac/win/linux`, electron-builder writes `latest-mac.yml` / `latest-linux.yml` / `latest.yml` (for Windows) alongside the DMG/AppImage/EXE. GitHub Actions uploads all of them to the tagged Release.
+- **Config** — `electron-builder.yml` sets `publish.provider: github` pointing at `beautyfree/skiller`. When you `bun run dist:mac/win/linux`, electron-builder writes `latest-mac.yml` / `latest-linux.yml` / `latest.yml` (for Windows) alongside the DMG/AppImage/EXE. GitHub Actions uploads all of them to the tagged Release.
 - **Runtime** — `initAppUpdater()` runs `autoUpdater.checkForUpdates()` on launch and every 6 hours. `autoDownload = false`, so the user clicks **Download update** in Settings → App Updates after an update is announced. Progress + ready state stream to the renderer through the `app_update_status_changed` push channel; the Settings page renders the current state and offers **Restart & install** once the update is downloaded.
 - **Delta patches** — electron-builder generates `.blockmap` files automatically when `writeUpdateInfo: false` is not set. We currently ship full DMGs — blockmap-based deltas can be added later when update volume justifies the extra artifacts.
 - **Dev** — `app.isPackaged === false` in dev, so the updater short-circuits and stays in the `idle` state. No spam.

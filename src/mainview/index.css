@@ -710,6 +710,80 @@ html.skiller-macos-vibrancy.dark .glass-surface-tint.glass-stat {
   animation: toast-in 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+@keyframes update-banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+    filter: blur(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.animate-update-banner-in {
+  animation: update-banner-in 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.skiller-update-banner {
+  border-color: color-mix(in srgb, var(--primary) 18%, var(--border));
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--card) 97%, var(--primary) 3%),
+      color-mix(in srgb, var(--card) 99%, var(--primary) 1%));
+  box-shadow:
+    var(--ds-shadow-layered-medium),
+    0 18px 48px -24px color-mix(in srgb, var(--primary) 50%, transparent);
+}
+
+.skiller-update-mark {
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, transparent);
+  background:
+    radial-gradient(circle at 30% 20%,
+      color-mix(in srgb, var(--primary) 28%, transparent),
+      transparent 54%),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--primary) 14%, var(--card)),
+      color-mix(in srgb, var(--primary) 7%, var(--card)));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 1px 2px rgba(34, 35, 38, 0.08);
+}
+
+.skiller-update-mark-ready {
+  color: var(--ds-system-green);
+  border-color: color-mix(in srgb, var(--ds-system-green) 28%, transparent);
+  background:
+    radial-gradient(circle at 30% 20%,
+      color-mix(in srgb, var(--ds-system-green) 24%, transparent),
+      transparent 54%),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--ds-system-green) 13%, var(--card)),
+      color-mix(in srgb, var(--ds-system-green) 6%, var(--card)));
+}
+
+.skiller-update-action {
+  border-color: color-mix(in srgb, var(--primary) 28%, transparent);
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--primary) 12%, var(--card)),
+      color-mix(in srgb, var(--primary) 7%, var(--card)));
+  color: var(--primary);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 1px 2px rgba(34, 35, 38, 0.06);
+}
+
+.skiller-update-action:hover {
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--primary) 16%, var(--card)),
+      color-mix(in srgb, var(--primary) 10%, var(--card)));
+}
+
 @keyframes backdrop-in {
   from {
     opacity: 0;

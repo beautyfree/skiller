@@ -102,4 +102,4 @@ linux:
 publish:
   provider: github
   owner: beautyfree
-  repo: skiller-desktop-skills-manager
+  repo: skiller

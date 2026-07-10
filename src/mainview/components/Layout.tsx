@@ -220,7 +220,7 @@ function LayoutInner({
               <InsetScrollArea scroll={false} className="flex-1">
                 <nav
                   aria-label="Main navigation"
-                  className="flex h-full min-h-0 flex-col gap-0.5 overflow-y-auto px-3 pb-2"
+                  className="sidebar-scrollbar flex h-full min-h-0 flex-col gap-0.5 overflow-y-auto px-3 pb-2"
                 >
                   <h2 className="mb-1 px-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
                     {t('sidebar.workspace')}

@@ -248,7 +248,7 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/40 animate-backdrop-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4 dark:bg-black/40 animate-backdrop-in"
       role="presentation"
       onClick={busy ? undefined : handleClose}
     >
@@ -257,7 +257,7 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-lg rounded-3xl p-6 space-y-4 outline-none animate-modal-in glass-elevated"
+        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-3xl p-6 space-y-4 outline-none animate-modal-in glass-elevated"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -530,7 +530,7 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
 
         {/* Step: Select Agents */}
         {step === "agents" && (
-          <div className="space-y-3">
+          <div className="flex min-h-0 flex-1 flex-col space-y-3">
             <p className="text-xs text-muted-foreground">
               {t("repos.selectAgents")}
             </p>
@@ -553,7 +553,7 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
                       : t("repos.selectAll")}
                   </button>
                 </div>
-                <div className="space-y-0.5">
+                <div className="-mx-1 min-h-0 flex-1 space-y-0.5 overflow-y-auto px-1">
                   {detectedAgents.map((agent) => (
                     <AgentCheckItem
                       key={agent.slug}

@@ -407,6 +407,26 @@ html.skiller-macos-vibrancy.dark .glass-inset {
   background: rgba(255, 255, 255, 0.28);
 }
 
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 2px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.dark .sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dark .sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
 /* Firefox — thinnest built-in track (no per-px width API) */
 html {
   scrollbar-width: thin;

@@ -86,7 +86,7 @@ Theme, accent color, window blur, language, close behavior, and cache controls â
 
 ## Installation
 
-Grab the installer for your OS from the [**latest release**](https://github.com/beautyfree/skiller-skills-desktop-manager/releases/latest):
+Grab the installer for your OS from the [**latest release**](https://github.com/beautyfree/skiller/releases/latest):
 
 | OS | File | Notes |
 | --- | --- | --- |

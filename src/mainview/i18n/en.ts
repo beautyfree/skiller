@@ -322,6 +322,13 @@ const en = {
     updateVersionOnly: "Version {{version}}",
     updateLastChecked: "Last checked {{time}}",
     updateWelcomeToast: "Updated successfully: {{from}} → {{to}}",
+    updateBannerTitle: "Skiller {{version}} is available",
+    updateBannerReadyTitle: "Update ready to install",
+    updateBannerDescription: "You are on {{current}}. Download {{latest}} now.",
+    updateBannerDownloading: "Downloading update — {{progress}}%",
+    updateBannerAction: "Update",
+    updateBannerUpdating: "Updating",
+    updateBannerDismiss: "Dismiss update notification",
     // Marketplace Cache
     onboardingTitle: "Onboarding",
     onboardingDescription:

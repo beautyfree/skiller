@@ -18,6 +18,7 @@ import OnboardingWizard from './components/OnboardingWizard'
 import { useTheme } from './hooks/useTheme'
 import CloseConfirmDialog from './components/CloseConfirmDialog'
 import { useToast } from './components/ToastProvider'
+import AppUpdateBanner from './components/AppUpdateBanner'
 
 const GITHUB_REPO_URL =
   'https://github.com/beautyfree/skiller-skills-desktop-manager'
@@ -309,6 +310,7 @@ function AppInner() {
         open={closeDialogOpen}
         onDone={() => setCloseDialogOpen(false)}
       />
+      <AppUpdateBanner />
       {onboardingOpen && (
         <OnboardingWizard onClose={() => setOnboardingOpen(false)} />
       )}

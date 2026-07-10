@@ -217,56 +217,60 @@ function LayoutInner({
                 </Button>
               </div>
 
-              <InsetScrollArea scroll={false} className="flex-1">
-                <nav
-                  aria-label="Main navigation"
-                  className="sidebar-scrollbar flex h-full min-h-0 flex-col gap-0.5 overflow-y-auto px-3 pb-2"
-                >
+              <nav
+                aria-label="Main navigation"
+                className="flex min-h-0 flex-1 flex-col gap-0.5 px-3 pb-2"
+              >
+                <div className="shrink-0">
                   <h2 className="mb-1 px-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
                     {t('sidebar.workspace')}
                   </h2>
-                  <NavLink to="/" end className={navLinkClass}>
-                    <LayoutDashboard className="size-4" aria-hidden="true" />
-                    {t('sidebar.dashboard')}
-                  </NavLink>
+                  <div className="flex flex-col gap-0.5">
+                    <NavLink to="/" end className={navLinkClass}>
+                      <LayoutDashboard className="size-4" aria-hidden="true" />
+                      {t('sidebar.dashboard')}
+                    </NavLink>
 
-                  <NavLink
-                    to="/skills"
-                    end
-                    className={({ isActive }) => {
-                      const reallyActive = isActive && !activeAgentSlug
-                      return navLinkClass({ isActive: reallyActive })
-                    }}
-                  >
-                    <Puzzle className="size-4" aria-hidden="true" />
-                    {t('sidebar.skills')}
-                    {skills && (
-                      <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/60">
-                        {skills.length}
-                      </span>
-                    )}
-                  </NavLink>
+                    <NavLink
+                      to="/skills"
+                      end
+                      className={({ isActive }) => {
+                        const reallyActive = isActive && !activeAgentSlug
+                        return navLinkClass({ isActive: reallyActive })
+                      }}
+                    >
+                      <Puzzle className="size-4" aria-hidden="true" />
+                      {t('sidebar.skills')}
+                      {skills && (
+                        <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/60">
+                          {skills.length}
+                        </span>
+                      )}
+                    </NavLink>
 
-                  <NavLink to="/marketplace" className={navLinkClass}>
-                    <Store className="size-4" aria-hidden="true" />
-                    {t('sidebar.marketplace')}
-                  </NavLink>
+                    <NavLink to="/marketplace" className={navLinkClass}>
+                      <Store className="size-4" aria-hidden="true" />
+                      {t('sidebar.marketplace')}
+                    </NavLink>
 
-                  <NavLink to="/projects" className={navLinkClass}>
-                    <FolderKanban className="size-4" aria-hidden="true" />
-                    {t('sidebar.projects')}
-                    {projects && projects.length > 0 && (
-                      <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/60">
-                        {projects.length}
-                      </span>
-                    )}
-                  </NavLink>
+                    <NavLink to="/projects" className={navLinkClass}>
+                      <FolderKanban className="size-4" aria-hidden="true" />
+                      {t('sidebar.projects')}
+                      {projects && projects.length > 0 && (
+                        <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/60">
+                          {projects.length}
+                        </span>
+                      )}
+                    </NavLink>
+                  </div>
+                </div>
 
-                  {detectedAgents.length > 0 && (
-                    <div className="mt-4">
-                      <h2 className="mb-2 px-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
-                        {t('sidebar.agents')}
-                      </h2>
+                {detectedAgents.length > 0 && (
+                  <div className="mt-4 flex min-h-0 flex-1 flex-col">
+                    <h2 className="mb-2 shrink-0 px-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
+                      {t('sidebar.agents')}
+                    </h2>
+                    <div className="sidebar-scrollbar min-h-0 flex-1 overflow-y-auto pr-1">
                       <div className="flex flex-col gap-0.5">
                         {detectedAgents.map((agent) => {
                           const count = skillCountByAgent.get(agent.slug) ?? 0
@@ -300,18 +304,18 @@ function LayoutInner({
                         })}
                       </div>
                     </div>
-                  )}
-
-                  <div className="flex-1 min-h-2" />
-
-                  <div className="pt-2">
-                    <NavLink to="/settings" className={navLinkClass}>
-                      <Settings className="size-4" aria-hidden="true" />
-                      {t('sidebar.settings')}
-                    </NavLink>
                   </div>
-                </nav>
-              </InsetScrollArea>
+                )}
+
+                {detectedAgents.length === 0 && <div className="flex-1 min-h-2" />}
+
+                <div className="shrink-0 border-t border-border/50 pt-2">
+                  <NavLink to="/settings" className={navLinkClass}>
+                    <Settings className="size-4" aria-hidden="true" />
+                    {t('sidebar.settings')}
+                  </NavLink>
+                </div>
+              </nav>
             </>
           )}
         </aside>

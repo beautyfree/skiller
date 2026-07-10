@@ -44,13 +44,13 @@ export default function InstallToProjectPicker({ skillName, onInstall, onClose }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/40 animate-backdrop-in"
+      className="modal-shell fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/40 animate-backdrop-in"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-md rounded-3xl p-6 space-y-4 outline-none animate-modal-in glass-elevated"
+        className="modal-panel w-full max-w-md rounded-3xl p-6 space-y-4 outline-none animate-modal-in glass-elevated"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">

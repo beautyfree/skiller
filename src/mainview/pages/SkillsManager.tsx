@@ -2118,9 +2118,9 @@ function SkillNameConfirmDialog({
   const isUninstall = actionKind === "uninstall_all";
 
   return (
-    <div className="fixed inset-0 z-[320] flex items-center justify-center">
+    <div className="modal-shell fixed inset-0 z-[320] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} />
-      <div className="relative z-10 w-[min(32rem,calc(100vw-2rem))] rounded-2xl glass-panel border border-border/50 p-5 shadow-xl">
+      <div className="modal-panel relative z-10 w-[min(32rem,calc(100vw-2rem))] rounded-2xl glass-panel border border-border/50 p-5 shadow-xl">
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 className="text-sm font-[590]">
             {isUninstall ? t("skills.confirmUninstallTitle") : t("skills.confirmUnlinkTitle")}

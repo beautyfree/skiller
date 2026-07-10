@@ -248,7 +248,7 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4 dark:bg-black/40 animate-backdrop-in"
+      className="modal-shell fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/40 animate-backdrop-in"
       role="presentation"
       onClick={busy ? undefined : handleClose}
     >
@@ -257,7 +257,7 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-3xl p-6 space-y-4 outline-none animate-modal-in glass-elevated"
+        className="modal-panel-flex flex w-full max-w-lg flex-col rounded-3xl p-6 space-y-4 outline-none animate-modal-in glass-elevated"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

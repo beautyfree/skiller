@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.16](https://github.com/beautyfree/skiller/compare/v0.2.15...v0.2.16) (2026-07-10)
+
+
+### Documentation
+
+* clarify typecheck guidance ([544b145](https://github.com/beautyfree/skiller/commit/544b145bf3ab641fbd3f119d1ff0911398efbda2))
+
 ## [0.2.15](https://github.com/beautyfree/skiller/compare/v0.2.14...v0.2.15) (2026-05-31)
 
 

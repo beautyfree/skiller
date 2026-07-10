@@ -42,9 +42,9 @@ export default function CloseConfirmDialog({ open, onDone }: Props) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center">
+    <div className="modal-shell fixed inset-0 z-[100] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onDone} />
-      <div className="relative z-10 w-80 rounded-2xl glass-panel p-5 space-y-4 shadow-xl border border-border/50">
+      <div className="modal-panel relative z-10 w-80 rounded-2xl glass-panel p-5 space-y-4 shadow-xl border border-border/50">
         <h2 className="text-sm font-[590]">{t("close.title")}</h2>
         <p className="text-xs text-muted-foreground leading-relaxed">
           {t("close.description")}

@@ -514,7 +514,7 @@ function InstallGuideModal({
     ? `which ${agent.cli_command}`
     : "";
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="modal-shell fixed inset-0 z-50 flex items-center justify-center">
       <div
         className="absolute inset-0 bg-[rgba(0,0,0,0.85)] animate-backdrop-in"
         aria-hidden
@@ -526,7 +526,7 @@ function InstallGuideModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="install-guide-dialog-title"
-        className="relative z-10 w-full max-w-lg rounded-3xl p-5 outline-none animate-modal-in glass-elevated"
+        className="modal-panel relative z-10 w-full max-w-lg rounded-3xl p-5 outline-none animate-modal-in glass-elevated"
       >
         <div className="mb-3 flex items-center justify-between">
           <h3 id="install-guide-dialog-title" className="text-sm font-[590]">
@@ -604,4 +604,3 @@ function CommandBlock({
     </div>
   );
 }
-

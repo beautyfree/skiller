@@ -124,13 +124,13 @@ export default function OnboardingWizard({
 
 	return (
 		<div
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/40 animate-backdrop-in"
+			className="modal-shell fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/40 animate-backdrop-in"
 			onClick={markDoneAndClose}
 		>
 			<div
 				role="dialog"
 				aria-modal="true"
-				className="w-full max-w-xl rounded-3xl p-6 outline-none animate-modal-in glass-elevated"
+				className="modal-panel w-full max-w-xl rounded-3xl p-6 outline-none animate-modal-in glass-elevated"
 				onClick={(e) => e.stopPropagation()}
 			>
 				<StepDots current={step} />

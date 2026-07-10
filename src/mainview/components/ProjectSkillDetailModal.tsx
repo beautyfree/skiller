@@ -73,7 +73,7 @@ export default function ProjectSkillDetailModal({ projectPath, skill, onClose }:
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/40 animate-backdrop-in"
+      className="modal-shell fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/40 animate-backdrop-in"
       onClick={() => {
         if (dirty) return;
         onClose();
@@ -82,7 +82,7 @@ export default function ProjectSkillDetailModal({ projectPath, skill, onClose }:
       <div
         role="dialog"
         aria-modal="true"
-        className="flex h-[85vh] w-full max-w-3xl flex-col rounded-3xl outline-none animate-modal-in glass-elevated"
+        className="modal-panel-flex flex h-[min(85dvh,calc(100dvh-2rem))] w-full max-w-3xl flex-col rounded-3xl outline-none animate-modal-in glass-elevated"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

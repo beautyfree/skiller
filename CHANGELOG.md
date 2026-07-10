@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.17](https://github.com/beautyfree/skiller/compare/v0.2.16...v0.2.17) (2026-07-10)
+
+
+### Bug Fixes
+
+* **ui:** constrain modal layouts to viewport ([de98c12](https://github.com/beautyfree/skiller/commit/de98c12b5bcfba0b37b75e938708fae66caaa1d8))
+* **ui:** keep import wizard within viewport ([f2bb943](https://github.com/beautyfree/skiller/commit/f2bb943f0e335a4516457a1765b756677127001d))
+
 ## [0.2.16](https://github.com/beautyfree/skiller/compare/v0.2.15...v0.2.16) (2026-07-10)
 
 

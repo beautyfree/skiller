@@ -40,6 +40,8 @@ bun run typecheck
 # = tsc --noEmit && tsc -p tsconfig.node.json --noEmit
 ```
 
+Run this before opening a pull request when touching TypeScript, preload, or main-process code.
+
 The two configs own disjoint parts of the tree:
 
 - `tsconfig.json` → `src/mainview/**` (renderer) + shared types

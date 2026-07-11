@@ -3,7 +3,7 @@ import { Download, RotateCw, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import type { AppUpdateStatusJson } from '@/shared/rpc-schema'
-import { invoke, listen } from '@/mainview/lib/native'
+import { invoke, listen, openUrl } from '@/mainview/lib/native'
 import { cn } from '@/mainview/lib/utils'
 import { Button } from '@/mainview/components/ui/button'
 import { useToast } from '@/mainview/components/ToastProvider'
@@ -54,7 +54,8 @@ export default function AppUpdateBanner() {
           payload.remoteVersion !== dismissedVersion &&
           (payload.state === 'available' ||
             payload.state === 'downloading' ||
-            payload.state === 'ready')
+            payload.state === 'ready' ||
+            payload.state === 'error')
         ) {
           setDismissedVersion(readDismissedVersion())
         }
@@ -76,7 +77,8 @@ export default function AppUpdateBanner() {
     return (
       status.state === 'available' ||
       status.state === 'downloading' ||
-      status.state === 'ready'
+      status.state === 'ready' ||
+      status.state === 'error'
     )
   }, [dismissedVersion, status])
 
@@ -88,6 +90,10 @@ export default function AppUpdateBanner() {
 
   const handlePrimaryAction = useCallback(async () => {
     if (!status) return
+    if (status.state === 'error' && status.manualDownloadUrl) {
+      await openUrl(status.manualDownloadUrl)
+      return
+    }
     if (status.state === 'ready') {
       setBusy('applying')
       try {
@@ -130,6 +136,7 @@ export default function AppUpdateBanner() {
   const progress = typeof status.progress === 'number' ? status.progress : null
   const downloading = status.state === 'downloading' || busy === 'downloading'
   const ready = status.state === 'ready'
+  const failed = status.state === 'error'
 
   return (
     <div className="pointer-events-none fixed left-1/2 top-4 z-[120] w-[min(calc(100vw-2rem),38rem)] -translate-x-1/2">
@@ -143,6 +150,7 @@ export default function AppUpdateBanner() {
             className={cn(
               'skiller-update-mark flex size-8 shrink-0 items-center justify-center rounded-lg text-primary',
               ready && 'skiller-update-mark-ready',
+              failed && 'text-destructive',
             )}
           >
             {ready ? (
@@ -154,14 +162,18 @@ export default function AppUpdateBanner() {
 
           <div className="min-w-0 flex-1">
             <p className="truncate text-[13px] font-semibold leading-5">
-              {ready
+              {failed
+                ? t('settings.updateErrorTitle')
+                : ready
                 ? t('settings.updateBannerReadyTitle')
                 : t('settings.updateBannerTitle', { version: latest })}
             </p>
             <p className="truncate text-xs leading-4 text-muted-foreground">
-              {downloading
+              {failed
+                ? status.error || t('settings.updateStateError')
+                : downloading
                 ? progress == null
-                  ? t('settings.updateStateDownloading')
+                  ? t('settings.updatePreparingDownload')
                   : t('settings.updateBannerDownloading', {
                       progress,
                     })
@@ -186,6 +198,8 @@ export default function AppUpdateBanner() {
             )}
             {ready
               ? t('settings.updateRestart')
+              : failed
+                ? t('settings.updateManualDownload')
               : downloading
                 ? t('settings.updateBannerUpdating')
                 : t('settings.updateBannerAction')}
@@ -208,7 +222,7 @@ export default function AppUpdateBanner() {
             <div
               className={cn(
                 'h-full bg-primary transition-[width] duration-300',
-                progress == null && 'w-1/3 animate-pulse',
+                progress == null && 'skiller-update-progress-indeterminate',
               )}
               style={progress == null ? undefined : { width: `${progress}%` }}
             />

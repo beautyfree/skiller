@@ -20,6 +20,9 @@ import type { AppUpdateStatusJson } from "../shared/rpc-schema";
 const { autoUpdater } = pkg;
 
 const RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const FIRST_DOWNLOAD_PROGRESS_TIMEOUT_MS = 90 * 1000;
+const STALLED_DOWNLOAD_PROGRESS_TIMEOUT_MS = 5 * 60 * 1000;
+const RELEASES_URL = "https://github.com/beautyfree/skiller/releases";
 
 let listener: ((status: AppUpdateStatusJson) => void) | null = null;
 let recheckTimer: ReturnType<typeof setInterval> | null = null;
@@ -30,6 +33,27 @@ let lastError: string | null = null;
 let state: AppUpdateStatusJson["state"] = "idle";
 let updateDownloaded = false;
 let downloadPromise: Promise<string[]> | null = null;
+let downloadWatchdog: ReturnType<typeof setTimeout> | null = null;
+
+function manualDownloadUrl(): string | null {
+	if (!remoteVersion) return null;
+	return `${RELEASES_URL}/tag/v${remoteVersion}`;
+}
+
+function clearDownloadWatchdog(): void {
+	if (!downloadWatchdog) return;
+	clearTimeout(downloadWatchdog);
+	downloadWatchdog = null;
+}
+
+function armDownloadWatchdog(ms: number, message: string): void {
+	clearDownloadWatchdog();
+	downloadWatchdog = setTimeout(() => {
+		if (state !== "downloading") return;
+		lastError = `${message} Download manually from ${manualDownloadUrl() ?? RELEASES_URL}.`;
+		setState("error");
+	}, ms);
+}
 
 function snapshot(): AppUpdateStatusJson {
 	return {
@@ -41,6 +65,7 @@ function snapshot(): AppUpdateStatusJson {
 		remoteHash: null,
 		progress: downloadProgress,
 		error: lastError,
+		manualDownloadUrl: manualDownloadUrl(),
 		lastCheckedAt,
 	};
 }
@@ -64,6 +89,7 @@ function wireAutoUpdaterEvents(): void {
 	autoUpdater.autoInstallOnAppQuit = true;
 
 	autoUpdater.on("checking-for-update", () => {
+		clearDownloadWatchdog();
 		lastCheckedAt = Date.now();
 		lastError = null;
 		setState("checking");
@@ -73,10 +99,12 @@ function wireAutoUpdaterEvents(): void {
 		remoteVersion = info?.version ?? null;
 		downloadProgress = null;
 		updateDownloaded = false;
+		clearDownloadWatchdog();
 		setState("available");
 	});
 
 	autoUpdater.on("update-not-available", () => {
+		clearDownloadWatchdog();
 		setState("up-to-date");
 	});
 
@@ -86,16 +114,24 @@ function wireAutoUpdaterEvents(): void {
 				? Math.max(0, Math.min(100, Math.round(progress.percent)))
 				: null;
 		downloadProgress = pct;
+		if (pct !== null) {
+			armDownloadWatchdog(
+				STALLED_DOWNLOAD_PROGRESS_TIMEOUT_MS,
+				"Update download stalled.",
+			);
+		}
 		setState("downloading");
 	});
 
 	autoUpdater.on("update-downloaded", () => {
+		clearDownloadWatchdog();
 		downloadProgress = 100;
 		updateDownloaded = true;
 		setState("ready");
 	});
 
 	autoUpdater.on("error", (err) => {
+		clearDownloadWatchdog();
 		lastError = err?.message ?? String(err);
 		setState("error");
 	});
@@ -138,6 +174,7 @@ export function stopAppUpdater(): void {
 		clearInterval(recheckTimer);
 		recheckTimer = null;
 	}
+	clearDownloadWatchdog();
 	listener = null;
 }
 
@@ -173,7 +210,12 @@ export async function downloadUpdate(): Promise<AppUpdateStatusJson> {
 	// Optimistic transition so the renderer UI reflects work-in-progress even
 	// before the first `download-progress` event fires (those can lag 2–3s on
 	// slow networks).
+	downloadProgress = null;
 	setState("downloading");
+	armDownloadWatchdog(
+		FIRST_DOWNLOAD_PROGRESS_TIMEOUT_MS,
+		"Update download did not start reporting progress.",
+	);
 	// Important UX behavior: return immediately so renderer request doesn't sit
 	// in pending for minutes on large updates. Progress/finish/error keeps coming
 	// through updater events pushed via `app_update_status_changed`.
@@ -182,6 +224,7 @@ export async function downloadUpdate(): Promise<AppUpdateStatusJson> {
 		void downloadPromise
 			.then((result) => {
 				console.log("[updater] downloadUpdate() resolved with:", result);
+				clearDownloadWatchdog();
 				// If update-downloaded event didn't fire yet (race on some
 				// platforms), force the state transition from the resolved promise.
 				if (state !== "ready") {
@@ -192,6 +235,7 @@ export async function downloadUpdate(): Promise<AppUpdateStatusJson> {
 			})
 			.catch((err) => {
 				console.warn("[updater] downloadUpdate() rejected:", err);
+				clearDownloadWatchdog();
 				lastError = (err as Error)?.message ?? String(err);
 				setState("error");
 			})

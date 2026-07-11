@@ -784,6 +784,22 @@ html.skiller-macos-vibrancy.dark .glass-surface-tint.glass-stat {
       color-mix(in srgb, var(--primary) 10%, var(--card)));
 }
 
+@keyframes skiller-update-progress-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(260%);
+  }
+}
+
+.skiller-update-progress-indeterminate {
+  width: 38%;
+  border-radius: inherit;
+  animation: skiller-update-progress-sweep 1.15s ease-in-out infinite;
+}
+
 @keyframes backdrop-in {
   from {
     opacity: 0;

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.18](https://github.com/beautyfree/skiller/compare/v0.2.17...v0.2.18) (2026-07-11)
+
+
+### Features
+
+* auto-download app updates by default ([6ce0871](https://github.com/beautyfree/skiller/commit/6ce0871e1e922f7d1d0195264dc519fd46b367ff))
+* surface app updates in the shell ([901f378](https://github.com/beautyfree/skiller/commit/901f3782091faf5939aebce052f5562faf1f3d8f))
+
+
+### Bug Fixes
+
+* require explicit update downloads ([a03e558](https://github.com/beautyfree/skiller/commit/a03e55893a6166e09cfb20690fc36638af1c5651))
+
 ## [0.2.17](https://github.com/beautyfree/skiller/compare/v0.2.16...v0.2.17) (2026-07-10)
 
 

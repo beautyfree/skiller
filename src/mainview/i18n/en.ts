@@ -328,6 +328,8 @@ const en = {
     updateBannerDownloading: "Downloading update — {{progress}}%",
     updateBannerAction: "Update",
     updateBannerUpdating: "Updating",
+    updatePreparingDownload: "Preparing download…",
+    updateManualDownload: "Download manually",
     updateBannerDismiss: "Dismiss update notification",
     // Marketplace Cache
     onboardingTitle: "Onboarding",

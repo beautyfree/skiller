@@ -154,6 +154,12 @@ export default function SettingsPage() {
     }
   }
 
+  function handleManualUpdateDownload() {
+    if (updateStatus?.manualDownloadUrl) {
+      openUrl(updateStatus.manualDownloadUrl)
+    }
+  }
+
   async function handleUpdateApply() {
     setUpdateBusy('applying')
     try {
@@ -575,6 +581,16 @@ export default function SettingsPage() {
                   <Download className="size-3.5" />
                   {t('settings.updateDownload')}
                 </Button>
+              ) : updateStatus?.state === 'error' &&
+                updateStatus.manualDownloadUrl ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleManualUpdateDownload}
+                >
+                  <ExternalLink className="size-3.5" />
+                  {t('settings.updateManualDownload')}
+                </Button>
               ) : (
                 <Button
                   variant="outline"
@@ -610,7 +626,7 @@ export default function SettingsPage() {
                 <div
                   className={`h-full bg-primary transition-[width] duration-300 ${
                     typeof updateStatus.progress !== 'number'
-                      ? 'animate-pulse w-1/3'
+                      ? 'skiller-update-progress-indeterminate'
                       : ''
                   }`}
                   style={
@@ -623,6 +639,11 @@ export default function SettingsPage() {
               {typeof updateStatus.progress === 'number' && (
                 <p className="text-[10px] tabular-nums text-muted-foreground">
                   {updateStatus.progress}%
+                </p>
+              )}
+              {typeof updateStatus.progress !== 'number' && (
+                <p className="text-[10px] text-muted-foreground">
+                  {t('settings.updatePreparingDownload')}
                 </p>
               )}
             </div>

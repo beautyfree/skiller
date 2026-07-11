@@ -169,6 +169,8 @@ export type AppUpdateStatusJson = {
   /** 0–100 when downloading; undefined otherwise. */
   progress?: number | null;
   error?: string | null;
+  /** Public release page for manual install when auto-update download fails. */
+  manualDownloadUrl?: string | null;
   /** Wall-clock ms since epoch of the most recent checkForUpdate(). */
   lastCheckedAt?: number | null;
 };

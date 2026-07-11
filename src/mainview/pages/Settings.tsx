@@ -29,6 +29,7 @@ interface AppSettings {
   path_overrides: Record<string, string[]> | null
   close_action: string | null
   analytics_enabled?: boolean | null
+  auto_download_updates?: boolean | null
   macos_window_blur?: boolean | null
   assumed_listing_char_budget?: number | null
   assumed_context_window_chars?: number | null
@@ -40,6 +41,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   path_overrides: null,
   close_action: null,
   analytics_enabled: null,
+  auto_download_updates: null,
   macos_window_blur: null,
 }
 
@@ -599,6 +601,33 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+
+          <label className="flex cursor-pointer select-none items-start gap-3 rounded-lg border border-border/40 bg-muted/5 px-3 py-2.5 transition hover:bg-black/[0.03] dark:hover:bg-white/[0.04]">
+            <input
+              type="checkbox"
+              checked={settings?.auto_download_updates !== false}
+              onChange={(e) => {
+                const enabled = e.target.checked
+                saveMutation.mutate({
+                  ...(settings ?? DEFAULT_SETTINGS),
+                  auto_download_updates: enabled,
+                })
+                if (enabled && updateStatus?.state === 'available') {
+                  void handleUpdateDownload()
+                }
+              }}
+              className="mt-0.5 size-3.5 rounded accent-primary"
+            />
+            <span className="min-w-0">
+              <span className="block text-xs font-medium text-foreground">
+                {t('settings.updateAutoDownload')}
+              </span>
+              <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                {t('settings.updateAutoDownloadDescription')}
+              </span>
+            </span>
+          </label>
+
           {/* Download progress bar — the percentage is already in the
            *  subtitle, but a visual bar gives actual feedback on long
            *  downloads (200+ MB DMG can take minutes on slow networks).
@@ -831,4 +860,3 @@ export default function SettingsPage() {
     </div>
   )
 }
-

@@ -3,7 +3,7 @@
  *
  * Event translation table (electron-updater → AppUpdateStatusJson.state):
  *   checking-for-update  → "checking"
- *   update-available     → "available"     (download has NOT auto-started)
+ *   update-available     → "available"     (manual) or "downloading" (auto)
  *   update-not-available → "up-to-date"
  *   download-progress    → "downloading"   (with 0–100 progress)
  *   update-downloaded    → "ready"         (updateReady → user can restart)
@@ -16,6 +16,7 @@
 import { app } from "electron";
 import pkg from "electron-updater";
 import type { AppUpdateStatusJson } from "../shared/rpc-schema";
+import { readSettings } from "./settings";
 
 const { autoUpdater } = pkg;
 
@@ -30,6 +31,12 @@ let lastError: string | null = null;
 let state: AppUpdateStatusJson["state"] = "idle";
 let updateDownloaded = false;
 let downloadPromise: Promise<string[]> | null = null;
+let autoDownloadUpdates = true;
+
+function refreshAutoDownloadPreference(): void {
+	autoDownloadUpdates = readSettings().auto_download_updates !== false;
+	autoUpdater.autoDownload = autoDownloadUpdates;
+}
 
 function snapshot(): AppUpdateStatusJson {
 	return {
@@ -60,7 +67,7 @@ function setState(next: AppUpdateStatusJson["state"]): void {
 }
 
 function wireAutoUpdaterEvents(): void {
-	autoUpdater.autoDownload = false;
+	refreshAutoDownloadPreference();
 	autoUpdater.autoInstallOnAppQuit = true;
 
 	autoUpdater.on("checking-for-update", () => {
@@ -71,7 +78,9 @@ function wireAutoUpdaterEvents(): void {
 
 	autoUpdater.on("update-available", (info) => {
 		remoteVersion = info?.version ?? null;
-		setState("available");
+		downloadProgress = null;
+		updateDownloaded = false;
+		setState(autoDownloadUpdates ? "downloading" : "available");
 	});
 
 	autoUpdater.on("update-not-available", () => {
@@ -114,6 +123,7 @@ export function initAppUpdater(
 	wireAutoUpdaterEvents();
 
 	// Fire-and-forget initial check, then poll every 6h.
+	refreshAutoDownloadPreference();
 	void autoUpdater.checkForUpdates().catch((err) => {
 		lastError = err?.message ?? String(err);
 		setState("error");
@@ -121,6 +131,7 @@ export function initAppUpdater(
 
 	recheckTimer = setInterval(
 		() => {
+			refreshAutoDownloadPreference();
 			void autoUpdater.checkForUpdates().catch((err) => {
 				lastError = err?.message ?? String(err);
 				setState("error");
@@ -149,6 +160,7 @@ export function getAppUpdateStatus(): AppUpdateStatusJson {
 export async function checkForUpdate(): Promise<AppUpdateStatusJson> {
 	if (!app.isPackaged) return snapshot();
 	try {
+		refreshAutoDownloadPreference();
 		await autoUpdater.checkForUpdates();
 	} catch (err) {
 		lastError = (err as Error)?.message ?? String(err);

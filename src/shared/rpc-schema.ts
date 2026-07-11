@@ -97,6 +97,8 @@ export type AppSettingsJson = {
   assumed_context_window_chars?: number | null;
   /** Product telemetry and analytics (PostHog). Default true when omitted. */
   analytics_enabled?: boolean | null;
+  /** Download app updates automatically after they are found. Default true when omitted. */
+  auto_download_updates?: boolean | null;
   /** One-time GitHub star prompt cadence metadata. */
   github_star_prompt?: {
     first_seen_at?: string | null;

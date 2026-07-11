@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.19](https://github.com/beautyfree/skiller/compare/v0.2.18...v0.2.19) (2026-07-11)
+
+
+### Bug Fixes
+
+* fail stalled update downloads with manual fallback ([300a321](https://github.com/beautyfree/skiller/commit/300a321d66ee5fdf48ad16046e8d42ab9f8c4fd9))
+
 ## [0.2.18](https://github.com/beautyfree/skiller/compare/v0.2.17...v0.2.18) (2026-07-11)
 
 

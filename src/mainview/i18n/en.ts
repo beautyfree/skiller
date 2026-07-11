@@ -329,9 +329,6 @@ const en = {
     updateBannerAction: "Update",
     updateBannerUpdating: "Updating",
     updateBannerDismiss: "Dismiss update notification",
-    updateAutoDownload: "Download app updates automatically",
-    updateAutoDownloadDescription:
-      "Skiller downloads new versions in the background and asks before restarting.",
     // Marketplace Cache
     onboardingTitle: "Onboarding",
     onboardingDescription:
@@ -481,9 +478,6 @@ const en = {
     noDescription: "No description available — check the repo before installing.",
     doneTitle: "You're ready",
     doneBody: "Jump straight into the app — here's where to go first:",
-    autoDownloadUpdatesTitle: "Download app updates automatically",
-    autoDownloadUpdatesBody:
-      "Skiller will fetch new versions in the background, then ask before restarting.",
     ctaSkillsTitle: "Manage skills",
     ctaSkillsBody: "See what's installed, copy a skill to another agent, or clean house.",
     ctaMarketplaceTitle: "Open Marketplace",

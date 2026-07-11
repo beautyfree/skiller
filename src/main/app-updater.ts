@@ -3,7 +3,7 @@
  *
  * Event translation table (electron-updater → AppUpdateStatusJson.state):
  *   checking-for-update  → "checking"
- *   update-available     → "available"     (manual) or "downloading" (auto)
+ *   update-available     → "available"     (user chooses when to download)
  *   update-not-available → "up-to-date"
  *   download-progress    → "downloading"   (with 0–100 progress)
  *   update-downloaded    → "ready"         (updateReady → user can restart)
@@ -16,7 +16,6 @@
 import { app } from "electron";
 import pkg from "electron-updater";
 import type { AppUpdateStatusJson } from "../shared/rpc-schema";
-import { readSettings } from "./settings";
 
 const { autoUpdater } = pkg;
 
@@ -31,12 +30,6 @@ let lastError: string | null = null;
 let state: AppUpdateStatusJson["state"] = "idle";
 let updateDownloaded = false;
 let downloadPromise: Promise<string[]> | null = null;
-let autoDownloadUpdates = true;
-
-function refreshAutoDownloadPreference(): void {
-	autoDownloadUpdates = readSettings().auto_download_updates !== false;
-	autoUpdater.autoDownload = autoDownloadUpdates;
-}
 
 function snapshot(): AppUpdateStatusJson {
 	return {
@@ -67,7 +60,7 @@ function setState(next: AppUpdateStatusJson["state"]): void {
 }
 
 function wireAutoUpdaterEvents(): void {
-	refreshAutoDownloadPreference();
+	autoUpdater.autoDownload = false;
 	autoUpdater.autoInstallOnAppQuit = true;
 
 	autoUpdater.on("checking-for-update", () => {
@@ -80,7 +73,7 @@ function wireAutoUpdaterEvents(): void {
 		remoteVersion = info?.version ?? null;
 		downloadProgress = null;
 		updateDownloaded = false;
-		setState(autoDownloadUpdates ? "downloading" : "available");
+		setState("available");
 	});
 
 	autoUpdater.on("update-not-available", () => {
@@ -122,8 +115,8 @@ export function initAppUpdater(
 
 	wireAutoUpdaterEvents();
 
-	// Fire-and-forget initial check, then poll every 6h.
-	refreshAutoDownloadPreference();
+	// Fire-and-forget initial check, then poll every 6h. Downloads are always
+	// user-initiated to avoid uncontrolled release traffic spikes.
 	void autoUpdater.checkForUpdates().catch((err) => {
 		lastError = err?.message ?? String(err);
 		setState("error");
@@ -131,7 +124,6 @@ export function initAppUpdater(
 
 	recheckTimer = setInterval(
 		() => {
-			refreshAutoDownloadPreference();
 			void autoUpdater.checkForUpdates().catch((err) => {
 				lastError = err?.message ?? String(err);
 				setState("error");
@@ -160,7 +152,6 @@ export function getAppUpdateStatus(): AppUpdateStatusJson {
 export async function checkForUpdate(): Promise<AppUpdateStatusJson> {
 	if (!app.isPackaged) return snapshot();
 	try {
-		refreshAutoDownloadPreference();
 		await autoUpdater.checkForUpdates();
 	} catch (err) {
 		lastError = (err as Error)?.message ?? String(err);

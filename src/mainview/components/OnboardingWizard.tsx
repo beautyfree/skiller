@@ -42,7 +42,6 @@ export default function OnboardingWizard({
 	);
 
 	const [step, setStep] = useState<Step>("welcome");
-	const [autoDownloadUpdates, setAutoDownloadUpdates] = useState(true);
 	const [popular, setPopular] = useState<MarketplaceSkillJson[] | null>(null);
 	const [loadingPopular, setLoadingPopular] = useState(false);
 	const [loadError, setLoadError] = useState<string | null>(null);
@@ -101,16 +100,6 @@ export default function OnboardingWizard({
 		} catch {
 			/* ignore */
 		}
-		void invoke("read_settings")
-			.then((settings) =>
-				invoke("write_settings", {
-					settings: {
-						...settings,
-						auto_download_updates: autoDownloadUpdates,
-					},
-				}),
-			)
-			.catch(() => {});
 		onClose();
 	}
 
@@ -410,23 +399,6 @@ export default function OnboardingWizard({
 								</p>
 							</button>
 						</div>
-
-						<label className="mx-auto flex max-w-md cursor-pointer select-none items-start gap-2.5 rounded-lg border border-border/40 bg-muted/5 px-3 py-2.5 transition hover:bg-black/[0.03] dark:hover:bg-white/[0.04]">
-							<input
-								type="checkbox"
-								checked={autoDownloadUpdates}
-								onChange={(e) => setAutoDownloadUpdates(e.target.checked)}
-								className="mt-0.5 size-3.5 rounded accent-primary"
-							/>
-							<span className="min-w-0">
-								<span className="block text-xs font-medium text-foreground">
-									{t("onboarding.autoDownloadUpdatesTitle")}
-								</span>
-								<span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
-									{t("onboarding.autoDownloadUpdatesBody")}
-								</span>
-							</span>
-						</label>
 
 						<div className="flex justify-end">
 							<Button variant="outline" size="sm" onClick={markDoneAndClose}>

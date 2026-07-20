@@ -25,6 +25,9 @@ export function createAppRouter(ctx: {
     install_skill: proc.input(anyIn).mutation(({ input }) => h.install_skill(input)),
     uninstall_skill: proc.input(anyIn).mutation(({ input }) => h.uninstall_skill(input)),
     uninstall_skill_all: proc.input(anyIn).mutation(({ input }) => h.uninstall_skill_all(input)),
+    uninstall_skills_all: proc.input(anyIn).mutation(({ input }) =>
+      h.uninstall_skills_all(input),
+    ),
     detach_shared_skill: proc.input(anyIn).mutation(({ input }) =>
       h.detach_shared_skill(input),
     ),

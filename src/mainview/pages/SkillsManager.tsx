@@ -32,6 +32,8 @@ import {
   FileText,
   Ban,
   FolderKanban,
+  Check,
+  ListChecks,
 } from "lucide-react";
 import { invoke, listen, revealItemInDir, openUrl } from "@/mainview/lib/native";
 import {
@@ -267,6 +269,10 @@ export default function SkillsManager() {
   // selectedId drives list highlight (instant); selectedSkill drives detail (deferred)
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
+  const [batchSelectionMode, setBatchSelectionMode] = useState(false);
+  const [batchSelectedIds, setBatchSelectedIds] = useState<Set<string>>(new Set());
+  const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
+  const [batchRunning, setBatchRunning] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [panelMode, setPanelMode] = useState<"detail" | "editor">("detail");
   const listPane = useResizable({
@@ -449,6 +455,37 @@ export default function SkillsManager() {
     return list;
   }, [mergedSkills, filter, installFilter, deferredSearch]);
 
+  // A collection child is removed with its top-level collection. Inherited-only
+  // skills have no direct installation for the batch uninstall operation to remove.
+  const batchSelectableSkills = useMemo(
+    () =>
+      (filtered ?? []).filter(
+        (skill) => !skill.collection && directInstallSlugs(skill).length > 0,
+      ),
+    [filtered],
+  );
+  const batchSelectedSkills = useMemo(() => {
+    if (!mergedSkills) return [];
+    return mergedSkills.filter((skill) => batchSelectedIds.has(skill.id));
+  }, [mergedSkills, batchSelectedIds]);
+  const allVisibleBatchSelected =
+    batchSelectableSkills.length > 0 &&
+    batchSelectableSkills.every((skill) => batchSelectedIds.has(skill.id));
+
+  // Filesystem refreshes can remove selected skills behind the UI (including
+  // collection children removed with their parent), so keep the selection valid.
+  useEffect(() => {
+    const validIds = new Set(
+      (mergedSkills ?? [])
+        .filter((skill) => !skill.collection && directInstallSlugs(skill).length > 0)
+        .map((skill) => skill.id),
+    );
+    setBatchSelectedIds((previous) => {
+      const next = new Set([...previous].filter((id) => validIds.has(id)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [mergedSkills]);
+
   // Skills managed by a collection (parent + children) — read-only, no sync/uninstall
   const collectionSkillIds = useMemo(() => {
     const ids = new Set<string>();
@@ -549,6 +586,93 @@ export default function SkillsManager() {
 
   function requestUnlinkInherited(skill: Skill) {
     setConfirmIntent({ kind: "unlink_inherited", skill });
+  }
+
+  const toggleBatchSkill = useCallback((skillId: string) => {
+    setBatchSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(skillId)) next.delete(skillId);
+      else next.add(skillId);
+      return next;
+    });
+  }, []);
+
+  function exitBatchSelection() {
+    if (batchRunning) return;
+    setBatchSelectionMode(false);
+    setBatchSelectedIds(new Set());
+    setBatchConfirmOpen(false);
+  }
+
+  function toggleSelectAllVisible() {
+    const visibleIds = batchSelectableSkills.map((skill) => skill.id);
+    setBatchSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (visibleIds.length > 0 && visibleIds.every((id) => next.has(id))) {
+        visibleIds.forEach((id) => next.delete(id));
+      } else {
+        visibleIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  }
+
+  async function handleBatchUninstall() {
+    if (batchRunning || batchSelectedSkills.length === 0) return;
+    const skillsToRemove = batchSelectedSkills.filter(
+      (skill) => !skill.collection && directInstallSlugs(skill).length > 0,
+    );
+    if (skillsToRemove.length === 0) return;
+
+    const busyKeys = skillsToRemove.flatMap((skill) =>
+      directInstallSlugs(skill).map((slug) => busyKey(skill.id, slug)),
+    );
+    setBatchRunning(true);
+    setBusyAgents((previous) => {
+      const next = new Map(previous);
+      busyKeys.forEach((key) => next.set(key, "uninstalling"));
+      return next;
+    });
+
+    try {
+      const result = await invoke("uninstall_skills_all", {
+        skillIds: skillsToRemove.map((skill) => skill.id),
+      });
+      await refreshAndReselect();
+      setBatchConfirmOpen(false);
+
+      if (result.failed.length === 0) {
+        setBatchSelectedIds(new Set());
+        setBatchSelectionMode(false);
+        toast(t("skills.batchUninstallDone", { count: result.removed.length }));
+      } else {
+        setBatchSelectedIds(new Set(result.failed.map((failure) => failure.id)));
+        if (result.removed.length > 0) {
+          toast(
+            t("skills.batchUninstallPartial", {
+              removed: result.removed.length,
+              failed: result.failed.length,
+            }),
+            "destructive",
+          );
+        } else {
+          toast(t("skills.batchUninstallFailed"), "destructive");
+        }
+      }
+    } catch (error) {
+      console.error(
+        "Batch uninstall failed:",
+        error instanceof Error ? error.message : String(error),
+      );
+      toast(t("skills.batchUninstallFailed"), "destructive");
+    } finally {
+      setBatchRunning(false);
+      setBusyAgents((previous) => {
+        const next = new Map(previous);
+        busyKeys.forEach((key) => next.delete(key));
+        return next;
+      });
+    }
   }
 
   async function runConfirmedAction() {
@@ -654,31 +778,80 @@ export default function SkillsManager() {
         style={{ width: listPane.width }}
       >
         <div className="flex shrink-0 flex-col space-y-3">
-        <div className="flex items-center justify-between relative z-20">
-          <div className="flex min-h-[22px] items-center">
-            {mergedSkills && (
+        <div className="flex items-center justify-between gap-2 relative z-20">
+          <div className="flex min-h-[22px] min-w-0 items-center gap-1.5">
+            {batchSelectionMode ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  title={t("skills.exitSelection")}
+                  aria-label={t("skills.exitSelection")}
+                  disabled={batchRunning}
+                  onClick={exitBatchSelection}
+                >
+                  <X className="size-3.5" />
+                </Button>
+                <span className="truncate text-xs font-medium tabular-nums">
+                  {t("skills.selectedCount", { count: batchSelectedIds.size })}
+                </span>
+              </>
+            ) : mergedSkills ? (
               <span className="text-sm text-muted-foreground tabular-nums">
                 ({filtered?.length})
               </span>
+            ) : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {batchSelectionMode ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1 text-xs"
+                disabled={batchSelectableSkills.length === 0 || batchRunning}
+                onClick={toggleSelectAllVisible}
+              >
+                {allVisibleBatchSelected ? (
+                  <X className="size-3.5" />
+                ) : (
+                  <ListChecks className="size-3.5" />
+                )}
+                {allVisibleBatchSelected
+                  ? t("skills.clearVisibleSelection")
+                  : t("skills.selectAll")}
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1 text-xs"
+                disabled={isLoading || busyAgents.size > 0}
+                onClick={() => setBatchSelectionMode(true)}
+              >
+                <ListChecks className="size-3.5" />
+                {t("skills.select")}
+              </Button>
+            )}
+            {!batchSelectionMode && (
+              <Button
+                variant="ghost"
+                size={updatingAll ? "sm" : "icon-sm"}
+                className={updatingAll ? "gap-1.5 text-xs" : ""}
+                title={t("skills.updateAll")}
+                disabled={updatingAll || isLoading}
+                onClick={handleUpdateAll}
+              >
+                <RefreshCw className={`size-3.5 ${updatingAll ? "animate-spin" : ""}`} />
+                {updatingAll && (
+                  <span>
+                    {updateAllProgress
+                      ? t("skills.updateAllProgress", { done: updateAllProgress.done, total: updateAllProgress.total })
+                      : t("skills.updating")}
+                  </span>
+                )}
+              </Button>
             )}
           </div>
-          <Button
-            variant="ghost"
-            size={updatingAll ? "sm" : "icon-sm"}
-            className={updatingAll ? "gap-1.5 text-xs" : ""}
-            title={t("skills.updateAll")}
-            disabled={updatingAll || isLoading}
-            onClick={handleUpdateAll}
-          >
-            <RefreshCw className={`size-3.5 ${updatingAll ? "animate-spin" : ""}`} />
-            {updatingAll && (
-              <span>
-                {updateAllProgress
-                  ? t("skills.updateAllProgress", { done: updateAllProgress.done, total: updateAllProgress.total })
-                  : t("skills.updating")}
-              </span>
-            )}
-          </Button>
         </div>
 
         {/* Agent + install source (single row, 50/50) */}
@@ -834,9 +1007,32 @@ export default function SkillsManager() {
               }
             }}
             isSearchStale={isSearchStale}
+            batchSelectionMode={batchSelectionMode}
+            batchSelectedIds={batchSelectedIds}
+            onToggleBatch={toggleBatchSkill}
           />
         )}
         </InsetScrollArea>
+
+        {batchSelectionMode && (
+          <div className="mt-3 shrink-0 border-t border-border/50 pt-3">
+            <Button
+              variant="destructive"
+              className="w-full gap-1.5"
+              disabled={batchSelectedIds.size === 0 || batchRunning}
+              onClick={() => setBatchConfirmOpen(true)}
+            >
+              {batchRunning ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="size-3.5" />
+              )}
+              {batchRunning
+                ? t("skills.runningAction")
+                : t("skills.uninstallAll")}
+            </Button>
+          </div>
+        )}
       </div>
 
       <ResizeHandle onMouseDown={listPane.onMouseDown} />
@@ -899,6 +1095,15 @@ export default function SkillsManager() {
         onConfirm={runConfirmedAction}
         pending={confirmRunning}
       />
+      <BatchUninstallConfirmDialog
+        open={batchConfirmOpen}
+        skills={batchSelectedSkills}
+        pending={batchRunning}
+        onCancel={() => {
+          if (!batchRunning) setBatchConfirmOpen(false);
+        }}
+        onConfirm={handleBatchUninstall}
+      />
     </div>
   );
 }
@@ -925,6 +1130,9 @@ function SkillListGrouped({
   onUnlinkInherited,
   onUninstallFromAgent,
   isSearchStale,
+  batchSelectionMode,
+  batchSelectedIds,
+  onToggleBatch,
 }: {
   skills: SkillWithRepo[];
   selectedId: string | null;
@@ -936,6 +1144,9 @@ function SkillListGrouped({
   onUnlinkInherited: (skill: SkillWithRepo) => void;
   onUninstallFromAgent?: (skill: SkillWithRepo, agentSlug: string) => void;
   isSearchStale: boolean;
+  batchSelectionMode: boolean;
+  batchSelectedIds: Set<string>;
+  onToggleBatch: (skillId: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1056,6 +1267,9 @@ function SkillListGrouped({
                     onUninstallAll={onUninstallAll}
                     onUnlinkInherited={onUnlinkInherited}
                     onUninstallFromAgent={onUninstallFromAgent}
+                    batchSelectionMode={batchSelectionMode}
+                    batchSelected={batchSelectedIds.has(row.skill.id)}
+                    onToggleBatch={onToggleBatch}
                   />
                 ) : row.kind === "collection_header" ? (
                   <CollectionItem
@@ -1069,6 +1283,9 @@ function SkillListGrouped({
                     onUninstallAll={onUninstallAll}
                     onUnlinkInherited={onUnlinkInherited}
                     onToggle={() => toggle(row.parent.id)}
+                    batchSelectionMode={batchSelectionMode}
+                    batchSelected={batchSelectedIds.has(row.parent.id)}
+                    onToggleBatch={onToggleBatch}
                   />
                 ) : (
                   <div className="ml-3 border-l border-black/[0.06] dark:border-white/[0.06] pl-1">
@@ -1080,6 +1297,10 @@ function SkillListGrouped({
                       onReveal={onReveal}
                       onUninstallAll={onUninstallAll}
                       onUnlinkInherited={onUnlinkInherited}
+                      batchSelectionMode={batchSelectionMode}
+                      batchSelected={false}
+                      batchSelectable={false}
+                      onToggleBatch={onToggleBatch}
                     />
                   </div>
                 )}
@@ -1089,6 +1310,48 @@ function SkillListGrouped({
         })}
       </div>
     </div>
+  );
+}
+
+function BatchSelectionCheckbox({
+  checked,
+  disabled,
+  label,
+  unavailableLabel,
+  onChange,
+  className,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  label: string;
+  unavailableLabel: string;
+  onChange: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={disabled ? unavailableLabel : label}
+      title={disabled ? unavailableLabel : label}
+      disabled={disabled}
+      className={cn(
+        "flex size-4 shrink-0 items-center justify-center rounded-[5px] border transition-colors",
+        checked
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-muted-foreground/40 bg-background/70 hover:border-primary/70",
+        disabled && "cursor-not-allowed border-border bg-muted/30 opacity-45",
+        className,
+      )}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onChange();
+      }}
+    >
+      {checked && <Check className="size-3" strokeWidth={2.5} />}
+    </button>
   );
 }
 
@@ -1103,6 +1366,9 @@ const CollectionItem = memo(function CollectionItem({
   onUninstallAll,
   onUnlinkInherited,
   onToggle,
+  batchSelectionMode,
+  batchSelected,
+  onToggleBatch,
 }: {
   parent: SkillWithRepo;
   childCount: number;
@@ -1114,6 +1380,9 @@ const CollectionItem = memo(function CollectionItem({
   onUninstallAll: (skill: SkillWithRepo) => void;
   onUnlinkInherited: (skill: SkillWithRepo) => void;
   onToggle: () => void;
+  batchSelectionMode: boolean;
+  batchSelected: boolean;
+  onToggleBatch: (skillId: string) => void;
 }) {
   const { t } = useTranslation();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -1146,21 +1415,41 @@ const CollectionItem = memo(function CollectionItem({
       <div
         className={cn(
           "rounded-xl px-3 py-2.5 transition-all duration-200 select-none border-[0.5px]",
-          selected
+          batchSelected
+            ? "border-primary/25 bg-primary/[0.07] dark:bg-primary/[0.1]"
+            : selected
             ? "glass"
             : "border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]",
         )}
         onContextMenu={(e) => {
+          if (batchSelectionMode) return;
           e.preventDefault();
           e.stopPropagation();
           setMenu({ x: e.clientX, y: e.clientY });
         }}
       >
         <div className="flex items-start gap-0.5 w-full">
+          {batchSelectionMode && (
+            <BatchSelectionCheckbox
+              checked={batchSelected}
+              disabled={!hasDirectInstall}
+              label={t("skills.selectSkill", { name: parent.name })}
+              unavailableLabel={t("skills.batchUnavailableNoDirect")}
+              onChange={() => onToggleBatch(parent.id)}
+              className="mr-2 mt-0.5"
+            />
+          )}
           <button
             type="button"
             className="flex-1 min-w-0 text-left"
-            onClick={() => { onSelect(parent); if (collapsed) onToggle(); }}
+            onClick={() => {
+              if (batchSelectionMode) {
+                if (hasDirectInstall) onToggleBatch(parent.id);
+                return;
+              }
+              onSelect(parent);
+              if (collapsed) onToggle();
+            }}
           >
             <div className="flex items-center gap-2 min-w-0">
               <h3 className="text-sm font-medium truncate">{parent.name}</h3>
@@ -1192,38 +1481,42 @@ const CollectionItem = memo(function CollectionItem({
               ))}
             </div>
           </button>
-          <button
-            type="button"
-            ref={moreRef}
-            className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-black/[0.06] dark:hover:bg-white/[0.08] mt-0.5"
-            aria-label={t("skills.skillRowMenu")}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (menu) setMenu(null);
-              else openMenuFromMoreButton();
-            }}
-          >
-            <MoreHorizontal className="size-4" />
-          </button>
-          <button
-            type="button"
-            className="shrink-0 p-0.5 rounded hover:bg-black/[0.06] dark:hover:bg-white/[0.08] transition-colors mt-0.5"
-            aria-expanded={!collapsed}
-            aria-label={collapsed ? t("skills.expandCollection") : t("skills.collapseCollection")}
-            onClick={(e) => { e.stopPropagation(); onToggle(); }}
-          >
-            <ChevronRight
-              className={cn(
-                "size-3.5 text-muted-foreground transition-transform duration-200",
-                !collapsed && "rotate-90",
-              )}
-            />
-          </button>
+          {!batchSelectionMode && (
+            <>
+              <button
+                type="button"
+                ref={moreRef}
+                className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-black/[0.06] dark:hover:bg-white/[0.08] mt-0.5"
+                aria-label={t("skills.skillRowMenu")}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (menu) setMenu(null);
+                  else openMenuFromMoreButton();
+                }}
+              >
+                <MoreHorizontal className="size-4" />
+              </button>
+              <button
+                type="button"
+                className="shrink-0 p-0.5 rounded hover:bg-black/[0.06] dark:hover:bg-white/[0.08] transition-colors mt-0.5"
+                aria-expanded={!collapsed}
+                aria-label={collapsed ? t("skills.expandCollection") : t("skills.collapseCollection")}
+                onClick={(e) => { e.stopPropagation(); onToggle(); }}
+              >
+                <ChevronRight
+                  className={cn(
+                    "size-3.5 text-muted-foreground transition-transform duration-200",
+                    !collapsed && "rotate-90",
+                  )}
+                />
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {menu &&
+      {!batchSelectionMode && menu &&
         createPortal(
           <div
             ref={menuRef}
@@ -1285,6 +1578,10 @@ const SkillListItem = memo(function SkillListItem({
   onUninstallAll,
   onUnlinkInherited,
   onUninstallFromAgent,
+  batchSelectionMode,
+  batchSelected,
+  batchSelectable,
+  onToggleBatch,
 }: {
   skill: SkillWithRepo;
   selected: boolean;
@@ -1297,6 +1594,10 @@ const SkillListItem = memo(function SkillListItem({
   onUninstallAll: (skill: SkillWithRepo) => void;
   onUnlinkInherited: (skill: SkillWithRepo) => void;
   onUninstallFromAgent?: (skill: SkillWithRepo, agentSlug: string) => void;
+  batchSelectionMode: boolean;
+  batchSelected: boolean;
+  batchSelectable?: boolean;
+  onToggleBatch: (skillId: string) => void;
 }) {
   const { t } = useTranslation();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -1313,6 +1614,7 @@ const SkillListItem = memo(function SkillListItem({
     .filter((s) => !directSlugs.includes(s));
   const hasDirectInstall = directSlugs.length > 0;
   const inheritedOnly = !hasDirectInstall && inheritedSlugs.length > 0;
+  const canBatchSelect = batchSelectable ?? hasDirectInstall;
 
   function openMenuFromMoreButton() {
     const r = moreRef.current?.getBoundingClientRect();
@@ -1329,13 +1631,24 @@ const SkillListItem = memo(function SkillListItem({
       <button
         type="button"
         className={cn(
-          "w-full rounded-xl px-3 py-2.5 pr-9 text-left transition-all duration-200 select-none border-[0.5px]",
-          selected
+          "w-full rounded-xl px-3 py-2.5 text-left transition-all duration-200 select-none border-[0.5px]",
+          batchSelectionMode ? "pl-10 pr-3" : "pr-9",
+          batchSelected
+            ? "border-primary/25 bg-primary/[0.07] dark:bg-primary/[0.1]"
+            : selected
             ? "glass"
             : "border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]",
+          batchSelectionMode && !canBatchSelect && "opacity-55",
         )}
-        onClick={() => onSelect(skill)}
+        onClick={() => {
+          if (batchSelectionMode) {
+            if (canBatchSelect) onToggleBatch(skill.id);
+            return;
+          }
+          onSelect(skill);
+        }}
         onContextMenu={(e) => {
+          if (batchSelectionMode) return;
           e.preventDefault();
           e.stopPropagation();
           setMenu({ x: e.clientX, y: e.clientY });
@@ -1385,22 +1698,37 @@ const SkillListItem = memo(function SkillListItem({
           />
         )}
       </button>
-      <button
-        type="button"
-        ref={moreRef}
-        className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground hover:bg-black/[0.06] dark:hover:bg-white/[0.08]"
-        aria-label={t("skills.skillRowMenu")}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (menu) setMenu(null);
-          else openMenuFromMoreButton();
-        }}
-      >
-        <MoreHorizontal className="size-4" />
-      </button>
+      {batchSelectionMode ? (
+        <BatchSelectionCheckbox
+          checked={batchSelected}
+          disabled={!canBatchSelect}
+          label={t("skills.selectSkill", { name: skill.name })}
+          unavailableLabel={
+            skill.collection
+              ? t("skills.batchUnavailableCollectionChild")
+              : t("skills.batchUnavailableNoDirect")
+          }
+          onChange={() => onToggleBatch(skill.id)}
+          className="absolute left-3 top-3"
+        />
+      ) : (
+        <button
+          type="button"
+          ref={moreRef}
+          className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground hover:bg-black/[0.06] dark:hover:bg-white/[0.08]"
+          aria-label={t("skills.skillRowMenu")}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (menu) setMenu(null);
+            else openMenuFromMoreButton();
+          }}
+        >
+          <MoreHorizontal className="size-4" />
+        </button>
+      )}
 
-      {menu &&
+      {!batchSelectionMode && menu &&
         createPortal(
           <div
             ref={menuRef}
@@ -2082,6 +2410,83 @@ function SkillDetail({
           onClose={() => setProjectPickerOpen(false)}
         />
       )}
+    </div>
+  );
+}
+
+function BatchUninstallConfirmDialog({
+  open,
+  skills,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  skills: Skill[];
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void | Promise<void>;
+}) {
+  const { t } = useTranslation();
+  if (!open) return null;
+
+  const preview = skills.slice(0, 6);
+  const remaining = skills.length - preview.length;
+
+  return (
+    <div className="modal-shell fixed inset-0 z-[320] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} />
+      <div className="modal-panel relative z-10 w-[min(32rem,calc(100vw-2rem))] rounded-2xl glass-panel border border-border/50 p-5 shadow-xl">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-[590]">
+            {t("skills.batchConfirmTitle", { count: skills.length })}
+          </h2>
+          <button
+            type="button"
+            className="rounded-md p-1 text-muted-foreground hover:bg-black/[0.06] dark:hover:bg-white/[0.08]"
+            onClick={onCancel}
+            disabled={pending}
+            aria-label={t("common.close")}
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {t("skills.batchConfirmBody", { count: skills.length })}
+        </p>
+        <div className="my-4 max-h-44 overflow-y-auto rounded-xl border border-border/60 bg-muted/25 p-2">
+          {preview.map((skill) => (
+            <div key={skill.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs">
+              <Puzzle className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="truncate font-medium">{skill.name}</span>
+            </div>
+          ))}
+          {remaining > 0 && (
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">
+              {t("skills.batchConfirmMore", { count: remaining })}
+            </p>
+          )}
+        </div>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          {t("skills.batchConfirmInheritedHint")}
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onCancel} disabled={pending}>
+            {t("common.cancel")}
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => void onConfirm()}
+            disabled={skills.length === 0 || pending}
+          >
+            {pending && <Loader2 className="size-3.5 animate-spin" />}
+            {pending
+              ? t("skills.runningAction")
+              : t("skills.confirmBatchUninstall", { count: skills.length })}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

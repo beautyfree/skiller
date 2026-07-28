@@ -21,7 +21,7 @@ import { useToast } from './components/ToastProvider'
 import AppUpdateBanner from './components/AppUpdateBanner'
 
 const GITHUB_REPO_URL =
-  'https://github.com/beautyfree/skiller-skills-desktop-manager'
+  'https://github.com/beautyfree/skiller'
 const STAR_PROMPT_MIN_LAUNCHES = 3
 const STAR_PROMPT_MIN_AGE_MS = 24 * 60 * 60 * 1000
 const STAR_PROMPT_RESHOW_LAUNCHES = 3

@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { parse as parseToml } from "@iarna/toml";
 import which from "which";
 import { expandHome } from "./fsutil";
@@ -86,13 +86,48 @@ export function detectAgents(configs: AgentConfig[]): AgentConfig[] {
 function detectAgent(config: AgentConfig): AgentConfig {
 	let detected = config.cli_command ? commandExists(config.cli_command) : false;
 	if (!detected) {
-		detected = config.detect_paths.some((p) => existsSync(p));
-	}
-	if (!detected) {
-		detected = config.global_paths.some((gp) => {
-			if (existsSync(gp)) return true;
-			return basename(gp) === "skills" && existsSync(dirname(gp));
-		});
+		detected = config.detect_paths.some(
+			(p) => existsSync(p) && !isSkillsOnlyMarker(p, config.global_paths),
+		);
 	}
 	return { ...config, detected };
+}
+
+/**
+ * A previous Skiller install may have created an agent's detection directory
+ * solely to place its `skills` directory inside it. That is not evidence that
+ * the agent itself is installed, and treating it as such causes subsequent
+ * batch installs to target the same absent agent again.
+ */
+function isSkillsOnlyMarker(markerPath: string, globalPaths: string[]): boolean {
+	const nestedSkillPaths = globalPaths
+		.map((path) => relative(markerPath, path))
+		.filter((path) => path && !path.startsWith(`..${sep}`) && path !== "..");
+	if (nestedSkillPaths.length === 0) return false;
+
+	const pathSegments = nestedSkillPaths.map((path) => path.split(sep));
+	return containsOnlySkillPathBranches(markerPath, pathSegments);
+}
+
+function containsOnlySkillPathBranches(dir: string, paths: string[][]): boolean {
+	let entries: string[];
+	try {
+		entries = readdirSync(dir);
+	} catch {
+		return false;
+	}
+	if (entries.length === 0) return false;
+
+	for (const entry of entries) {
+		const matching = paths.filter(([head]) => head === entry);
+		if (matching.length === 0) return false;
+
+		const descendants = matching
+			.filter((path) => path.length > 1)
+			.map(([, ...rest]) => rest);
+		if (descendants.length > 0 && !containsOnlySkillPathBranches(join(dir, entry), descendants)) {
+			return false;
+		}
+	}
+	return true;
 }

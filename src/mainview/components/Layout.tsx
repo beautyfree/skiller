@@ -29,7 +29,7 @@ import { useSkills, allAgents } from '@/mainview/hooks/useSkills'
 import { useProjects } from '@/mainview/hooks/useProjects'
 
 const GITHUB_REPO_URL =
-  'https://github.com/beautyfree/skiller-skills-desktop-manager'
+  'https://github.com/beautyfree/skiller'
 
 // Hoisted outside component — stable reference, no re-creation per render
 const NAV_LINK_BASE =

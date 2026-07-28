@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.22](https://github.com/beautyfree/skiller/compare/v0.2.21...v0.2.22) (2026-07-28)
+
+
+### Bug Fixes
+
+* prevent phantom agent installs from managed skill folders ([#33](https://github.com/beautyfree/skiller/issues/33)) ([7f54fc0](https://github.com/beautyfree/skiller/commit/7f54fc0e882cf20832635e995c2048e09fdcf891))
+
 ## [0.2.21](https://github.com/beautyfree/skiller/compare/v0.2.20...v0.2.21) (2026-07-28)
 
 

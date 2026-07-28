@@ -44,6 +44,26 @@ export function repoNameFromUrl(url: string): string {
 	return seg.replace(/\.git$/, "");
 }
 
+/**
+ * GitHub's web UI URLs can include `/tree/<ref>/…` or `/blob/<ref>/…`.
+ * Those identify files inside a repository, not a cloneable remote.
+ */
+export function normalizeSkillRepoUrl(url: string): string {
+	const trimmed = url.trim();
+	try {
+		const parsed = new URL(trimmed);
+		if (parsed.hostname.toLowerCase() === "github.com") {
+			const [owner, repo] = parsed.pathname.split("/").filter(Boolean);
+			if (owner && repo) {
+				return `https://github.com/${owner}/${repo.replace(/\.git$/, "")}`;
+			}
+		}
+	} catch {
+		// SSH remotes and non-URL git remotes are already cloneable as-is.
+	}
+	return trimmed.replace(/\/$/, "");
+}
+
 export function repoIdFromUrl(url: string): string {
 	return repoNameFromUrl(url);
 }
@@ -250,19 +270,20 @@ export async function addSkillRepo(
 	repoUrl: string,
 	emit: (p: RepoProgress) => void,
 ): Promise<{ repo: SkillRepoInternal; skills: SkillJson[] }> {
-	const id = repoIdFromUrl(repoUrl);
+	const normalizedRepoUrl = normalizeSkillRepoUrl(repoUrl);
+	const id = repoIdFromUrl(normalizedRepoUrl);
 	const localPath = join(reposDir(), id);
 
 	if (existsSync(localPath)) {
 		const settings = readSettings();
-		const inConfig = settings.repos?.some((r) => r.repo_url === repoUrl);
+		const inConfig = settings.repos?.some((r) => r.repo_url === normalizedRepoUrl);
 		if (inConfig) {
 			emit({ stage: "scanning", detail: null });
-			let repo = buildSkillRepo(repoUrl, localPath, id);
+			let repo = buildSkillRepo(normalizedRepoUrl, localPath, id);
 			const skills = listRepoSkillsAsJson(id);
 			repo.skill_count = skills.length;
 			repo.last_synced =
-				settings.repos?.find((r) => r.repo_url === repoUrl)?.last_synced ?? null;
+				settings.repos?.find((r) => r.repo_url === normalizedRepoUrl)?.last_synced ?? null;
 			emit({ stage: "done", detail: null });
 			return {
 				repo: {
@@ -280,9 +301,9 @@ export async function addSkillRepo(
 	}
 
 	mkdirSync(reposDir(), { recursive: true });
-	emit({ stage: "cloning", detail: repoUrl });
+	emit({ stage: "cloning", detail: normalizedRepoUrl });
 	try {
-		await simpleGit().clone(repoUrl, localPath);
+		await simpleGit().clone(normalizedRepoUrl, localPath);
 	} catch (e) {
 		try {
 			rmSync(localPath, { recursive: true, force: true });
@@ -294,7 +315,7 @@ export async function addSkillRepo(
 
 	emit({ stage: "scanning", detail: null });
 	const now = new Date().toISOString();
-	let repo = buildSkillRepo(repoUrl, localPath, id);
+	let repo = buildSkillRepo(normalizedRepoUrl, localPath, id);
 	repo.last_synced = now;
 	const skills = listRepoSkillsAsJson(id);
 	repo.skill_count = skills.length;
@@ -302,7 +323,7 @@ export async function addSkillRepo(
 	emit({ stage: "saving", detail: null });
 	const settings = readSettings();
 	const repos: RepoEntryJson[] = [...(settings.repos ?? [])];
-	repos.push({ repo_url: repoUrl, local_path: null, last_synced: now });
+	repos.push({ repo_url: normalizedRepoUrl, local_path: null, last_synced: now });
 	writeSettings({ ...settings, repos });
 
 	emit({ stage: "done", detail: null });

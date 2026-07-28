@@ -21,6 +21,7 @@ import { installSkillFromGit, installSkillFromPath } from './install'
 import {
   detachSharedSkill,
   uninstallSkill,
+  uninstallDirectSkillFromAll,
   uninstallSkillFromAll,
   unlinkInheritedSkillFromAgentConfigs,
 } from './uninstall'
@@ -264,7 +265,7 @@ export function createRequestHandlers(ctx: {
 
       for (const skillId of skillIds) {
         try {
-          uninstallSkillFromAll(skillId, agents)
+          uninstallDirectSkillFromAll(skillId, agents)
           removed.push(skillId)
         } catch (err) {
           failed.push({

@@ -198,6 +198,13 @@ export type AppRPCSchema = {
       install_skill: { params: { source: SkillSourceParam; targetAgents: string[] }; response: void };
       uninstall_skill: { params: { skillId: string; agentSlug: string }; response: void };
       uninstall_skill_all: { params: { skillId: string }; response: void };
+      uninstall_skills_all: {
+        params: { skillIds: string[] };
+        response: {
+          removed: string[];
+          failed: { id: string; error: string }[];
+        };
+      };
       detach_shared_skill: {
         params: { skillId: string; removeFromAgent: string };
         response: { preservedOn: string[]; removedFrom: string };

@@ -21,6 +21,7 @@ import { installSkillFromGit, installSkillFromPath } from './install'
 import {
   detachSharedSkill,
   uninstallSkill,
+  uninstallDirectSkillFromAll,
   uninstallSkillFromAll,
   unlinkInheritedSkillFromAgentConfigs,
 } from './uninstall'
@@ -250,6 +251,31 @@ export function createRequestHandlers(ctx: {
     uninstall_skill_all: async (params: { skillId: string }) => {
       const { skillId } = params
       uninstallSkillFromAll(skillId, loadDetectedAgents())
+    },
+    uninstall_skills_all: async (params: { skillIds: string[] }) => {
+      if (!Array.isArray(params.skillIds)) {
+        throw new Error('skillIds must be an array')
+      }
+      const skillIds = [...new Set(
+        params.skillIds.filter((id): id is string => typeof id === 'string' && id.length > 0),
+      )]
+      const agents = loadDetectedAgents()
+      const removed: string[] = []
+      const failed: { id: string; error: string }[] = []
+
+      for (const skillId of skillIds) {
+        try {
+          uninstallDirectSkillFromAll(skillId, agents)
+          removed.push(skillId)
+        } catch (err) {
+          failed.push({
+            id: skillId,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }
+
+      return { removed, failed }
     },
     /**
      * Remove every directly-installed skill from a single agent. Used by

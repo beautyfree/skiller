@@ -118,6 +118,17 @@ export function uninstallSkill(skillId: string, agentSlug: string, agents: Agent
 }
 
 export function uninstallSkillFromAll(skillId: string, agents: AgentConfig[]): void {
+	uninstallDirectSkillFromAll(skillId, agents);
+	const canonical = join(sharedSkillsDir(), skillId);
+	removeEntry(canonical);
+	removeProvenance(skillId);
+}
+
+/**
+ * Remove only direct installations from every agent. The canonical shared
+ * copy is intentionally retained so agents that inherit it keep access.
+ */
+export function uninstallDirectSkillFromAll(skillId: string, agents: AgentConfig[]): void {
 	for (const agent of agents) {
 		for (const root of agent.global_paths) {
 			removeEntry(join(root, skillId));
@@ -133,9 +144,6 @@ export function uninstallSkillFromAll(skillId: string, agents: AgentConfig[]): v
 			}
 		}
 	}
-	const canonical = join(sharedSkillsDir(), skillId);
-	removeEntry(canonical);
-	removeProvenance(skillId);
 }
 
 /**

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.20](https://github.com/beautyfree/skiller/compare/v0.2.19...v0.2.20) (2026-07-28)
+
+
+### Features
+
+* add batch skill uninstall ([c0b9680](https://github.com/beautyfree/skiller/commit/c0b96808273e17c8ea87baeff9dd3690e004377d))
+
 ## [0.2.19](https://github.com/beautyfree/skiller/compare/v0.2.18...v0.2.19) (2026-07-11)
 
 

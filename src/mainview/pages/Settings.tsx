@@ -839,12 +839,12 @@ export default function SettingsPage() {
             className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline cursor-pointer"
             onClick={() =>
               openUrl(
-                'https://github.com/beautyfree/skiller-skills-desktop-manager'
+                'https://github.com/beautyfree/skiller'
               )
             }
           >
             <GitBranch className="size-3" />
-            github.com/beautyfree/skiller-skills-desktop-manager
+            github.com/beautyfree/skiller
             <ExternalLink className="size-3" />
           </button>
         </section>

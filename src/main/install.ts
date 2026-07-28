@@ -35,6 +35,18 @@ function expandHomePath(path: string): string {
 	return expandHome(path);
 }
 
+export function resolveInstallTargets(
+	targetAgentSlugs: string[],
+	agents: AgentConfig[],
+): AgentConfig[] {
+	return targetAgentSlugs.map((slug) => {
+		const agent = agents.find((a) => a.slug === slug);
+		if (!agent) throw new Error(`agent \`${slug}\` is unsupported`);
+		if (!agent.detected) throw new Error(`agent \`${slug}\` is not detected`);
+		return agent;
+	});
+}
+
 function installToCanonical(sourceSkillDir: string, skillName: string): string {
 	const targetRoot = sharedSkillsDir();
 	mkdirSync(targetRoot, { recursive: true });
@@ -74,6 +86,7 @@ export function installSkillFromPath(
 	const skillName = targetSkillName
 		? sanitizeSkillDirName(targetSkillName)
 		: sanitizeSkillDirName(fallback);
+	const targetAgents = resolveInstallTargets(targetAgentSlugs, agents);
 	const canonicalDir = installToCanonical(sourceSkillDir, skillName);
 
 	const sharedPath = sharedSkillsDir();
@@ -84,10 +97,8 @@ export function installSkillFromPath(
 		sharedReal = sharedPath;
 	}
 
-	for (const slug of targetAgentSlugs) {
-		const agent = agents.find((a) => a.slug === slug);
-		if (!agent) throw new Error(`agent \`${slug}\` is unsupported`);
-
+	for (const agent of targetAgents) {
+		const { slug } = agent;
 		const readsShared = agent.additional_readable_paths.some((rp) => {
 			try {
 				return realpathSync(rp.path) === sharedReal;

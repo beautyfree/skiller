@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.21](https://github.com/beautyfree/skiller/compare/v0.2.20...v0.2.21) (2026-07-28)
+
+
+### Bug Fixes
+
+* support GitHub repository subdirectory URLs ([1058ba1](https://github.com/beautyfree/skiller/commit/1058ba17314e0a8988fc4f972505f45cb5abbbc5))
+
 ## [0.2.20](https://github.com/beautyfree/skiller/compare/v0.2.19...v0.2.20) (2026-07-28)
 
 

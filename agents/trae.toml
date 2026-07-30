@@ -5,6 +5,7 @@ project_skills_dir = ".trae/skills"
 global_paths = ["~/.trae/skills"]
 skill_format = "skill-md"
 cli_command = "trae"
+detect_paths = ["~/.trae"]
 install_command = "brew install --cask trae"
 install_command_windows = "winget install ByteDance.Trae"
 # Trae has no native Linux desktop build as of 2026 (only macOS, Windows, and

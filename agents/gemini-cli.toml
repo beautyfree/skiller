@@ -5,6 +5,7 @@ project_skills_dir = ".agents/skills"
 global_paths = ["~/.gemini/skills"]
 skill_format = "skill-md"
 cli_command = "gemini"
+detect_paths = ["~/.gemini"]
 install_command = "npm install -g @google/gemini-cli"
 install_docs_url = "https://google-gemini.github.io/gemini-cli/docs/get-started/"
 install_source_label = "official-docs"

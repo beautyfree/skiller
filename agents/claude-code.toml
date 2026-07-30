@@ -5,6 +5,10 @@ project_skills_dir = ".claude/skills"
 global_paths = ["~/.claude/skills"]
 skill_format = "skill-md"
 cli_command = "claude"
+# Finder-launched macOS apps do not necessarily inherit the shell PATH where
+# Claude Code is installed. `detect_paths` is still protected by the registry's
+# skills-only check, so a leftover `~/.claude/skills` directory is not enough.
+detect_paths = ["~/.claude"]
 install_command = "curl -fsSL https://claude.ai/install.sh | bash"
 install_command_windows = "npm install -g @anthropic-ai/claude-code"
 install_docs_url = "https://docs.anthropic.com/en/docs/claude-code/getting-started"

@@ -5,6 +5,7 @@ project_skills_dir = ".agents/skills"
 global_paths = ["~/.gemini/antigravity/skills"]
 skill_format = "skill-md"
 cli_command = "antigravity"
+detect_paths = ["~/.gemini/antigravity"]
 install_command = "brew install --cask antigravity"
 install_command_windows = "winget install Google.Antigravity"
 # Linux: Google ships .deb and .tar.gz from their official download page but

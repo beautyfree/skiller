@@ -5,6 +5,7 @@ project_skills_dir = ".windsurf/skills"
 global_paths = ["~/.codeium/windsurf/skills"]
 skill_format = "skill-md"
 cli_command = "windsurf"
+detect_paths = ["~/.codeium/windsurf"]
 install_command = "brew install --cask windsurf"
 install_command_windows = "winget install Codeium.Windsurf"
 # Linux: Windsurf ships AppImage, deb, and tar.gz + GPG-signed apt/yum repos.

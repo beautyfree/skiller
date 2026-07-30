@@ -5,6 +5,9 @@ project_skills_dir = ".agents/skills"
 global_paths = ["~/.codex/skills"]
 skill_format = "skill-md"
 cli_command = "codex"
+# Finder-launched macOS apps do not necessarily inherit Homebrew's PATH.
+# The registry rejects a directory containing only Skiller-managed skills.
+detect_paths = ["~/.codex"]
 install_command = "npm install -g @openai/codex"
 install_docs_url = "https://help.openai.com/en/articles/11096431-openai-codex-cli-getting-started"
 install_source_label = "official-help-center"

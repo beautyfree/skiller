@@ -21,6 +21,43 @@ function tempDir(): string {
 }
 
 describe("detectAgents", () => {
+	it("recognizes CLI agents from real agent state when their CLI is absent from PATH", () => {
+		const root = tempDir();
+		for (const slug of [
+			"antigravity",
+			"claude-code",
+			"cline",
+			"codebuddy",
+			"codex",
+			"copilot-cli",
+			"cursor",
+			"factory",
+			"gemini-cli",
+			"kiro",
+			"openclaw",
+			"opencode",
+			"qoder",
+			"trae",
+			"windsurf",
+		]) {
+			const marker = join(root, slug);
+			mkdirSync(join(marker, "skills"), { recursive: true });
+			mkdirSync(join(marker, "state"));
+
+			const [agent] = detectAgents([
+				defaultAgentConfig({
+					slug,
+					name: slug,
+					cli_command: "definitely-not-on-path",
+					detect_paths: [marker],
+					global_paths: [join(marker, "skills")],
+				}),
+			]);
+
+			expect(agent.detected).toBe(true);
+		}
+	});
+
 	it("does not treat a skills directory as proof that its agent is installed", () => {
 		const root = tempDir();
 		const skillsDir = join(root, "skills");

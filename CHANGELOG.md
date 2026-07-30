@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.23](https://github.com/beautyfree/skiller/compare/v0.2.22...v0.2.23) (2026-07-30)
+
+
+### Bug Fixes
+
+* **registry:** detect agents outside shell PATH ([#35](https://github.com/beautyfree/skiller/issues/35)) ([a6525d0](https://github.com/beautyfree/skiller/commit/a6525d059534084eddc8134393b16ba3137397da))
+
 ## [0.2.22](https://github.com/beautyfree/skiller/compare/v0.2.21...v0.2.22) (2026-07-28)
 
 

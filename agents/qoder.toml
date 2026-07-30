@@ -5,6 +5,7 @@ project_skills_dir = ".qoder/skills"
 global_paths = ["~/.qoder/skills"]
 skill_format = "skill-md"
 cli_command = "qodercli"
+detect_paths = ["~/.qoder"]
 install_command = "brew install qoderai/qoder/qodercli --cask"
 install_command_windows = "npm install -g @qoder-ai/qodercli"
 # qodercli is a cross-platform npm package — the Windows command works as-is

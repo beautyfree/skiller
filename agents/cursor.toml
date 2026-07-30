@@ -5,6 +5,7 @@ project_skills_dir = ".agents/skills"
 global_paths = ["~/.cursor/skills"]
 skill_format = "skill-md"
 cli_command = "agent"
+detect_paths = ["~/.cursor"]
 install_command = "curl https://cursor.com/install -fsS | bash"
 install_command_windows = "winget install Anysphere.Cursor"
 install_docs_url = "https://cursor.com/docs/cli/overview"

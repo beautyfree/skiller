@@ -5,6 +5,7 @@ project_skills_dir = ".agents/skills"
 global_paths = ["~/.config/opencode/skills"]
 skill_format = "skill-md"
 cli_command = "opencode"
+detect_paths = ["~/.config/opencode"]
 install_command = "curl -fsSL https://opencode.ai/install | bash"
 install_command_windows = "npm install -g opencode-ai"
 install_docs_url = "https://opencode.ai/docs/"

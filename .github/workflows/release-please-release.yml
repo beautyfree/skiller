@@ -1,9 +1,13 @@
 name: Release Please Tag and Release
 
-# Handles only release finalization for merged release PRs:
+# Handles release finalization for merged Release Please PRs:
 # - creates/pushes vX.Y.Z tag
 # - creates draft GitHub release
-# Build/upload/publish is handled by release.yml after this workflow completes.
+# - directly calls release.yml to verify, build, upload, and publish it
+#
+# A direct reusable-workflow call is deliberate. `workflow_run` cannot see
+# Release Please's outputs and therefore used to start a failing release run
+# whenever Release Please completed successfully without creating a draft.
 
 on:
   push:
@@ -26,13 +30,26 @@ concurrency:
 jobs:
   release-please-release:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release_please.outputs.release_created }}
+      tag: ${{ steps.release_please.outputs.tag_name }}
+      target: ${{ steps.release_please.outputs.sha }}
     steps:
-      - uses: googleapis/release-please-action@8b8fd2cc23b2e18957157a9d923d75aa0c6f6ad5 # v4.2.0
+      - id: release_please
+        uses: googleapis/release-please-action@8b8fd2cc23b2e18957157a9d923d75aa0c6f6ad5 # v4.2.0
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           skip-github-pull-request: true
-          # Release builds start from release.yml's `workflow_run` trigger.
-          # This deliberately uses the repository token: no long-lived PAT is
-          # needed, and GitHub cannot silently suppress the build hand-off.
+          # release.yml is called directly below. This deliberately uses the
+          # repository token: no long-lived PAT is needed.
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-release:
+    needs: release-please-release
+    if: needs.release-please-release.outputs.release_created == 'true'
+    uses: ./.github/workflows/release.yml
+    secrets: inherit
+    with:
+      tag: ${{ needs.release-please-release.outputs.tag }}
+      target: ${{ needs.release-please-release.outputs.target }}

@@ -44,12 +44,16 @@ export function assertSyncStableId(id: string): void {
 	}
 }
 
-export function createSyncManifest(profileId: string, mode: SyncManifest["profile"]["mode"] = "private"): SyncManifest {
+export function createSyncManifest(
+	profileId: string,
+	mode: SyncManifest["profile"]["mode"] = "private",
+	agentPolicy: SyncManifest["agent_policy"] = { mode: "detected" },
+): SyncManifest {
 	assertSyncStableId(profileId);
 	const manifest = {
 		schema_version: SYNC_MANIFEST_VERSION,
 		profile: { id: profileId, mode },
-		agent_policy: { mode: "detected" as const },
+		agent_policy: agentPolicy,
 		skills: [],
 	};
 	return validateSyncManifest(manifest);

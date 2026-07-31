@@ -5,14 +5,26 @@ import {
 	assertPortableRelativePath,
 	createSyncManifest,
 	stringifySyncManifest,
+	validateSyncManifest,
 	type SyncManifest,
 } from "./sync-profile";
 import { planBundledSkillExport, type BundledSkillExportPlan, type SyncExportFinding } from "./sync-export";
 
 export type BundledSkillCandidate = {
+	kind?: "bundled";
 	id: string;
 	sourcePath: string;
 };
+
+export type ReferenceSkillCandidate = {
+	kind: "reference";
+	id: string;
+	repository: string;
+	ref: string;
+	skillPath: string;
+};
+
+export type SyncPublishCandidate = BundledSkillCandidate | ReferenceSkillCandidate;
 
 export type SyncPublishPlan = {
 	manifest: SyncManifest;
@@ -23,18 +35,29 @@ export type SyncPublishPlan = {
 export function createSyncPublishPlan(
 	profileId: string,
 	mode: SyncManifest["profile"]["mode"],
-	candidates: BundledSkillCandidate[],
+	candidates: SyncPublishCandidate[],
+	agentPolicy?: SyncManifest["agent_policy"],
 ): SyncPublishPlan {
-	const bundledSkills = candidates.map((candidate) => planBundledSkillExport(candidate.id, candidate.sourcePath));
-	const manifest = createSyncManifest(profileId, mode);
-	manifest.skills = bundledSkills.map((skill) => ({
-		id: skill.id,
-		kind: "bundled" as const,
-		path: skill.bundledPath,
-		sha256: skill.sha256,
-	}));
+	const bundledSkills = candidates
+		.filter((candidate): candidate is BundledSkillCandidate => candidate.kind !== "reference")
+		.map((candidate) => planBundledSkillExport(candidate.id, candidate.sourcePath));
+	const manifest = createSyncManifest(profileId, mode, agentPolicy);
+	manifest.skills = candidates.map((candidate) => {
+		if (candidate.kind === "reference") {
+			return {
+				id: candidate.id,
+				kind: "reference" as const,
+				repository: candidate.repository,
+				ref: candidate.ref,
+				skill_path: candidate.skillPath,
+			};
+		}
+		const skill = bundledSkills.find((item) => item.id === candidate.id);
+		if (!skill) throw new Error(`Missing bundled export plan: ${candidate.id}`);
+		return { id: skill.id, kind: "bundled" as const, path: skill.bundledPath, sha256: skill.sha256 };
+	});
 	return {
-		manifest,
+		manifest: validateSyncManifest(manifest),
 		bundledSkills,
 		secretFindings: bundledSkills.flatMap((skill) => skill.secretFindings),
 	};

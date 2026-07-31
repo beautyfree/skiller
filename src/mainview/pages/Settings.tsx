@@ -77,6 +77,8 @@ export default function SettingsPage() {
   const [syncRemoteUrl, setSyncRemoteUrl] = useState('')
   const [syncMode, setSyncMode] = useState<'private' | 'team' | 'public'>('private')
   const [syncSkillIds, setSyncSkillIds] = useState<string[]>([])
+  const [syncSkillKinds, setSyncSkillKinds] = useState<Record<string, 'bundled' | 'reference'>>({})
+  const [syncAgentSlugs, setSyncAgentSlugs] = useState<string[] | null>(null)
   const [syncSelectionInitialized, setSyncSelectionInitialized] = useState(false)
   const [publishPreview, setPublishPreview] = useState<SyncPublishPreviewJson | null>(null)
   const [restorePreview, setRestorePreview] = useState<SyncRestorePreviewJson | null>(null)
@@ -218,6 +220,10 @@ export default function SettingsPage() {
     queryKey: ['sync-skills'],
     queryFn: () => invoke('scan_all_skills'),
   })
+  const { data: syncAgents } = useQuery({
+    queryKey: ['sync-agents'],
+    queryFn: () => invoke('list_agents'),
+  })
 
   useEffect(() => {
     if (!syncSkills || syncSelectionInitialized) return
@@ -230,6 +236,8 @@ export default function SettingsPage() {
       profileId: syncProfileId,
       mode: syncMode,
       skillIds: syncSkillIds,
+      skillKinds: syncSkillKinds,
+      agentSlugs: syncAgentSlugs ?? undefined,
       remoteUrl: syncRemoteUrl || null,
       push: true,
     }),
@@ -268,6 +276,8 @@ export default function SettingsPage() {
         profileId: syncProfileId,
         mode: syncMode,
         skillIds: syncSkillIds,
+        skillKinds: syncSkillKinds,
+        agentSlugs: syncAgentSlugs ?? undefined,
       })
       setPublishPreview(preview)
     } catch (err) {
@@ -846,10 +856,51 @@ export default function SettingsPage() {
                     />
                     <span className="truncate">{skill.name}</span>
                     <span className="ml-auto font-mono text-[10px] text-muted-foreground">{skill.id}</span>
+                    {checked && (
+                      <button
+                        type="button"
+                        className="rounded border border-border px-1 py-0.5 text-[9px] text-muted-foreground hover:text-foreground"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          setPublishPreview(null)
+                          setSyncSkillKinds((current) => ({
+                            ...current,
+                            [skill.id]: current[skill.id] === 'reference' ? 'bundled' : 'reference',
+                          }))
+                        }}
+                      >
+                        {syncSkillKinds[skill.id] === 'reference' ? 'pinned ref' : 'bundle'}
+                      </button>
+                    )}
                   </label>
                 )
               })}
               {syncSkills?.length === 0 && <p className="text-xs text-muted-foreground">No local skills to sync yet.</p>}
+            </div>
+          </div>
+          <div className="rounded-xl glass-inset p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-medium">Install policy on restore</p>
+              <Button size="xs" variant={syncAgentSlugs === null ? 'default' : 'ghost'} onClick={() => setSyncAgentSlugs(null)}>
+                All detected
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">Only agent identifiers travel in the profile; no local agent configuration or credentials are exported.</p>
+            <div className="flex flex-wrap gap-1.5">
+              {syncAgents?.filter((agent) => agent.detected).map((agent) => {
+                const checked = syncAgentSlugs?.includes(agent.slug) ?? false
+                return <label key={agent.slug} className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => setSyncAgentSlugs((current) => {
+                      const base = current ?? []
+                      return base.includes(agent.slug) ? base.filter((slug) => slug !== agent.slug) : [...base, agent.slug]
+                    })}
+                  />
+                  {agent.name}
+                </label>
+              })}
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -866,6 +917,13 @@ export default function SettingsPage() {
           {publishPreview && (
             <div className="rounded-xl border border-border bg-background/40 p-3 space-y-2 text-xs">
               <p className="font-medium">Publish review: {publishPreview.skills.length} skill(s), {publishPreview.skills.reduce((total, skill) => total + skill.file_count, 0)} file(s).</p>
+              {publishPreview.references.length > 0 && <p className="text-muted-foreground">{publishPreview.references.length} skill(s) will be restored from an immutable Git commit, not copied into this repository.</p>}
+              {(syncMode === 'public' || publishPreview.skills.some((skill) => skill.excluded_paths.length > 0)) && (
+                <div className="max-h-32 space-y-1 overflow-y-auto rounded-lg bg-muted/30 p-2 font-mono text-[10px] text-muted-foreground">
+                  {publishPreview.skills.flatMap((skill) => skill.files.map((path) => <div key={`${skill.id}/${path}`}>include {skill.id}/{path}</div>))}
+                  {publishPreview.skills.flatMap((skill) => skill.excluded_paths.map((path) => <div key={`${skill.id}/exclude/${path}`}>exclude {skill.id}/{path}</div>))}
+                </div>
+              )}
               {publishPreview.secret_findings.length > 0 ? (
                 <p className="text-destructive">Blocked: {publishPreview.secret_findings.length} possible secret(s) found. Remove them before publishing.</p>
               ) : (
@@ -889,7 +947,7 @@ export default function SettingsPage() {
                       checked={selectable ? restoreSkillIds.includes(skill.id) : true}
                       onChange={() => setRestoreSkillIds((current) => current.includes(skill.id) ? current.filter((id) => id !== skill.id) : [...current, skill.id])}
                     />
-                    <span>{skill.id}</span><span className="ml-auto">{skill.action}</span>
+                    <span>{skill.id}</span><span className="ml-auto">{skill.kind} · {skill.action}</span>
                   </label>
                 })}
               </div>

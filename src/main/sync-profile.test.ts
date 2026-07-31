@@ -42,7 +42,10 @@ function makeSkill(files: Record<string, string>): string {
 
 describe("sync profile manifest", () => {
 	it("round-trips a portable private profile", () => {
-		const manifest = createSyncManifest("personal-backup");
+		const manifest = createSyncManifest("personal-backup", "private", {
+			mode: "selected",
+			agent_slugs: ["claude-code", "codex"],
+		});
 		expect(parseSyncManifest(stringifySyncManifest(manifest))).toEqual(manifest);
 	});
 
@@ -182,6 +185,28 @@ describe("sync Git workspace", () => {
 });
 
 describe("sync publish plan", () => {
+	it("records an immutable Git reference without copying its skill files", () => {
+		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+		tempDirs.push(workspace);
+		const plan = createSyncPublishPlan("personal", "team", [{
+			kind: "reference",
+			id: "upstream",
+			repository: "https://github.com/example/skills.git",
+			ref: "a".repeat(40),
+			skillPath: "skills/upstream",
+		}]);
+		expect(plan.bundledSkills).toEqual([]);
+		applySyncPublishPlan(workspace, plan);
+		expect(existsSync(join(workspace, "skills", "upstream"))).toBe(false);
+		expect(parseSyncManifest(readFileSync(join(workspace, "skiller-sync.yaml"), "utf8")).skills).toEqual([{
+			id: "upstream",
+			kind: "reference",
+			repository: "https://github.com/example/skills.git",
+			ref: "a".repeat(40),
+			skill_path: "skills/upstream",
+		}]);
+	});
+
 	it("requires a clean reviewed plan before writing a bundled skill and manifest", () => {
 		const root = makeSkill({ "SKILL.md": "# Writing\n", "references/style.md": "Short sentences.\n" });
 		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));

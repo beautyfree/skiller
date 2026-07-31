@@ -127,14 +127,18 @@ after the preview, conflict, and recovery paths are proven.
   selected transactional restore, and re-installation for detected agents.
 - [ ] Phase 2 — GitHub create-repository shortcut, offline/auth/branch-protection
   diagnostics, persistent restore journal, and a guided fresh-machine flow.
-- [ ] Phase 3 — source-reference authoring, per-agent-policy editor, explicit
-  three-way conflict choices, public-file review, and team-oriented templates.
+- [~] Phase 3 — pinned source-reference authoring and a per-agent-policy
+  editor are implemented; explicit three-way conflict choices, public-file
+  review, and team-oriented templates remain.
 - [ ] Phase 4 — opt-in background checks, organisation policy/custom patterns,
   audit events, and an optional least-privilege GitHub App.
 
-The shipped initial UI deliberately exports **bundled** selected skills only.
-The manifest can parse pinned reference entries, but creating or restoring them
-is deferred until Phase 3 so a reference cannot silently change a local skill.
+The UI can export a selected skill either as a reviewed **bundle** or as a
+pinned Git **reference** only when existing provenance contains a repository,
+full commit SHA, and portable skill path. References are never silently
+upgraded to a branch tip. The portable agent setting is an explicit list of
+target agent slugs (or the safe default: all detected agents); raw agent
+configuration remains deliberately out of scope.
 
 ### Phase 0 — contract and threat-model
 

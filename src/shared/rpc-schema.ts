@@ -209,14 +209,27 @@ export type SyncSecretFindingJson = {
 export type SyncPublishPreviewJson = {
   profile_id: string;
   mode: "private" | "team" | "public";
-  skills: { id: string; file_count: number; total_bytes: number; excluded_paths: string[] }[];
+  skills: {
+    id: string;
+    file_count: number;
+    total_bytes: number;
+    files: string[];
+    excluded_paths: string[];
+  }[];
   secret_findings: SyncSecretFindingJson[];
+  references: { id: string; repository: string; ref: string; skill_path: string }[];
 };
 
 export type SyncRestorePreviewJson = {
   profile_id: string;
   mode: "private" | "team" | "public";
-  skills: { id: string; action: "create" | "unchanged" | "conflict" }[];
+  skills: {
+    id: string;
+    kind: "bundled" | "reference";
+    action: "create" | "unchanged" | "conflict";
+    repository?: string | null;
+    ref?: string | null;
+  }[];
   secret_findings: SyncSecretFindingJson[];
 };
 
@@ -255,7 +268,13 @@ export type AppRPCSchema = {
       scan_agent_skills: { params: { agentSlug: string }; response: SkillJson[] };
       list_sync_profiles: { params?: void; response: SyncProfileStatusJson[] };
       sync_publish_preview: {
-        params: { profileId: string; mode: "private" | "team" | "public"; skillIds: string[] };
+        params: {
+          profileId: string;
+          mode: "private" | "team" | "public";
+          skillIds: string[];
+          skillKinds?: Record<string, "bundled" | "reference">;
+          agentSlugs?: string[];
+        };
         response: SyncPublishPreviewJson;
       };
       sync_profile_publish: {
@@ -263,6 +282,8 @@ export type AppRPCSchema = {
           profileId: string;
           mode: "private" | "team" | "public";
           skillIds: string[];
+          skillKinds?: Record<string, "bundled" | "reference">;
+          agentSlugs?: string[];
           remoteUrl?: string | null;
           push: boolean;
         };

@@ -76,9 +76,10 @@ import {
 } from './projects'
 import { resolveSkillSourcePath } from './skill-paths'
 import { sharedSkillsDir } from './shared-skills'
-import { applySyncPublishPlan, createSyncPublishPlan } from './sync-publish'
+import { readProvenance } from './provenance'
+import { applySyncPublishPlan, createSyncPublishPlan, type SyncPublishCandidate } from './sync-publish'
 import { applySyncRestorePlan, createSyncRestorePlan } from './sync-restore'
-import { assertCredentialFreeGitRemote, assertSyncStableId, parseSyncManifest } from './sync-profile'
+import { assertCredentialFreeGitRemote, assertPortableRelativePath, assertSyncStableId, parseSyncManifest, type SyncManifest } from './sync-profile'
 import {
   commitSyncWorkspace,
   cloneSyncWorkspace,
@@ -153,17 +154,48 @@ function syncSecretFindingsForJson(
   })))
 }
 
+function syncAgentPolicy(agentSlugs: unknown, agents: AgentConfig[]): SyncManifest['agent_policy'] {
+  if (agentSlugs === undefined) return { mode: 'detected' }
+  if (!Array.isArray(agentSlugs)) throw new Error('agentSlugs must be an array')
+  const selected = [...new Set(agentSlugs)]
+  if (selected.length === 0) return { mode: 'detected' }
+  for (const slug of selected) {
+    if (typeof slug !== 'string') throw new Error('agentSlugs must contain only strings')
+    assertSyncStableId(slug)
+    if (!agents.some((agent) => agent.slug === slug && agent.detected)) {
+      throw new Error(`Selected sync agent is not detected: ${slug}`)
+    }
+  }
+  return { mode: 'selected', agent_slugs: selected as string[] }
+}
+
 function buildSyncPublishPreview(
   profileId: string,
   mode: 'private' | 'team' | 'public',
   skillIds: string[],
+  skillKinds: Record<string, 'bundled' | 'reference'> | undefined,
+  agentSlugs: string[] | undefined,
 ): { plan: ReturnType<typeof createSyncPublishPlan>; json: SyncPublishPreviewJson } {
   assertSyncStableId(profileId)
   const agents = loadDetectedAgents('sync_publish_preview')
-  const plan = createSyncPublishPlan(profileId, mode, skillIds.map((id) => ({
-    id,
-    sourcePath: resolveSkillSourcePath(id, agents),
-  })))
+  const agentPolicy = syncAgentPolicy(agentSlugs, agents)
+  const provenance = readProvenance()
+  const candidates: SyncPublishCandidate[] = skillIds.map((id) => {
+    if (skillKinds?.[id] !== 'reference') {
+      return { kind: 'bundled', id, sourcePath: resolveSkillSourcePath(id, agents) }
+    }
+    const source = provenance[id]
+    const repository = source?.repository?.trim()
+    const ref = source?.ref?.trim()
+    const skillPath = source?.skill_path?.trim()
+    if (!repository || !ref || !/^[a-f0-9]{40}$/i.test(ref) || !skillPath) {
+      throw new Error(`Skill \`${id}\` has no pinned Git provenance and cannot be synced as a reference`)
+    }
+    assertCredentialFreeGitRemote(repository)
+    assertPortableRelativePath(skillPath)
+    return { kind: 'reference', id, repository, ref: ref.toLowerCase(), skillPath }
+  })
+  const plan = createSyncPublishPlan(profileId, mode, candidates, agentPolicy)
   return {
     plan,
     json: {
@@ -173,9 +205,13 @@ function buildSyncPublishPreview(
         id: skill.id,
         file_count: skill.files.length,
         total_bytes: skill.files.reduce((total, file) => total + file.size, 0),
+        files: skill.files.map((file) => file.relativePath),
         excluded_paths: skill.excludedPaths,
       })),
       secret_findings: syncSecretFindingsForJson(plan.bundledSkills),
+      references: plan.manifest.skills
+        .filter((skill): skill is Extract<typeof skill, { kind: 'reference' }> => skill.kind === 'reference')
+        .map((skill) => ({ id: skill.id, repository: skill.repository, ref: skill.ref, skill_path: skill.skill_path })),
     },
   }
 }
@@ -309,14 +345,18 @@ export function createRequestHandlers(ctx: {
       profileId: string
       mode: 'private' | 'team' | 'public'
       skillIds: string[]
+      skillKinds?: Record<string, 'bundled' | 'reference'>
+      agentSlugs?: string[]
     }): Promise<SyncPublishPreviewJson> => {
       const skillIds = selectedSyncSkillIds(params.skillIds)
-      return buildSyncPublishPreview(params.profileId, params.mode, skillIds).json
+      return buildSyncPublishPreview(params.profileId, params.mode, skillIds, params.skillKinds, params.agentSlugs).json
     },
     sync_profile_publish: async (params: {
       profileId: string
       mode: 'private' | 'team' | 'public'
       skillIds: string[]
+      skillKinds?: Record<string, 'bundled' | 'reference'>
+      agentSlugs?: string[]
       remoteUrl?: string | null
       push: boolean
     }) => {
@@ -337,7 +377,7 @@ export function createRequestHandlers(ctx: {
         if (remoteUrl && !status.remoteUrl) await setSyncWorkspaceRemote(workspace, remoteUrl)
       }
 
-      const { plan } = buildSyncPublishPreview(params.profileId, params.mode, skillIds)
+      const { plan } = buildSyncPublishPreview(params.profileId, params.mode, skillIds, params.skillKinds, params.agentSlugs)
       applySyncPublishPlan(workspace, plan)
       const commit = await commitSyncWorkspace(workspace, `Skiller sync: update ${params.profileId}`)
       let pushed = false
@@ -386,7 +426,18 @@ export function createRequestHandlers(ctx: {
       return {
         profile_id: params.profileId,
         mode: plan.manifest.profile.mode,
-        skills: plan.entries.map((entry) => ({ id: entry.id, action: entry.action })),
+        skills: [
+          ...plan.entries.map((entry) => ({ id: entry.id, kind: 'bundled' as const, action: entry.action })),
+          ...plan.manifest.skills
+            .filter((skill): skill is Extract<typeof skill, { kind: 'reference' }> => skill.kind === 'reference')
+            .map((skill) => ({
+              id: skill.id,
+              kind: 'reference' as const,
+              action: 'create' as const,
+              repository: skill.repository,
+              ref: skill.ref,
+            })),
+        ],
         secret_findings: plan.secretFindings.map((finding) => ({
           rule: finding.rule,
           skill_id: finding.skillId,
@@ -402,16 +453,21 @@ export function createRequestHandlers(ctx: {
       if (!hasSyncWorkspace(params.profileId)) throw new Error('Sync profile has not been set up on this computer')
       const workspace = syncWorkspacePath(params.profileId)
       const plan = createSyncRestorePlan(workspace, sharedSkillsDir())
-      const available = new Set(plan.entries.map((entry) => entry.id))
+      const referenceSkills = plan.manifest.skills
+        .filter((skill): skill is Extract<typeof skill, { kind: 'reference' }> => skill.kind === 'reference')
+      const available = new Set([...plan.entries.map((entry) => entry.id), ...referenceSkills.map((skill) => skill.id)])
       for (const id of skillIds) if (!available.has(id)) throw new Error(`Skill is not present in this sync profile: ${id}`)
-      applySyncRestorePlan(plan, skillIds)
+      applySyncRestorePlan(plan, skillIds.filter((id) => plan.entries.some((entry) => entry.id === id)))
 
       const agents = loadDetectedAgents('sync_restore_apply')
       const targetAgentSlugs = plan.manifest.agent_policy.mode === 'selected'
-        ? plan.manifest.agent_policy.agent_slugs
+        ? plan.manifest.agent_policy.agent_slugs.filter((slug) => agents.some((agent) => agent.slug === slug && agent.detected))
         : agents.filter((agent) => agent.detected).map((agent) => agent.slug)
-      for (const id of skillIds) {
+      for (const id of skillIds.filter((id) => plan.entries.some((entry) => entry.id === id))) {
         installSkillFromPath(join(sharedSkillsDir(), id), targetAgentSlugs, agents, id)
+      }
+      for (const skill of referenceSkills.filter((skill) => skillIds.includes(skill.id))) {
+        await installSkillFromGit(skill.repository, skill.skill_path, targetAgentSlugs, agents, 'sync-reference', skill.ref)
       }
       rpc.send('skills_changed')
       return { restored: skillIds, installed_to_detected_agents: targetAgentSlugs }

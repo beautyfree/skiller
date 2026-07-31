@@ -19,7 +19,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit",
-    "test": "bun test src/shared/skill-footprint.test.ts",
+    "test": "bun test",
     "dist:mac": "electron-vite build && electron-builder --mac --arm64 --x64 && bash scripts/repack-dmg.sh arm64 && bash scripts/repack-dmg.sh x64",
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:linux": "electron-vite build && electron-builder --linux && node scripts/patch-appimage-runtime.mjs artifacts"

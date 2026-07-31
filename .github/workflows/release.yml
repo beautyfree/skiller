@@ -1,38 +1,82 @@
 name: Release
 
-# Two triggers that cover the two ways a release lands here:
-#
-#   1. `release: [created]` — fires when release-please creates the draft
-#      release after its PR is merged. This is the normal path. Draft
-#      releases don't create a git tag until they're published, so tag
-#      push alone wouldn't fire (see commit 4032f11 for the draft switch).
-#
-#   2. `push: tags: v*` — fallback for when a maintainer hand-creates a
-#      tag locally (e.g. to rebuild a release whose assets got corrupted).
-#      Also covers anyone using a PAT-based release-please flow where the
-#      tag push genuinely does trigger workflows.
-#
-# Both paths resolve the tag/release via TAG_NAME below so the downstream
-# softprops/gh-release steps don't care which trigger fired.
+# Release Please creates the draft release with GITHUB_TOKEN. GitHub correctly
+# refuses to let that token trigger a second workflow from the tag/release
+# event, which previously left a draft without installers. `workflow_run` is
+# an explicit, reliable hand-off: it starts after Release Please succeeds,
+# then resolves the draft that Release Please just created.
 on:
-  release:
-    types: [created]
-  push:
-    tags:
-      - "v*"
+  workflow_run:
+    workflows: ["Release Please Tag and Release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Draft release tag to rebuild or publish (for example v0.2.24)
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  # Deduplicate by tag so the `release: created` + late `push: tags` never
-  # run simultaneously for the same version.
-  group: ${{ github.workflow }}-${{ github.event.release.tag_name || github.ref }}
+  group: release-${{ github.event.workflow_run.id || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
+  resolve-release:
+    name: Resolve draft release
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.release.outputs.should_release }}
+      tag: ${{ steps.release.outputs.tag }}
+      target: ${{ steps.release.outputs.target }}
+    steps:
+      - id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            release="$(gh api "repos/${REPOSITORY}/releases/tags/${REQUESTED_TAG}")"
+            target="$(jq -r '.target_commitish' <<<"${release}")"
+          else
+            releases="$(gh api "repos/${REPOSITORY}/releases?per_page=100")"
+            # Release Please normally records the merge SHA as target_commitish.
+            # A draft may instead retain `main`; there can be only one draft
+            # because release-please.yml blocks the next release PR until it
+            # is published, so that fallback remains unambiguous.
+            release="$(jq -c --arg sha "${WORKFLOW_SHA}" '[.[] | select(.draft == true and (.target_commitish == $sha or .target_commitish == "main"))] | first // empty' <<<"${releases}")"
+            if [[ -z "${release}" ]]; then
+              echo "No draft release was created by this Release Please run; nothing to build."
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            target="${WORKFLOW_SHA}"
+          fi
+
+          if [[ "$(jq -r '.draft' <<<"${release}")" != "true" ]]; then
+            echo "Release $(jq -r '.tag_name' <<<"${release}") is already published; refusing to replace its assets."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$(jq -r '.tag_name' <<<"${release}")" >> "$GITHUB_OUTPUT"
+          echo "target=${target}" >> "$GITHUB_OUTPUT"
+
   build-desktop:
     name: Build ${{ matrix.label }}
+    needs: resolve-release
+    if: needs.resolve-release.outputs.should_release == 'true'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -50,11 +94,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # On `release: created` for a draft, there's no git tag yet — use
-          # the release's target commit sha. On tag push, github.ref resolves
-          # to the tag itself (checkout picks that up by default).
-          ref: ${{ github.event.release.target_commitish || github.ref }}
-
+          ref: ${{ needs.resolve-release.outputs.target }}
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -78,15 +118,9 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      # Rebuild native modules (better-sqlite3) against the Electron ABI
-      # bundled by electron-builder. Runs on every OS — electron-builder
-      # handles the platform-specific node-gyp invocation.
       - name: Rebuild native modules
         run: bunx electron-builder install-app-deps
 
-      # Import the Developer ID signing cert into a temporary keychain.
-      # Without this, electron-builder's codesign step fails with
-      # "The specified item could not be found in the keychain."
       - name: Import Developer ID certificate (macOS)
         if: runner.os == 'macOS'
         env:
@@ -113,8 +147,6 @@ jobs:
 
           rm -f "$CERT_PATH"
 
-      # notarytool / @electron/notarize needs the .p8 file on disk. Secret
-      # should be the raw contents of AuthKey_XXXX.p8 (multiline).
       - name: Write notarization API key (macOS)
         if: runner.os == 'macOS' && env.APPLE_API_KEY_P8 != ''
         env:
@@ -127,36 +159,17 @@ jobs:
 
       - name: Build app
         env:
-          # electron-builder reads GH_TOKEN for its publish step; we publish
-          # via softprops below instead but the var being set also unlocks
-          # electron-builder's release-draft verification.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS signing + notarization. Env-var names follow electron-builder's
-          # conventions (NB: `APPLE_API_ISSUER`, not `APPLE_API_KEY_ISSUER` —
-          # electron-builder rejects the "_KEY_" variant).
           CSC_NAME: ${{ secrets.CSC_NAME }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
         run: bun run ${{ matrix.script }}
 
-      # Upload every artifact (including latest-*.yml and .blockmap files —
-      # electron-updater needs them alongside the binaries).
-      # The release itself (with CHANGELOG body) was already created by
-      # release-please when the Release PR merged — we only attach assets.
       - name: Upload build outputs to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
-          # release-please creates the Release as a draft (see config). We
-          # keep it a draft here too so softprops doesn't accidentally flip
-          # it to published — the final publish-release job does that after
-          # all three OS builds finish.
+          tag_name: ${{ needs.resolve-release.outputs.tag }}
           draft: true
-          # GitHub Releases shows assets in reverse upload order (newest on
-          # top). Upload the auto-updater plumbing (yml, blockmap, zip) FIRST
-          # and the human-facing installers LAST so the download list leads
-          # with .dmg / .exe / .AppImage instead of the .zip that
-          # electron-updater needs but end users should ignore.
           files: |
             artifacts/*.yml
             artifacts/*.blockmap
@@ -170,20 +183,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Flip the release from draft to published ONLY after every matrix build
-  # succeeded and uploaded its artifacts. This avoids the awkward window where
-  # a user lands on the Releases page with only the Linux installer visible
-  # because mac/win builds are still running.
   publish-release:
-    needs: build-desktop
+    needs: [resolve-release, build-desktop]
+    if: needs.resolve-release.outputs.should_release == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Publish draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release edit "${{ github.event.release.tag_name || github.ref_name }}" \
+          gh release edit "${{ needs.resolve-release.outputs.tag }}" \
             --repo "${{ github.repository }}" \
             --draft=false

@@ -50,12 +50,20 @@ jobs:
             release="$(gh api "repos/${REPOSITORY}/releases/tags/${REQUESTED_TAG}")"
             target="$(jq -r '.target_commitish' <<<"${release}")"
           else
-            releases="$(gh api "repos/${REPOSITORY}/releases?per_page=100")"
-            release="$(jq -c --arg sha "${WORKFLOW_SHA}" '[.[] | select(.draft == true and .target_commitish == $sha)] | first // empty' <<<"${releases}")"
+            # Release Please has just created the draft. The releases-list API
+            # can lag the create response briefly, so retry the exact-SHA lookup
+            # instead of silently skipping a valid release.
+            release=""
+            for attempt in {1..10}; do
+              releases="$(gh api "repos/${REPOSITORY}/releases?per_page=100")"
+              release="$(jq -c --arg sha "${WORKFLOW_SHA}" '[.[] | select(.draft == true and .target_commitish == $sha)] | first // empty' <<<"${releases}")"
+              [[ -n "${release}" ]] && break
+              echo "Draft release is not visible yet (attempt ${attempt}/10); retrying..."
+              sleep 3
+            done
             if [[ -z "${release}" ]]; then
-              echo "No draft release was created by this Release Please run; nothing to build."
-              echo "should_release=false" >> "$GITHUB_OUTPUT"
-              exit 0
+              echo "No draft release targeting ${WORKFLOW_SHA} became visible after 30 seconds." >&2
+              exit 1
             fi
             target="${WORKFLOW_SHA}"
           fi

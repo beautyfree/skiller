@@ -73,9 +73,9 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           skip-github-release: true
-          # Release builds use release.yml's `workflow_run` trigger after the
-          # release-finalization workflow succeeds. GITHUB_TOKEN is therefore
-          # sufficient and a missing PAT cannot leave a draft unreleased.
+          # The release-finalization workflow calls release.yml directly after
+          # it creates a draft. GITHUB_TOKEN is therefore sufficient and a
+          # missing PAT cannot leave a draft unreleased.
           token: ${{ secrets.GITHUB_TOKEN }}
 
   verify-release-pr:

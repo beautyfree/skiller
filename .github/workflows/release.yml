@@ -30,7 +30,10 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # GitHub only exposes a draft created by another workflow to a token
+      # that can manage releases. This job only resolves metadata; it does
+      # not write until the dedicated publish job below.
+      contents: write
     outputs:
       should_release: ${{ steps.release.outputs.should_release }}
       tag: ${{ steps.release.outputs.tag }}
@@ -47,7 +50,9 @@ jobs:
           set -euo pipefail
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            release="$(gh api "repos/${REPOSITORY}/releases/tags/${REQUESTED_TAG}")"
+            releases="$(gh api "repos/${REPOSITORY}/releases?per_page=100")"
+            release="$(jq -c --arg tag "${REQUESTED_TAG}" '[.[] | select(.tag_name == $tag)] | first // empty' <<<"${releases}")"
+            [[ -n "${release}" ]] || { echo "Release ${REQUESTED_TAG} was not found." >&2; exit 1; }
             target="$(jq -r '.target_commitish' <<<"${release}")"
           else
             # Release Please has just created the draft. The releases-list API

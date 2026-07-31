@@ -2,7 +2,7 @@ import { NavLink, Outlet, useSearchParams } from 'react-router-dom'
 import { useMemo, useState, useCallback, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { pickFolder, invoke, openUrl } from '@/mainview/lib/native'
 import {
@@ -28,6 +28,7 @@ import ResizeHandle from '@/mainview/components/ResizeHandle'
 import { useAgents } from '@/mainview/hooks/useAgents'
 import { useSkills, allAgents } from '@/mainview/hooks/useSkills'
 import { useProjects } from '@/mainview/hooks/useProjects'
+import type { SyncProfileStatusJson } from '@/shared/rpc-schema'
 
 const GITHUB_REPO_URL =
   'https://github.com/beautyfree/skiller'
@@ -84,6 +85,12 @@ function LayoutInner({
   const { data: agents, isLoading: agentsLoading } = useAgents()
   const { data: skills, isLoading: skillsLoading } = useSkills()
   const { data: projects } = useProjects()
+  const { data: syncProfiles } = useQuery<SyncProfileStatusJson[]>({
+    queryKey: ['sync-profiles'],
+    queryFn: () => invoke('list_sync_profiles'),
+    refetchInterval: 60_000,
+  })
+  const syncNeedsReview = Boolean(syncProfiles?.some((profile) => profile.changed || profile.ahead > 0 || profile.behind > 0))
   const [searchParams] = useSearchParams()
 
   const detectedAgents = useMemo(
@@ -267,6 +274,7 @@ function LayoutInner({
                     <NavLink to="/sync" className={navLinkClass}>
                       <Cloud className="size-4" aria-hidden="true" />
                       Sync Center
+                      {syncNeedsReview && <span className="ml-auto size-1.5 rounded-full bg-amber-500" title="Sync changes need review" />}
                     </NavLink>
                   </div>
                 </div>

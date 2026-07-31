@@ -79,6 +79,7 @@ import { resolveSkillSourcePath } from './skill-paths'
 import { sharedSkillsDir } from './shared-skills'
 import { readProvenance } from './provenance'
 import { scanSyncInventory } from './sync-inventory'
+import { makeSyncLedger, readSyncLedger, writeSyncLedgerAt, syncLedgerPath } from './sync-ledger'
 import { createGitHubSyncRepository } from './github-sync'
 import { applySyncPublishPlan, createSyncPublishPlan, type SyncPublishCandidate } from './sync-publish'
 import { applySyncRestorePlan, createSyncRestorePlan } from './sync-restore'
@@ -549,6 +550,15 @@ export function createRequestHandlers(ctx: {
       for (const skill of referenceSkills.filter((skill) => skillIds.includes(skill.id))) {
         await installSkillFromGit(skill.repository, skill.skill_path, targetAgentSlugs, agents, 'sync-reference', skill.ref)
       }
+      const previousLedger = readSyncLedger(params.profileId)
+      const nextSkills = new Map(Object.entries(previousLedger?.skills ?? {}).map(([id, entry]) => [id, entry.sha256]))
+      for (const entry of plan.entries.filter((entry) => skillIds.includes(entry.id))) {
+        nextSkills.set(entry.id, entry.remoteSha256)
+      }
+      writeSyncLedgerAt(
+        syncLedgerPath(params.profileId),
+        makeSyncLedger(params.profileId, [...nextSkills.entries()].map(([id, sha256]) => ({ id, sha256 }))),
+      )
       rpc.send('skills_changed')
       return { restored: skillIds, installed_to_detected_agents: targetAgentSlugs }
     },

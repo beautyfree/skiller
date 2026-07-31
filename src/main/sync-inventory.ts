@@ -17,6 +17,8 @@ export type SyncInventoryItem = {
 	candidateKey: string;
 	displayName: string;
 	contentHash: string;
+	/** Local-only source for staging; never exposed to the renderer or manifest. */
+	sourcePath: string;
 	locations: SyncInventoryLocation[];
 };
 
@@ -103,6 +105,7 @@ export function scanSyncInventoryFromRoots(roots: Root[]): SyncInventory {
 					candidateKey: portableKey(displayName, exportPlan.sha256),
 					displayName,
 					contentHash: exportPlan.sha256,
+					sourcePath: actual,
 					locations: [],
 				};
 				const kind: SyncInventoryLocationKind = sharedRoot && actual.startsWith(`${sharedRoot}/`)

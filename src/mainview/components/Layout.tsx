@@ -14,6 +14,7 @@ import {
   FolderOpen,
   FolderKanban,
   Copy,
+  Cloud,
   Trash2,
   ChevronRight,
 } from 'lucide-react'
@@ -261,6 +262,11 @@ function LayoutInner({
                           {projects.length}
                         </span>
                       )}
+                    </NavLink>
+
+                    <NavLink to="/sync" className={navLinkClass}>
+                      <Cloud className="size-4" aria-hidden="true" />
+                      Sync Center
                     </NavLink>
                   </div>
                 </div>

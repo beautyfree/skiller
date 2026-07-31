@@ -5,6 +5,7 @@ const QUERY_NAMES = new Set<string>([
   'scan_agent_skills',
   'list_sync_profiles',
   'scan_sync_inventory',
+  'sync_center_publish_preview',
   'sync_publish_preview',
   'read_skill_content',
   'fetch_remote_skill_content',

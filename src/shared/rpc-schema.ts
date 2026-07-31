@@ -279,6 +279,14 @@ export type AppRPCSchema = {
       scan_agent_skills: { params: { agentSlug: string }; response: SkillJson[] };
       list_sync_profiles: { params?: void; response: SyncProfileStatusJson[] };
       scan_sync_inventory: { params?: void; response: SyncInventoryJson };
+      sync_center_publish_preview: {
+        params?: { selectedKeys?: string[] };
+        response: SyncPublishPreviewJson;
+      };
+      sync_center_publish: {
+        params: { remoteUrl: string; selectedKeys?: string[] };
+        response: { commit: string | null; pushed: boolean };
+      };
       sync_publish_preview: {
         params: {
           profileId: string;

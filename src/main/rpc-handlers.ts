@@ -264,6 +264,39 @@ function syncInventoryToJson(): SyncInventoryJson {
   }
 }
 
+function createSyncCenterPublishPlan(selectedKeys?: string[]) {
+  const inventory = scanSyncInventory(loadDetectedAgents('sync_center_publish'))
+  const selected = selectedKeys ? new Set(selectedKeys) : null
+  const items = inventory.items.filter((item) => selected === null || selected.has(item.candidateKey))
+  if (items.length === 0) throw new Error('Choose at least one skill to protect')
+  const selectedKeysSet = new Set(items.map((item) => item.candidateKey))
+  const unresolved = inventory.collisions.filter((collision) => collision.candidateKeys.filter((key) => selectedKeysSet.has(key)).length > 1)
+  if (unresolved.length > 0) {
+    throw new Error(`Resolve ${unresolved.length} same-name skill collision(s) before protecting this library`)
+  }
+  return createSyncPublishPlan('agent-library', 'private', items.map((item) => ({
+    kind: 'bundled' as const,
+    id: item.candidateKey,
+    sourcePath: item.sourcePath,
+  })))
+}
+
+function syncPublishPlanToJson(plan: ReturnType<typeof createSyncPublishPlan>): SyncPublishPreviewJson {
+  return {
+    profile_id: plan.manifest.profile.id,
+    mode: plan.manifest.profile.mode,
+    skills: plan.bundledSkills.map((skill) => ({
+      id: skill.id,
+      file_count: skill.files.length,
+      total_bytes: skill.files.reduce((total, file) => total + file.size, 0),
+      files: skill.files.map((file) => file.relativePath),
+      excluded_paths: skill.excludedPaths,
+    })),
+    secret_findings: syncSecretFindingsForJson(plan.bundledSkills),
+    references: [],
+  }
+}
+
 function skillSourceParamToInternal(s: SkillSourceParam): SkillSource {
   if (s === 'Unknown') return { kind: 'Unknown' }
   if ('LocalPath' in s) return { kind: 'LocalPath', path: s.LocalPath.path }
@@ -362,6 +395,29 @@ export function createRequestHandlers(ctx: {
     },
     list_sync_profiles: async (): Promise<SyncProfileStatusJson[]> => listSyncProfiles(),
     scan_sync_inventory: async (): Promise<SyncInventoryJson> => syncInventoryToJson(),
+    sync_center_publish_preview: async (params?: { selectedKeys?: string[] }): Promise<SyncPublishPreviewJson> => {
+      return syncPublishPlanToJson(createSyncCenterPublishPlan(params?.selectedKeys))
+    },
+    sync_center_publish: async (params: { remoteUrl: string; selectedKeys?: string[] }) => {
+      const remoteUrl = params.remoteUrl.trim()
+      if (!remoteUrl) throw new Error('A Git remote is required')
+      assertCredentialFreeGitRemote(remoteUrl)
+      const profileId = 'agent-library'
+      const workspace = syncWorkspacePath(profileId)
+      if (!hasSyncWorkspace(profileId)) {
+        await initializeSyncWorkspace(workspace, remoteUrl)
+      } else {
+        const status = await getSyncWorkspaceStatus(workspace)
+        if (status.changed) throw new Error('Sync workspace has uncommitted changes; resolve them before publishing')
+        if (status.remoteUrl && status.remoteUrl !== remoteUrl) throw new Error('This protected library already uses a different remote')
+        if (!status.remoteUrl) await setSyncWorkspaceRemote(workspace, remoteUrl)
+      }
+      const plan = createSyncCenterPublishPlan(params.selectedKeys)
+      applySyncPublishPlan(workspace, plan)
+      const commit = await commitSyncWorkspace(workspace, 'Skiller sync: protect agent library')
+      await pushSyncWorkspace(workspace)
+      return { commit, pushed: true }
+    },
     sync_publish_preview: async (params: {
       profileId: string
       mode: 'private' | 'team' | 'public'

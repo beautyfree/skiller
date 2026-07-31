@@ -787,7 +787,7 @@ export default function SettingsPage() {
 
 
         {/* Agent sync */}
-        <section id="agent-sync" className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
+        <section id="agent-sync" className="hidden" aria-hidden="true">
           <div>
             <h2 className="text-sm font-medium flex items-center gap-1.5">
               <GitBranch className="size-4" />

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { AppPlatform } from '../shared/platform'
@@ -9,6 +9,9 @@ import type {
   SkillJson,
   SkillRepoJson,
   SkillSourceParam,
+  SyncProfileStatusJson,
+  SyncPublishPreviewJson,
+  SyncRestorePreviewJson,
   UpdateAllResultJson,
   UpdateProgressJson,
 } from '../shared/rpc-schema'
@@ -72,6 +75,23 @@ import {
   uninstallProjectSkill,
 } from './projects'
 import { resolveSkillSourcePath } from './skill-paths'
+import { sharedSkillsDir } from './shared-skills'
+import { applySyncPublishPlan, createSyncPublishPlan } from './sync-publish'
+import { applySyncRestorePlan, createSyncRestorePlan } from './sync-restore'
+import { assertCredentialFreeGitRemote, assertSyncStableId, parseSyncManifest } from './sync-profile'
+import {
+  commitSyncWorkspace,
+  cloneSyncWorkspace,
+  fetchSyncWorkspace,
+  fastForwardSyncWorkspace,
+  getSyncWorkspaceStatus,
+  hasSyncWorkspace,
+  initializeSyncWorkspace,
+  pushSyncWorkspace,
+  setSyncWorkspaceRemote,
+  syncProfilesDirectory,
+  syncWorkspacePath,
+} from './sync-workspace'
 import {
   effectiveMacOSWindowBlur,
   effectiveMacOSWindowBlurFromSettings,
@@ -108,6 +128,84 @@ function loadDetectedAgents(
   const detected = detectAgents(configs)
   void caller
   return detected
+}
+
+function selectedSyncSkillIds(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new Error('skillIds must be an array')
+  const ids = [...new Set(value)]
+  if (ids.length === 0) throw new Error('Select at least one skill to sync')
+  for (const id of ids) {
+    if (typeof id !== 'string') throw new Error('skillIds must contain only strings')
+    assertSyncStableId(id)
+  }
+  return ids as string[]
+}
+
+function syncSecretFindingsForJson(
+  skills: { id: string; secretFindings: { rule: string; relativePath: string; line: number; column: number }[] }[],
+) {
+  return skills.flatMap((skill) => skill.secretFindings.map((finding) => ({
+    rule: finding.rule,
+    skill_id: skill.id,
+    relative_path: finding.relativePath,
+    line: finding.line,
+    column: finding.column,
+  })))
+}
+
+function buildSyncPublishPreview(
+  profileId: string,
+  mode: 'private' | 'team' | 'public',
+  skillIds: string[],
+): { plan: ReturnType<typeof createSyncPublishPlan>; json: SyncPublishPreviewJson } {
+  assertSyncStableId(profileId)
+  const agents = loadDetectedAgents('sync_publish_preview')
+  const plan = createSyncPublishPlan(profileId, mode, skillIds.map((id) => ({
+    id,
+    sourcePath: resolveSkillSourcePath(id, agents),
+  })))
+  return {
+    plan,
+    json: {
+      profile_id: profileId,
+      mode,
+      skills: plan.bundledSkills.map((skill) => ({
+        id: skill.id,
+        file_count: skill.files.length,
+        total_bytes: skill.files.reduce((total, file) => total + file.size, 0),
+        excluded_paths: skill.excludedPaths,
+      })),
+      secret_findings: syncSecretFindingsForJson(plan.bundledSkills),
+    },
+  }
+}
+
+async function listSyncProfiles(): Promise<SyncProfileStatusJson[]> {
+  const directory = syncProfilesDirectory()
+  if (!existsSync(directory)) return []
+  const result: SyncProfileStatusJson[] = []
+  for (const profileId of readdirSync(directory).sort()) {
+    try {
+      assertSyncStableId(profileId)
+      if (!hasSyncWorkspace(profileId)) continue
+      const workspace = syncWorkspacePath(profileId)
+      const manifest = parseSyncManifest(readFileSync(join(workspace, 'skiller-sync.yaml'), 'utf8'))
+      const status = await getSyncWorkspaceStatus(workspace)
+      result.push({
+        profile_id: profileId,
+        mode: manifest.profile.mode,
+        skill_count: manifest.skills.length,
+        remote_url: status.remoteUrl,
+        branch: status.branch,
+        changed: status.changed,
+        ahead: status.ahead,
+        behind: status.behind,
+      })
+    } catch {
+      // An incomplete/non-Skiller Git folder is intentionally not a profile.
+    }
+  }
+  return result
 }
 
 function skillSourceParamToInternal(s: SkillSourceParam): SkillSource {
@@ -205,6 +303,118 @@ export function createRequestHandlers(ctx: {
       return all
         .filter((s) => s.installations.some((i) => i.agent_slug === agentSlug))
         .map(skillToJson)
+    },
+    list_sync_profiles: async (): Promise<SyncProfileStatusJson[]> => listSyncProfiles(),
+    sync_publish_preview: async (params: {
+      profileId: string
+      mode: 'private' | 'team' | 'public'
+      skillIds: string[]
+    }): Promise<SyncPublishPreviewJson> => {
+      const skillIds = selectedSyncSkillIds(params.skillIds)
+      return buildSyncPublishPreview(params.profileId, params.mode, skillIds).json
+    },
+    sync_profile_publish: async (params: {
+      profileId: string
+      mode: 'private' | 'team' | 'public'
+      skillIds: string[]
+      remoteUrl?: string | null
+      push: boolean
+    }) => {
+      const skillIds = selectedSyncSkillIds(params.skillIds)
+      assertSyncStableId(params.profileId)
+      const workspace = syncWorkspacePath(params.profileId)
+      const remoteUrl = params.remoteUrl?.trim() || null
+      if (remoteUrl) assertCredentialFreeGitRemote(remoteUrl)
+
+      if (!hasSyncWorkspace(params.profileId)) {
+        await initializeSyncWorkspace(workspace, remoteUrl)
+      } else {
+        const status = await getSyncWorkspaceStatus(workspace)
+        if (status.changed) throw new Error('Sync workspace has uncommitted changes; resolve them before publishing')
+        if (remoteUrl && status.remoteUrl && status.remoteUrl !== remoteUrl) {
+          throw new Error('This profile already uses a different remote; changing a remote is not implicit')
+        }
+        if (remoteUrl && !status.remoteUrl) await setSyncWorkspaceRemote(workspace, remoteUrl)
+      }
+
+      const { plan } = buildSyncPublishPreview(params.profileId, params.mode, skillIds)
+      applySyncPublishPlan(workspace, plan)
+      const commit = await commitSyncWorkspace(workspace, `Skiller sync: update ${params.profileId}`)
+      let pushed = false
+      if (params.push) {
+        const status = await getSyncWorkspaceStatus(workspace)
+        if (!status.remoteUrl) throw new Error('A Git remote is required before pushing')
+        await pushSyncWorkspace(workspace)
+        pushed = true
+      }
+      return { commit, pushed }
+    },
+    sync_profile_clone: async (params: { profileId: string; remoteUrl: string }): Promise<SyncProfileStatusJson> => {
+      assertSyncStableId(params.profileId)
+      const remoteUrl = params.remoteUrl.trim()
+      if (!remoteUrl) throw new Error('A Git remote is required')
+      assertCredentialFreeGitRemote(remoteUrl)
+      if (hasSyncWorkspace(params.profileId) || existsSync(syncWorkspacePath(params.profileId))) {
+        throw new Error('This profile already has a local workspace; cloning would overwrite it')
+      }
+      await cloneSyncWorkspace(remoteUrl, syncWorkspacePath(params.profileId))
+      const workspace = syncWorkspacePath(params.profileId)
+      const manifest = parseSyncManifest(readFileSync(join(workspace, 'skiller-sync.yaml'), 'utf8'))
+      if (manifest.profile.id !== params.profileId) throw new Error('The remote profile id does not match the requested profile')
+      const status = await getSyncWorkspaceStatus(workspace)
+      return {
+        profile_id: params.profileId,
+        mode: manifest.profile.mode,
+        skill_count: manifest.skills.length,
+        remote_url: status.remoteUrl,
+        branch: status.branch,
+        changed: status.changed,
+        ahead: status.ahead,
+        behind: status.behind,
+      }
+    },
+    sync_pull_preview: async (params: { profileId: string }): Promise<SyncRestorePreviewJson> => {
+      assertSyncStableId(params.profileId)
+      if (!hasSyncWorkspace(params.profileId)) throw new Error('Sync profile has not been set up on this computer')
+      const workspace = syncWorkspacePath(params.profileId)
+      const status = await getSyncWorkspaceStatus(workspace)
+      if (!status.remoteUrl) throw new Error('This sync profile has no Git remote')
+      if (status.changed) throw new Error('Sync workspace has uncommitted changes; resolve them before pulling')
+      await fetchSyncWorkspace(workspace)
+      await fastForwardSyncWorkspace(workspace)
+      const plan = createSyncRestorePlan(workspace, sharedSkillsDir())
+      return {
+        profile_id: params.profileId,
+        mode: plan.manifest.profile.mode,
+        skills: plan.entries.map((entry) => ({ id: entry.id, action: entry.action })),
+        secret_findings: plan.secretFindings.map((finding) => ({
+          rule: finding.rule,
+          skill_id: finding.skillId,
+          relative_path: finding.relativePath,
+          line: finding.line,
+          column: finding.column,
+        })),
+      }
+    },
+    sync_restore_apply: async (params: { profileId: string; skillIds: string[] }) => {
+      assertSyncStableId(params.profileId)
+      const skillIds = selectedSyncSkillIds(params.skillIds)
+      if (!hasSyncWorkspace(params.profileId)) throw new Error('Sync profile has not been set up on this computer')
+      const workspace = syncWorkspacePath(params.profileId)
+      const plan = createSyncRestorePlan(workspace, sharedSkillsDir())
+      const available = new Set(plan.entries.map((entry) => entry.id))
+      for (const id of skillIds) if (!available.has(id)) throw new Error(`Skill is not present in this sync profile: ${id}`)
+      applySyncRestorePlan(plan, skillIds)
+
+      const agents = loadDetectedAgents('sync_restore_apply')
+      const targetAgentSlugs = plan.manifest.agent_policy.mode === 'selected'
+        ? plan.manifest.agent_policy.agent_slugs
+        : agents.filter((agent) => agent.detected).map((agent) => agent.slug)
+      for (const id of skillIds) {
+        installSkillFromPath(join(sharedSkillsDir(), id), targetAgentSlugs, agents, id)
+      }
+      rpc.send('skills_changed')
+      return { restored: skillIds, installed_to_detected_agents: targetAgentSlugs }
     },
     install_skill: async (params: {
       source: SkillSourceParam

@@ -16,6 +16,9 @@ import { openUrl, invoke, listen } from '@/mainview/lib/native'
 import { setTelemetryEnabled } from '@/mainview/lib/telemetry'
 import type {
   AppUpdateStatusJson,
+  SkillJson,
+  SyncPublishPreviewJson,
+  SyncRestorePreviewJson,
 } from '@/shared/rpc-schema'
 import { useAccentColor } from '@/mainview/hooks/useAccentColor'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -70,6 +73,14 @@ export default function SettingsPage() {
     'idle' | 'checking' | 'downloading' | 'applying'
   >('idle')
   const [searchParams] = useSearchParams()
+  const [syncProfileId, setSyncProfileId] = useState('personal')
+  const [syncRemoteUrl, setSyncRemoteUrl] = useState('')
+  const [syncMode, setSyncMode] = useState<'private' | 'team' | 'public'>('private')
+  const [syncSkillIds, setSyncSkillIds] = useState<string[]>([])
+  const [syncSelectionInitialized, setSyncSelectionInitialized] = useState(false)
+  const [publishPreview, setPublishPreview] = useState<SyncPublishPreviewJson | null>(null)
+  const [restorePreview, setRestorePreview] = useState<SyncRestorePreviewJson | null>(null)
+  const [restoreSkillIds, setRestoreSkillIds] = useState<string[]>([])
 
   // Scroll to the section named by `?section=<id>` after mount. Used when the
   // footer sync indicator or SyncBanner deep-links here.
@@ -198,6 +209,81 @@ export default function SettingsPage() {
     queryFn: () => invoke('shell_runtime'),
     enabled: isMacDesktop,
   })
+
+  const { data: syncProfiles } = useQuery({
+    queryKey: ['sync-profiles'],
+    queryFn: () => invoke('list_sync_profiles'),
+  })
+  const { data: syncSkills } = useQuery<SkillJson[]>({
+    queryKey: ['sync-skills'],
+    queryFn: () => invoke('scan_all_skills'),
+  })
+
+  useEffect(() => {
+    if (!syncSkills || syncSelectionInitialized) return
+    setSyncSkillIds(syncSkills.map((skill) => skill.id))
+    setSyncSelectionInitialized(true)
+  }, [syncSkills, syncSelectionInitialized])
+
+  const syncPublishMutation = useMutation({
+    mutationFn: () => invoke('sync_profile_publish', {
+      profileId: syncProfileId,
+      mode: syncMode,
+      skillIds: syncSkillIds,
+      remoteUrl: syncRemoteUrl || null,
+      push: true,
+    }),
+    onSuccess: async (result) => {
+      setPublishPreview(null)
+      await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
+      toast(result.pushed ? 'Sync profile committed and pushed.' : 'Sync profile committed locally.')
+    },
+    onError: (err) => toast(err instanceof Error ? err.message : String(err), 'destructive'),
+  })
+  const syncCloneMutation = useMutation({
+    mutationFn: () => invoke('sync_profile_clone', { profileId: syncProfileId, remoteUrl: syncRemoteUrl }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
+      toast('Sync profile connected. Pull to review its skills.')
+    },
+    onError: (err) => toast(err instanceof Error ? err.message : String(err), 'destructive'),
+  })
+  const syncRestoreMutation = useMutation({
+    mutationFn: () => invoke('sync_restore_apply', {
+      profileId: syncProfileId,
+      skillIds: restoreSkillIds,
+    }),
+    onSuccess: async (result) => {
+      setRestorePreview(null)
+      await queryClient.invalidateQueries({ queryKey: ['sync-skills'] })
+      await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
+      toast(`Restored ${result.restored.length} skill(s) to ${result.installed_to_detected_agents.length} detected agent(s).`)
+    },
+    onError: (err) => toast(err instanceof Error ? err.message : String(err), 'destructive'),
+  })
+
+  async function reviewSyncPublish() {
+    try {
+      const preview = await invoke('sync_publish_preview', {
+        profileId: syncProfileId,
+        mode: syncMode,
+        skillIds: syncSkillIds,
+      })
+      setPublishPreview(preview)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'destructive')
+    }
+  }
+
+  async function reviewSyncRestore() {
+    try {
+      const preview = await invoke('sync_pull_preview', { profileId: syncProfileId })
+      setRestorePreview(preview)
+      setRestoreSkillIds(preview.skills.filter((skill) => skill.action !== 'unchanged').map((skill) => skill.id))
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'destructive')
+    }
+  }
 
   const saveMutation = useMutation({
     mutationFn: async (s: AppSettings) => {
@@ -676,6 +762,166 @@ export default function SettingsPage() {
               {t('settings.viewReleaseNotes')}
             </Button>
           </div>
+        </section>
+
+
+        {/* Agent sync */}
+        <section id="agent-sync" className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
+          <div>
+            <h2 className="text-sm font-medium flex items-center gap-1.5">
+              <GitBranch className="size-4" />
+              Agent sync
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+              Version selected skills in a private, team, or public Git repository. Credentials stay in your Git credential helper or SSH agent; Skiller never stores them.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <label className="space-y-1 text-xs text-muted-foreground">
+              Profile ID
+              <input
+                value={syncProfileId}
+                onChange={(event) => {
+                  setSyncProfileId(event.target.value.toLowerCase())
+                  setPublishPreview(null)
+                  setRestorePreview(null)
+                }}
+                spellCheck={false}
+                className="h-8 w-full rounded-lg border border-border bg-background/60 px-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/40"
+                aria-label="Sync profile ID"
+              />
+            </label>
+            <label className="space-y-1 text-xs text-muted-foreground">
+              Git remote (optional until push)
+              <input
+                value={syncRemoteUrl}
+                onChange={(event) => setSyncRemoteUrl(event.target.value)}
+                placeholder="git@github.com:you/skiller-skills.git"
+                spellCheck={false}
+                className="h-8 w-full rounded-lg border border-border bg-background/60 px-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/40"
+                aria-label="Sync Git remote"
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Sync visibility">
+            {(['private', 'team', 'public'] as const).map((mode) => (
+              <Button
+                key={mode}
+                size="sm"
+                variant={syncMode === mode ? 'default' : 'outline'}
+                onClick={() => {
+                  setSyncMode(mode)
+                  setPublishPreview(null)
+                }}
+              >
+                {mode}
+              </Button>
+            ))}
+          </div>
+          <div className="rounded-xl glass-inset p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-medium">Skills to include ({syncSkillIds.length})</p>
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => setSyncSkillIds(syncSkills?.map((skill) => skill.id) ?? [])}
+              >
+                Select all
+              </Button>
+            </div>
+            <div className="max-h-36 space-y-1 overflow-y-auto pr-1">
+              {syncSkills?.map((skill) => {
+                const checked = syncSkillIds.includes(skill.id)
+                return (
+                  <label key={skill.id} className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-xs hover:bg-black/[0.03] dark:hover:bg-white/[0.04]">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        setPublishPreview(null)
+                        setSyncSkillIds((current) => checked
+                          ? current.filter((id) => id !== skill.id)
+                          : [...current, skill.id])
+                      }}
+                    />
+                    <span className="truncate">{skill.name}</span>
+                    <span className="ml-auto font-mono text-[10px] text-muted-foreground">{skill.id}</span>
+                  </label>
+                )
+              })}
+              {syncSkills?.length === 0 && <p className="text-xs text-muted-foreground">No local skills to sync yet.</p>}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={reviewSyncPublish} disabled={syncPublishMutation.isPending}>
+              Review publish
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => syncCloneMutation.mutate()} disabled={syncCloneMutation.isPending || !syncRemoteUrl}>
+              Connect existing remote
+            </Button>
+            <Button size="sm" variant="outline" onClick={reviewSyncRestore} disabled={syncRestoreMutation.isPending}>
+              Pull & review
+            </Button>
+          </div>
+          {publishPreview && (
+            <div className="rounded-xl border border-border bg-background/40 p-3 space-y-2 text-xs">
+              <p className="font-medium">Publish review: {publishPreview.skills.length} skill(s), {publishPreview.skills.reduce((total, skill) => total + skill.file_count, 0)} file(s).</p>
+              {publishPreview.secret_findings.length > 0 ? (
+                <p className="text-destructive">Blocked: {publishPreview.secret_findings.length} possible secret(s) found. Remove them before publishing.</p>
+              ) : (
+                <p className="text-muted-foreground">No secret patterns found. Confirming commits locally and pushes only through the configured Git remote.</p>
+              )}
+              <Button size="sm" onClick={() => syncPublishMutation.mutate()} disabled={syncPublishMutation.isPending || publishPreview.secret_findings.length > 0}>
+                Commit & push reviewed skills
+              </Button>
+            </div>
+          )}
+          {restorePreview && (
+            <div className="rounded-xl border border-border bg-background/40 p-3 space-y-2 text-xs">
+              <p className="font-medium">Restore review: {restorePreview.skills.length} skill(s).</p>
+              <div className="space-y-1 text-muted-foreground">
+                {restorePreview.skills.map((skill) => {
+                  const selectable = skill.action !== 'unchanged'
+                  return <label key={skill.id} className="flex items-center gap-2 rounded-md px-1 py-0.5">
+                    <input
+                      type="checkbox"
+                      disabled={!selectable}
+                      checked={selectable ? restoreSkillIds.includes(skill.id) : true}
+                      onChange={() => setRestoreSkillIds((current) => current.includes(skill.id) ? current.filter((id) => id !== skill.id) : [...current, skill.id])}
+                    />
+                    <span>{skill.id}</span><span className="ml-auto">{skill.action}</span>
+                  </label>
+                })}
+              </div>
+              {restorePreview.secret_findings.length > 0 ? (
+                <p className="text-destructive">Blocked: {restorePreview.secret_findings.length} possible secret(s) found in the remote profile.</p>
+              ) : (
+                <Button size="sm" onClick={() => syncRestoreMutation.mutate()} disabled={syncRestoreMutation.isPending || restoreSkillIds.length === 0}>
+                  Restore reviewed changes
+                </Button>
+              )}
+            </div>
+          )}
+          {syncProfiles && syncProfiles.length > 0 && (
+            <div className="space-y-1 text-xs text-muted-foreground">
+              {syncProfiles.map((profile) => (
+                <button
+                  key={profile.profile_id}
+                  className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+                  onClick={() => {
+                    setSyncProfileId(profile.profile_id)
+                    setSyncMode(profile.mode)
+                    setSyncRemoteUrl(profile.remote_url ?? '')
+                    setPublishPreview(null)
+                    setRestorePreview(null)
+                  }}
+                >
+                  <span className="font-medium text-foreground">{profile.profile_id}</span>
+                  <span>{profile.mode} · {profile.skill_count} skills · {profile.changed ? 'local changes' : 'clean'}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </section>
 
 

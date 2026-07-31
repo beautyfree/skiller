@@ -29,8 +29,6 @@ Each profile owns a small Git working tree in
 ```text
 skiller-sync.yaml        # schema version, profile mode, selected agent policy
 skills/<stable-id>/...   # explicitly bundled, user-owned skill directories
-sources.lock.yaml        # reproducible references to external skill sources
-.gitignore               # generated, conservative defaults
 ```
 
 The manifest contains stable IDs, relative paths, content hashes, and target
@@ -118,6 +116,25 @@ MVP has manual `Pull preview` and `Publish` only. Scheduling can be added only
 after the preview, conflict, and recovery paths are proven.
 
 ## Delivery phases
+
+### Delivery status (2026-07-31)
+
+- [x] Phase 0 — ADR, versioned manifest, portable-path and URL validation,
+  duplicate-ID checks, secret-location reporting, and symlink rejection.
+- [x] Phase 1 — selected bundled skills, private/team/public profile metadata,
+  generic Git worktree (SSH, HTTPS, `file://`, GitHub/GitLab/Gitea/self-hosted),
+  review-before-commit/push, connect-existing-remote, pull/fast-forward review,
+  selected transactional restore, and re-installation for detected agents.
+- [ ] Phase 2 — GitHub create-repository shortcut, offline/auth/branch-protection
+  diagnostics, persistent restore journal, and a guided fresh-machine flow.
+- [ ] Phase 3 — source-reference authoring, per-agent-policy editor, explicit
+  three-way conflict choices, public-file review, and team-oriented templates.
+- [ ] Phase 4 — opt-in background checks, organisation policy/custom patterns,
+  audit events, and an optional least-privilege GitHub App.
+
+The shipped initial UI deliberately exports **bundled** selected skills only.
+The manifest can parse pinned reference entries, but creating or restoring them
+is deferred until Phase 3 so a reference cannot silently change a local skill.
 
 ### Phase 0 — contract and threat-model
 

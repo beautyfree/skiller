@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import simpleGit from "simple-git";
-import { assertCredentialFreeGitRemote } from "./sync-profile";
+import { appDataRootPath } from "./settings";
+import { assertCredentialFreeGitRemote, assertSyncStableId } from "./sync-profile";
 
 const DEFAULT_BRANCH = "main";
 const SYNC_GIT_NAME = "Skiller Sync";
@@ -21,6 +22,20 @@ function gitAt(workspacePath: string) {
 
 function hasGitDirectory(workspacePath: string): boolean {
 	return existsSync(join(workspacePath, ".git"));
+}
+
+/** Managed worktrees are never renderer-provided paths. */
+export function syncProfilesDirectory(): string {
+	return join(appDataRootPath(), "sync");
+}
+
+export function syncWorkspacePath(profileId: string): string {
+	assertSyncStableId(profileId);
+	return join(syncProfilesDirectory(), profileId);
+}
+
+export function hasSyncWorkspace(profileId: string): boolean {
+	return hasGitDirectory(syncWorkspacePath(profileId));
 }
 
 export async function initializeSyncWorkspace(workspacePath: string, remoteUrl?: string | null): Promise<void> {
@@ -91,6 +106,18 @@ export async function commitSyncWorkspace(workspacePath: string, message: string
 export async function fetchSyncWorkspace(workspacePath: string): Promise<void> {
 	const git = gitAt(workspacePath);
 	await git.fetch(["origin", "--prune"]);
+}
+
+/**
+ * Advance only a clean managed checkout. We never create a merge commit or
+ * overwrite a locally-ahead profile while preparing a restore preview.
+ */
+export async function fastForwardSyncWorkspace(workspacePath: string): Promise<void> {
+	const git = gitAt(workspacePath);
+	const status = await git.status();
+	if (!status.isClean()) throw new Error("Sync workspace has uncommitted changes; resolve them before pulling");
+	if (status.ahead > 0) throw new Error("Sync workspace has local commits; push or reconcile them before pulling");
+	if (status.behind > 0) await git.merge(["--ff-only", `origin/${status.current || DEFAULT_BRANCH}`]);
 }
 
 /** Push is intentionally separate from commit; callers must show a reviewed plan first. */

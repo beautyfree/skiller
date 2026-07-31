@@ -15,6 +15,8 @@ import { scanTextForSecrets } from "./sync-secret-scan";
 import {
 	cloneSyncWorkspace,
 	commitSyncWorkspace,
+	fastForwardSyncWorkspace,
+	fetchSyncWorkspace,
 	getSyncWorkspaceStatus,
 	initializeSyncWorkspace,
 	pushSyncWorkspace,
@@ -154,6 +156,28 @@ describe("sync Git workspace", () => {
 		await cloneSyncWorkspace(remote, restore);
 		expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe("schema_version: 1\n");
 		expect(await simpleGit(restore).raw(["config", "user.email"])).toBe("sync@skiller.local\n");
+	});
+
+	it("fast-forwards a clean restore workspace after fetching a reviewed remote", async () => {
+		const root = mkdtempSync(join(tmpdir(), "skiller-sync-git-"));
+		tempDirs.push(root);
+		const remote = join(root, "remote.git");
+		const publisher = join(root, "publisher");
+		const restore = join(root, "restore");
+		await simpleGit().raw(["init", "--bare", remote]);
+		await initializeSyncWorkspace(publisher, remote);
+		writeFileSync(join(publisher, "skiller-sync.yaml"), "first\n");
+		await commitSyncWorkspace(publisher, "first");
+		await pushSyncWorkspace(publisher);
+		await cloneSyncWorkspace(remote, restore);
+
+		writeFileSync(join(publisher, "skiller-sync.yaml"), "second\n");
+		await commitSyncWorkspace(publisher, "second");
+		await pushSyncWorkspace(publisher);
+		await fetchSyncWorkspace(restore);
+		await fastForwardSyncWorkspace(restore);
+
+		expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe("second\n");
 	});
 });
 

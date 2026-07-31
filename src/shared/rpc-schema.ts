@@ -197,6 +197,40 @@ export type AppUpdateStatusJson = {
   lastCheckedAt?: number | null;
 };
 
+/** Safe, renderer-facing summary only; secret values and filesystem roots never cross IPC. */
+export type SyncSecretFindingJson = {
+  rule: string;
+  skill_id: string;
+  relative_path: string;
+  line: number;
+  column: number;
+};
+
+export type SyncPublishPreviewJson = {
+  profile_id: string;
+  mode: "private" | "team" | "public";
+  skills: { id: string; file_count: number; total_bytes: number; excluded_paths: string[] }[];
+  secret_findings: SyncSecretFindingJson[];
+};
+
+export type SyncRestorePreviewJson = {
+  profile_id: string;
+  mode: "private" | "team" | "public";
+  skills: { id: string; action: "create" | "unchanged" | "conflict" }[];
+  secret_findings: SyncSecretFindingJson[];
+};
+
+export type SyncProfileStatusJson = {
+  profile_id: string;
+  mode: "private" | "team" | "public";
+  skill_count: number;
+  remote_url: string | null;
+  branch: string;
+  changed: boolean;
+  ahead: number;
+  behind: number;
+};
+
 export type SkillSourceParam =
   | { LocalPath: { path: string } }
   | { GitRepository: { repo_url: string; skill_path?: string | null } }
@@ -219,6 +253,30 @@ export type AppRPCSchema = {
       read_skills_cli_lock: { params?: void; response: SkillsCliLockJson };
       scan_all_skills: { params?: void; response: SkillJson[] };
       scan_agent_skills: { params: { agentSlug: string }; response: SkillJson[] };
+      list_sync_profiles: { params?: void; response: SyncProfileStatusJson[] };
+      sync_publish_preview: {
+        params: { profileId: string; mode: "private" | "team" | "public"; skillIds: string[] };
+        response: SyncPublishPreviewJson;
+      };
+      sync_profile_publish: {
+        params: {
+          profileId: string;
+          mode: "private" | "team" | "public";
+          skillIds: string[];
+          remoteUrl?: string | null;
+          push: boolean;
+        };
+        response: { commit: string | null; pushed: boolean };
+      };
+      sync_profile_clone: {
+        params: { profileId: string; remoteUrl: string };
+        response: SyncProfileStatusJson;
+      };
+      sync_pull_preview: { params: { profileId: string }; response: SyncRestorePreviewJson };
+      sync_restore_apply: {
+        params: { profileId: string; skillIds: string[] };
+        response: { restored: string[]; installed_to_detected_agents: string[] };
+      };
       install_skill: { params: { source: SkillSourceParam; targetAgents: string[] }; response: void };
       uninstall_skill: { params: { skillId: string; agentSlug: string }; response: void };
       uninstall_skill_all: { params: { skillId: string }; response: void };

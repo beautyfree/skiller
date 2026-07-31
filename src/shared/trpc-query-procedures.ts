@@ -3,6 +3,8 @@ const QUERY_NAMES = new Set<string>([
   'detect_agents',
   'scan_all_skills',
   'scan_agent_skills',
+  'list_sync_profiles',
+  'sync_publish_preview',
   'read_skill_content',
   'fetch_remote_skill_content',
   'fetch_skillssh',

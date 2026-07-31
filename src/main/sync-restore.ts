@@ -15,10 +15,12 @@ export type SyncRestoreEntry = {
 	localSha256: string | null;
 };
 
+export type SyncRestoreFinding = SyncExportFinding & { skillId: string };
+
 export type SyncRestorePlan = {
 	manifest: SyncManifest;
 	entries: SyncRestoreEntry[];
-	secretFindings: SyncExportFinding[];
+	secretFindings: SyncRestoreFinding[];
 };
 
 /**
@@ -29,7 +31,7 @@ export function createSyncRestorePlan(workspacePath: string, canonicalSkillsPath
 	const workspace = realpathSync(workspacePath);
 	const manifest = parseSyncManifest(readFileSync(join(workspace, "skiller-sync.yaml"), "utf8"));
 	const entries: SyncRestoreEntry[] = [];
-	const secretFindings: SyncExportFinding[] = [];
+	const secretFindings: SyncRestoreFinding[] = [];
 
 	for (const skill of manifest.skills) {
 		if (skill.kind !== "bundled") continue;
@@ -38,7 +40,7 @@ export function createSyncRestorePlan(workspacePath: string, canonicalSkillsPath
 		if (remote.sha256 !== skill.sha256) {
 			throw new Error(`Sync bundle integrity mismatch: ${skill.id}`);
 		}
-		secretFindings.push(...remote.secretFindings);
+		secretFindings.push(...remote.secretFindings.map((finding) => ({ ...finding, skillId: skill.id })));
 
 		const targetPath = resolve(canonicalSkillsPath, skill.id);
 		let action: SyncRestoreAction = "create";

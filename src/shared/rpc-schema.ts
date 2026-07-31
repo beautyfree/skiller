@@ -56,6 +56,7 @@ export type AgentConfigJson = {
   install_source_label?: string | null;
   detect_paths: string[];
   detected: boolean;
+  detection_reason: "cli" | "marker" | "skills-only" | "not-found";
 };
 
 export type RepoEntryJson = {

@@ -226,11 +226,21 @@ export default function Dashboard() {
                       {agent.name}
                     </span>
                     {agent.detected ? (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {t("dashboard.skillCount", { count: agentSkillCount })}
-                      </p>
+                      <>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {t("dashboard.skillCount", { count: agentSkillCount })}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground/75 mt-0.5">
+                          {detectionReasonLabel(agent, t)}
+                        </p>
+                      </>
                     ) : (
-                      <p className="text-xs text-muted-foreground mt-1">{t("dashboard.notInstalled")}</p>
+                      <>
+                        <p className="text-xs text-muted-foreground mt-1">{t("dashboard.notInstalled")}</p>
+                        <p className="text-[11px] text-muted-foreground/75 mt-0.5">
+                          {detectionReasonLabel(agent, t)}
+                        </p>
+                      </>
                     )}
                   </div>
                   <div className="relative z-[3] shrink-0">
@@ -354,6 +364,22 @@ export default function Dashboard() {
       />
     </div>
   );
+}
+
+function detectionReasonLabel(
+  agent: AgentConfig,
+  t: ReturnType<typeof useTranslation>["t"],
+): string {
+  switch (agent.detection_reason) {
+    case "cli":
+      return t("dashboard.detectionCli");
+    case "marker":
+      return t("dashboard.detectionMarker");
+    case "skills-only":
+      return t("dashboard.detectionSkillsOnly");
+    case "not-found":
+      return t("dashboard.detectionNotFound");
+  }
 }
 
 /**
@@ -542,6 +568,10 @@ function InstallGuideModal({
             <span className="rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
               {installSourceLabel}
             </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-foreground">{t("dashboard.detection")}</span>
+            <span>{detectionReasonLabel(agent, t)}</span>
           </div>
           <p>{t("dashboard.diagnoseTip")}</p>
           {verifyCommand ? (

@@ -8,10 +8,10 @@ export type SyncLedger = {
 	schema_version: typeof SYNC_LEDGER_VERSION;
 	profile_id: string;
 	updated_at: string;
-	skills: Record<string, { sha256: string }>;
+	skills: Record<string, { sha256: string; kept_remote_sha256?: string }>;
 };
 
-export type ThreeWayAction = "take-remote" | "publish-local" | "unchanged" | "conflict" | "unmanaged";
+export type ThreeWayAction = "take-remote" | "publish-local" | "unchanged" | "kept-local" | "conflict" | "unmanaged";
 
 export type ThreeWaySkill = {
 	id: string;
@@ -47,12 +47,15 @@ export function writeSyncLedgerAt(path: string, ledger: SyncLedger): void {
 	renameSync(temporary, path);
 }
 
-export function makeSyncLedger(profileId: string, entries: { id: string; sha256: string }[]): SyncLedger {
+export function makeSyncLedger(profileId: string, entries: { id: string; sha256: string; keptRemoteSha256?: string }[]): SyncLedger {
 	return {
 		schema_version: SYNC_LEDGER_VERSION,
 		profile_id: profileId,
 		updated_at: new Date().toISOString(),
-		skills: Object.fromEntries(entries.map((entry) => [entry.id, { sha256: entry.sha256 }])),
+		skills: Object.fromEntries(entries.map((entry) => [entry.id, {
+			sha256: entry.sha256,
+			...(entry.keptRemoteSha256 ? { kept_remote_sha256: entry.keptRemoteSha256 } : {}),
+		}])),
 	};
 }
 
@@ -66,7 +69,15 @@ export function classifyThreeWaySkill(
 	baseSha256: string | null,
 	localSha256: string | null,
 	remoteSha256: string,
+	keptRemoteSha256?: string | null,
 ): ThreeWaySkill {
+	if (keptRemoteSha256 && localSha256 !== null && localSha256 !== remoteSha256) {
+		// A person deliberately kept this local variant after reviewing this
+		// exact remote revision. Do not nag or downgrade it to an auto-apply
+		// candidate until the remote actually changes again.
+		const action: ThreeWayAction = keptRemoteSha256 === remoteSha256 ? "kept-local" : "conflict";
+		return { id, baseSha256, localSha256, remoteSha256, action };
+	}
 	if (baseSha256 === null) {
 		const action: ThreeWayAction = localSha256 === null
 			? "take-remote"

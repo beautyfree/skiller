@@ -21,6 +21,11 @@ describe("sync three-way ledger", () => {
 		expect(classifyThreeWaySkill("a", "base", "same", "same").action).toBe("unchanged");
 	});
 
+	it("remembers an explicit keep-local decision until remote content changes", () => {
+		expect(classifyThreeWaySkill("a", "base", "local", "remote", "remote").action).toBe("kept-local");
+		expect(classifyThreeWaySkill("a", "base", "local", "new-remote", "remote").action).toBe("conflict");
+	});
+
 	it("writes a local-only ledger atomically", () => {
 		const directory = mkdtempSync(join(tmpdir(), "skiller-ledger-"));
 		cleanup.push(directory);

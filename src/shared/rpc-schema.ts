@@ -263,7 +263,7 @@ export type SyncThreeWayReviewJson = {
   profile_id: string;
   skills: {
     id: string;
-    action: "take-remote" | "publish-local" | "unchanged" | "conflict" | "unmanaged";
+    action: "take-remote" | "publish-local" | "unchanged" | "kept-local" | "conflict" | "unmanaged";
   }[];
 };
 
@@ -302,7 +302,8 @@ export type AppRPCSchema = {
       };
       sync_three_way_review: { params: { profileId: string }; response: SyncThreeWayReviewJson };
       sync_apply_remote_changes: { params: { profileId: string; skillIds: string[] }; response: { restored: string[] } };
-	  sync_publish_local_changes: { params: { profileId: string; skillIds: string[] }; response: { commit: string | null; pushed: boolean } };
+      sync_publish_local_changes: { params: { profileId: string; skillIds: string[] }; response: { commit: string | null; pushed: boolean } };
+	  sync_keep_local_changes: { params: { profileId: string; skillIds: string[] }; response: { kept: string[] } };
       sync_recovery_status: { params: { profileId: string }; response: { pending: boolean } };
       sync_recovery_rollback: { params: { profileId: string }; response: { recovered: boolean } };
       sync_publish_preview: {

@@ -332,7 +332,7 @@ async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc:
   for (const id of skillIds) {
     const entry = entries.get(id)
     if (!entry) throw new Error(`Remote skill is not available: ${id}`)
-    const action = classifyThreeWaySkill(id, ledger?.skills[id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256).action
+    const action = classifyThreeWaySkill(id, ledger?.skills[id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256, ledger?.skills[id]?.kept_remote_sha256).action
     if (action !== 'take-remote') throw new Error(`Remote change must be resolved manually: ${id}`)
   }
   applySyncRestorePlan(plan, skillIds, profileId)
@@ -347,9 +347,9 @@ async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc:
       : agents.filter((agent) => agent.detected).map((agent) => agent.slug)
     if (targets.length > 0) installSkillFromPath(join(sharedSkillsDir(), id), targets, agents, id)
   }
-  const nextSkills = new Map(Object.entries(ledger?.skills ?? {}).map(([id, entry]) => [id, entry.sha256]))
-  for (const id of skillIds) nextSkills.set(id, entries.get(id)!.remoteSha256)
-  writeSyncLedgerAt(syncLedgerPath(profileId), makeSyncLedger(profileId, [...nextSkills.entries()].map(([id, sha256]) => ({ id, sha256 }))))
+	const nextSkills = new Map(Object.entries(ledger?.skills ?? {}).map(([id, entry]) => [id, { sha256: entry.sha256, keptRemoteSha256: entry.kept_remote_sha256 }]))
+  for (const id of skillIds) nextSkills.set(id, { sha256: entries.get(id)!.remoteSha256, keptRemoteSha256: undefined })
+  writeSyncLedgerAt(syncLedgerPath(profileId), makeSyncLedger(profileId, [...nextSkills.entries()].map(([id, entry]) => ({ id, ...entry }))))
   rpc.send('skills_changed')
   return { restored: skillIds }
 }
@@ -379,7 +379,7 @@ async function publishReviewedLocalChanges(profileId: string, ids: string[]): Pr
     const entry = entries.get(id)
     const current = existingBundled.get(id)
     if (!entry || !current || entry.localSha256 === null) throw new Error(`Local skill is not available: ${id}`)
-    const action = classifyThreeWaySkill(id, ledger?.skills[id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256).action
+    const action = classifyThreeWaySkill(id, ledger?.skills[id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256, ledger?.skills[id]?.kept_remote_sha256).action
     if (action !== 'publish-local') throw new Error(`Local change must be resolved manually: ${id}`)
     candidates.push({ id, sourcePath: entry.targetPath, installationAgentSlugs: current.installations })
   }
@@ -389,10 +389,35 @@ async function publishReviewedLocalChanges(profileId: string, ids: string[]): Pr
   applySyncPublishPlan(workspace, merged)
   const commit = await commitSyncWorkspace(workspace, 'Skiller sync: publish reviewed local changes')
   await pushSyncWorkspace(workspace)
-  const nextSkills = new Map(Object.entries(ledger?.skills ?? {}).map(([id, entry]) => [id, entry.sha256]))
-  for (const id of skillIds) nextSkills.set(id, publishedBundles.get(id)!.sha256)
-  writeSyncLedgerAt(syncLedgerPath(profileId), makeSyncLedger(profileId, [...nextSkills.entries()].map(([id, sha256]) => ({ id, sha256 }))))
+	const nextSkills = new Map(Object.entries(ledger?.skills ?? {}).map(([id, entry]) => [id, { sha256: entry.sha256, keptRemoteSha256: entry.kept_remote_sha256 }]))
+  for (const id of skillIds) nextSkills.set(id, { sha256: publishedBundles.get(id)!.sha256, keptRemoteSha256: undefined })
+  writeSyncLedgerAt(syncLedgerPath(profileId), makeSyncLedger(profileId, [...nextSkills.entries()].map(([id, entry]) => ({ id, ...entry }))))
   return { commit, pushed: true }
+}
+
+/** Record a reviewed local-over-remote choice without changing either tree. */
+async function keepReviewedLocalChanges(profileId: string, ids: string[]): Promise<{ kept: string[] }> {
+  assertSyncStableId(profileId)
+  const skillIds = selectedSyncSkillIds(ids)
+  if (!hasSyncWorkspace(profileId)) throw new Error('This library has not been set up on this computer')
+  const workspace = syncWorkspacePath(profileId)
+  const status = await getSyncWorkspaceStatus(workspace)
+  if (!status.remoteUrl || status.changed) throw new Error('Sync workspace must be clean and connected before keeping local changes')
+  await fetchSyncWorkspace(workspace)
+  await fastForwardSyncWorkspace(workspace)
+  const restore = createSyncRestorePlan(workspace, sharedSkillsDir())
+  const ledger = readSyncLedger(profileId)
+  const entries = new Map(restore.entries.map((entry) => [entry.id, entry]))
+  const nextSkills = new Map(Object.entries(ledger?.skills ?? {}).map(([id, entry]) => [id, { sha256: entry.sha256, keptRemoteSha256: entry.kept_remote_sha256 }]))
+  for (const id of skillIds) {
+    const entry = entries.get(id)
+    if (!entry || entry.localSha256 === null) throw new Error(`Local skill is not available: ${id}`)
+    const action = classifyThreeWaySkill(id, ledger?.skills[id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256, ledger?.skills[id]?.kept_remote_sha256).action
+    if (action !== 'conflict' && action !== 'unmanaged') throw new Error(`Local change does not need this decision: ${id}`)
+    nextSkills.set(id, { sha256: ledger?.skills[id]?.sha256 ?? entry.localSha256, keptRemoteSha256: entry.remoteSha256 })
+  }
+  writeSyncLedgerAt(syncLedgerPath(profileId), makeSyncLedger(profileId, [...nextSkills.entries()].map(([id, entry]) => ({ id, ...entry }))))
+  return { kept: skillIds }
 }
 
 function skillSourceParamToInternal(s: SkillSourceParam): SkillSource {
@@ -538,12 +563,13 @@ export function createRequestHandlers(ctx: {
         profile_id: params.profileId,
         skills: restore.entries.map((entry) => ({
           id: entry.id,
-          action: classifyThreeWaySkill(entry.id, ledger?.skills[entry.id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256).action,
+          action: classifyThreeWaySkill(entry.id, ledger?.skills[entry.id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256, ledger?.skills[entry.id]?.kept_remote_sha256).action,
         })),
       }
     },
     sync_apply_remote_changes: async (params: { profileId: string; skillIds: string[] }) => applyReviewedRemoteChanges(params.profileId, params.skillIds, rpc),
 	 sync_publish_local_changes: async (params: { profileId: string; skillIds: string[] }) => publishReviewedLocalChanges(params.profileId, params.skillIds),
+	 sync_keep_local_changes: async (params: { profileId: string; skillIds: string[] }) => keepReviewedLocalChanges(params.profileId, params.skillIds),
     sync_recovery_status: async (params: { profileId: string }) => {
       assertSyncStableId(params.profileId)
       return { pending: readRestoreJournalAt(syncJournalPath(params.profileId)) !== null }

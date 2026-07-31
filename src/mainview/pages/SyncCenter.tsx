@@ -27,6 +27,7 @@ export default function SyncCenter() {
   const [remoteReview, setRemoteReview] = useState<SyncThreeWayReviewJson | null>(null)
   const [remoteSelections, setRemoteSelections] = useState<string[]>([])
 	const [localSelections, setLocalSelections] = useState<string[]>([])
+	const [keepLocalSelections, setKeepLocalSelections] = useState<string[]>([])
   const [busy, setBusy] = useState<'idle' | 'reviewing' | 'creating' | 'publishing'>('idle')
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -105,6 +106,7 @@ export default function SyncCenter() {
       setRemoteReview(result)
       setRemoteSelections(result.skills.filter((skill) => skill.action === 'take-remote').map((skill) => skill.id))
 	  setLocalSelections(result.skills.filter((skill) => skill.action === 'publish-local').map((skill) => skill.id))
+	  setKeepLocalSelections(result.skills.filter((skill) => skill.action === 'conflict' || skill.action === 'unmanaged').map((skill) => skill.id))
       setShowInventory(true)
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), 'destructive')
@@ -122,6 +124,21 @@ export default function SyncCenter() {
 		setRemoteReview(null)
 		setLocalSelections([])
 		await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
+	  } catch (error) {
+		toast(error instanceof Error ? error.message : String(error), 'destructive')
+	  } finally {
+		setBusy('idle')
+	  }
+	}
+
+	async function keepSelectedLocalChanges() {
+	  if (!profile || keepLocalSelections.length === 0) return
+	  setBusy('publishing')
+	  try {
+		const result = await invoke('sync_keep_local_changes', { profileId: profile.profile_id, skillIds: keepLocalSelections })
+		toast(`Kept ${result.kept.length} local change${result.kept.length === 1 ? '' : 's'} without modifying the remote.`)
+		setRemoteReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
+		setKeepLocalSelections([])
 	  } catch (error) {
 		toast(error instanceof Error ? error.message : String(error), 'destructive')
 	  } finally {
@@ -302,9 +319,9 @@ export default function SyncCenter() {
               <p className="font-semibold">Change review</p>
               <div className="mt-2 space-y-1 text-muted-foreground">
                 {remoteReview.skills.map((skill) => {
-				  const selectable = skill.action === 'take-remote' || skill.action === 'publish-local'
-				  const selected = skill.action === 'take-remote' ? remoteSelections : localSelections
-				  const setSelected = skill.action === 'take-remote' ? setRemoteSelections : setLocalSelections
+				  const selectable = skill.action === 'take-remote' || skill.action === 'publish-local' || skill.action === 'conflict' || skill.action === 'unmanaged'
+				  const selected = skill.action === 'take-remote' ? remoteSelections : skill.action === 'publish-local' ? localSelections : keepLocalSelections
+				  const setSelected = skill.action === 'take-remote' ? setRemoteSelections : skill.action === 'publish-local' ? setLocalSelections : setKeepLocalSelections
                   return <label key={skill.id} className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-background/60">
 					<input type="checkbox" disabled={!selectable} checked={selectable && selected.includes(skill.id)} onChange={() => setSelected((current) => current.includes(skill.id) ? current.filter((id) => id !== skill.id) : [...current, skill.id])} />
                     <span className="min-w-0 flex-1 truncate">{skill.id}</span>
@@ -312,9 +329,10 @@ export default function SyncCenter() {
                   </label>
                 })}
               </div>
-			  <p className="mt-2 text-muted-foreground">Remote-only changes can be applied; local-only changes can be published. Conflicts and unmanaged skills stay local until you resolve them manually.</p>
+			  <p className="mt-2 text-muted-foreground">Remote-only changes can be applied; local-only changes can be published. For a conflict, keep local records this reviewed choice without touching the remote; a new remote revision will ask again.</p>
               {remoteSelections.length > 0 && <Button size="sm" className="mt-3" onClick={applySelectedRemoteChanges} disabled={busy !== 'idle'}>Apply selected remote changes</Button>}
 			  {localSelections.length > 0 && <Button size="sm" variant="outline" className="mt-3 ml-2" onClick={publishSelectedLocalChanges} disabled={busy !== 'idle'}>Publish selected local changes</Button>}
+			  {keepLocalSelections.length > 0 && <Button size="sm" variant="outline" className="mt-3 ml-2" onClick={keepSelectedLocalChanges} disabled={busy !== 'idle'}>Keep selected local changes</Button>}
             </div>
           )}
           {!profile && (

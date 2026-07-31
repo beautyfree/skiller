@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.24](https://github.com/beautyfree/skiller/compare/v0.2.23...v0.2.24) (2026-07-31)
+
+
+### Bug Fixes
+
+* **release:** make agent detection diagnosable ([ff36dc6](https://github.com/beautyfree/skiller/commit/ff36dc67ae26dc8a7084c59d12f54877ad864fc8))
+* reliable releases and agent diagnostics ([109c568](https://github.com/beautyfree/skiller/commit/109c5680b5b20ab2d44d1f0c4a3ce4c3fa8ec43d))
+
 ## [0.2.23](https://github.com/beautyfree/skiller/compare/v0.2.22...v0.2.23) (2026-07-30)
 
 

@@ -105,7 +105,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config python3 libxss1 libnss3 libasound2t64 fakeroot dpkg
-      - run: bun run dist:linux
+      - name: Package Linux without publishing
+        run: |
+          bun run build
+          bunx electron-builder --linux --publish never
+          node scripts/patch-appimage-runtime.mjs artifacts
 
   build-desktop:
     name: Build ${{ matrix.label }}
@@ -120,13 +124,13 @@ jobs:
         include:
           - label: macos
             runner: macos-14
-            script: dist:mac
+            platform: macos
           - label: windows-x64
             runner: windows-latest
-            script: dist:win
+            platform: windows
           - label: linux-x64
             runner: ubuntu-latest
-            script: dist:linux
+            platform: linux
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
         with:
@@ -193,12 +197,30 @@ jobs:
           chmod 600 "$KEY_PATH"
           echo "APPLE_API_KEY=$KEY_PATH" >> "$GITHUB_ENV"
 
-      - name: Build app
+      - name: Build macOS app
+        if: matrix.platform == 'macos'
         env:
           CSC_NAME: ${{ secrets.CSC_NAME }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-        run: bun run ${{ matrix.script }}
+        run: |
+          bun run build
+          bunx electron-builder --mac --arm64 --x64 --publish never
+          bash scripts/repack-dmg.sh arm64
+          bash scripts/repack-dmg.sh x64
+
+      - name: Build Windows app
+        if: matrix.platform == 'windows'
+        run: |
+          bun run build
+          bunx electron-builder --win --publish never
+
+      - name: Build Linux app
+        if: matrix.platform == 'linux'
+        run: |
+          bun run build
+          bunx electron-builder --linux --publish never
+          node scripts/patch-appimage-runtime.mjs artifacts
 
       - name: Upload release assets
         env:

@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.2.26](https://github.com/beautyfree/skiller/compare/v0.2.25...v0.2.26) (2026-07-31)
+
+
+### Features
+
+* add skills cli compatibility and release notes ([6b48c2b](https://github.com/beautyfree/skiller/commit/6b48c2b7aa4733004b77fad2f4201c396d43e4b1))
+* add Skills CLI compatibility and release notes ([cb9bff2](https://github.com/beautyfree/skiller/commit/cb9bff2056c87f92baf5fbba81b89510c7b57730))
+
+
+### Bug Fixes
+
+* **ci:** package releases without builder publishing ([e1447c4](https://github.com/beautyfree/skiller/commit/e1447c489c1091f27543ed15b779af7531f1c663))
+* **ci:** package releases without builder publishing ([2224fa2](https://github.com/beautyfree/skiller/commit/2224fa252418869f55a5148452c722a19112ca96))
+* **ci:** resolve draft releases with release permissions ([f5c2631](https://github.com/beautyfree/skiller/commit/f5c263124cd45ee2704f36d3de665c57d6a33f60))
+* **ci:** resolve draft releases with release permissions ([cd50e2f](https://github.com/beautyfree/skiller/commit/cd50e2fe6c75f2dbe26150090225c961bfb96bee))
+* **ci:** retry draft release resolution ([5339aeb](https://github.com/beautyfree/skiller/commit/5339aebb209a03bbd467d58dde05391ba2894853))
+* **ci:** retry draft release resolution ([ae5d133](https://github.com/beautyfree/skiller/commit/ae5d133365f3e1f8295914e40a54d86546a9351c))
+* **release:** disable electron-builder autopublish ([be1eac0](https://github.com/beautyfree/skiller/commit/be1eac0fd120549727a87f5a08c37c0e0dbc465d))
+* **release:** disable electron-builder autopublish ([6d17ee7](https://github.com/beautyfree/skiller/commit/6d17ee7e165a40333aa6aeb6a80ae2691c7978b4))
+
+
+### Documentation
+
+* record release hardening evidence ([92aba4c](https://github.com/beautyfree/skiller/commit/92aba4cb20b803321ea5f8d316e7b667bb47c9bf))
+* record release hardening evidence ([94c77d3](https://github.com/beautyfree/skiller/commit/94c77d351b3625bb0977a77983c4b826ddf85241))
+
 ## [0.2.25](https://github.com/beautyfree/skiller/compare/v0.2.24...v0.2.25) (2026-07-31)
 
 

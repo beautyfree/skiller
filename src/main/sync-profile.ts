@@ -2,7 +2,7 @@ import { parse, stringify } from "yaml";
 import { z } from "zod";
 
 export const SYNC_MANIFEST_FILE = "skiller-sync.yaml";
-export const SYNC_MANIFEST_VERSION = 1;
+export const SYNC_MANIFEST_VERSION = 2;
 
 const stableId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/);
 const portablePath = z.string().min(1).max(512);
@@ -18,6 +18,8 @@ const bundledSkillSchema = z.object({
 	installations: z.array(stableId).min(1).optional(),
 });
 
+const legacyBundledSkillSchema = bundledSkillSchema.omit({ installations: true });
+
 const referenceSkillSchema = z.object({
 	id: stableId,
 	kind: z.literal("reference"),
@@ -26,8 +28,7 @@ const referenceSkillSchema = z.object({
 	skill_path: portablePath,
 });
 
-const syncManifestSchema = z.object({
-	schema_version: z.literal(SYNC_MANIFEST_VERSION),
+const manifestBaseSchema = z.object({
 	profile: z.object({
 		id: stableId,
 		mode: z.enum(["private", "team", "public"]),
@@ -36,7 +37,16 @@ const syncManifestSchema = z.object({
 		z.object({ mode: z.literal("detected") }),
 		z.object({ mode: z.literal("selected"), agent_slugs: z.array(stableId).min(1) }),
 	]),
+});
+
+const syncManifestSchema = manifestBaseSchema.extend({
+	schema_version: z.literal(SYNC_MANIFEST_VERSION),
 	skills: z.array(z.discriminatedUnion("kind", [bundledSkillSchema, referenceSkillSchema])),
+});
+
+const legacySyncManifestSchema = manifestBaseSchema.extend({
+	schema_version: z.literal(1),
+	skills: z.array(z.discriminatedUnion("kind", [legacyBundledSkillSchema, referenceSkillSchema])),
 });
 
 export type SyncManifest = z.infer<typeof syncManifestSchema>;
@@ -78,7 +88,14 @@ export function stringifySyncManifest(manifest: SyncManifest): string {
 }
 
 export function validateSyncManifest(input: unknown): SyncManifest {
-	const manifest = syncManifestSchema.parse(input);
+	const raw = input as { schema_version?: unknown } | null;
+	// v1 had the same safe payload format but no per-skill routing.  Reading it
+	// is non-mutating; it is only written as v2 after the person explicitly
+	// publishes a reviewed change.
+	const legacy = raw?.schema_version === 1 ? legacySyncManifestSchema.parse(input) : null;
+	const manifest: SyncManifest = legacy
+		? { ...legacy, schema_version: SYNC_MANIFEST_VERSION }
+		: syncManifestSchema.parse(input);
 	const seenIds = new Set<string>();
 	for (const skill of manifest.skills) {
 		if (seenIds.has(skill.id)) throw new Error(`Duplicate sync skill id: ${skill.id}`);

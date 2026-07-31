@@ -70,6 +70,18 @@ skills:
     skill_path: skills/upstream-skill
 `);
 		expect(manifest.skills).toHaveLength(2);
+		expect(manifest.schema_version).toBe(2);
+	});
+
+	it("reads a v1 profile without changing it until a reviewed v2 publish", () => {
+		const legacy = parseSyncManifest(`schema_version: 1
+profile: { id: personal, mode: private }
+agent_policy: { mode: detected }
+skills:
+  - { id: writing, kind: bundled, path: skills/writing, sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa }
+`);
+		expect(legacy).toMatchObject({ schema_version: 2, skills: [{ id: "writing" }] });
+		expect(stringifySyncManifest(legacy)).toContain("schema_version: 2");
 	});
 
 	it("rejects traversal and duplicate ids", () => {

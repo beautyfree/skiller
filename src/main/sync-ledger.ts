@@ -68,7 +68,12 @@ export function classifyThreeWaySkill(
 	remoteSha256: string,
 ): ThreeWaySkill {
 	if (baseSha256 === null) {
-		return { id, baseSha256, localSha256, remoteSha256, action: localSha256 === null || localSha256 === remoteSha256 ? "take-remote" : "unmanaged" };
+		const action: ThreeWayAction = localSha256 === null
+			? "take-remote"
+			: localSha256 === remoteSha256
+				? "unchanged"
+				: "unmanaged";
+		return { id, baseSha256, localSha256, remoteSha256, action };
 	}
 	const localChanged = localSha256 !== baseSha256;
 	const remoteChanged = remoteSha256 !== baseSha256;

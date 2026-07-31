@@ -66,13 +66,13 @@ function collectSkillRoots(root: string): string[] {
 	return result;
 }
 
-function portableKey(name: string, hash: string): string {
+function portableBaseKey(name: string): string {
 	const normalized = name
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, "-")
 		.replace(/^-+|-+$/g, "")
 		.slice(0, 48) || "skill";
-	return `${normalized}-${hash.slice(0, 8)}`;
+	return normalized;
 }
 
 function canonical(path: string): string | null {
@@ -102,7 +102,7 @@ export function scanSyncInventoryFromRoots(roots: Root[]): SyncInventory {
 				const displayName = parsed.name?.trim() || basename(actual);
 				const exportPlan = planBundledSkillExport("inventory-skill", actual);
 				const item = byHash.get(exportPlan.sha256) ?? {
-					candidateKey: portableKey(displayName, exportPlan.sha256),
+					candidateKey: portableBaseKey(displayName),
 					displayName,
 					contentHash: exportPlan.sha256,
 					sourcePath: actual,
@@ -129,7 +129,12 @@ export function scanSyncInventoryFromRoots(roots: Root[]): SyncInventory {
 	}
 	const collisions = [...sameName.values()]
 		.filter((group) => group.length > 1)
-		.map((group) => ({ displayName: group[0].displayName, candidateKeys: group.map((item) => item.candidateKey) }));
+		.map((group) => {
+			// Only an actual collision gets a content-derived suffix. A normal edit
+			// of a unique skill retains its portable identity across machines.
+			for (const item of group) item.candidateKey = `${portableBaseKey(item.displayName)}-${item.contentHash.slice(0, 8)}`;
+			return { displayName: group[0].displayName, candidateKeys: group.map((item) => item.candidateKey) };
+		});
 	return { items, collisions, invalidPaths };
 }
 

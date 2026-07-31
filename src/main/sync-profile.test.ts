@@ -220,6 +220,20 @@ describe("sync publish plan", () => {
 		});
 	});
 
+	it("stores portable agent routing without storing local agent paths", () => {
+		const root = makeSkill({ "SKILL.md": "# Writing\n" });
+		const plan = createSyncPublishPlan("personal", "private", [{
+			id: "writing",
+			sourcePath: root,
+			installationAgentSlugs: ["codex", "claude-code", "codex"],
+		}]);
+		expect(plan.manifest.skills).toContainEqual(expect.objectContaining({
+			id: "writing",
+			installations: ["claude-code", "codex"],
+		}));
+		expect(stringifySyncManifest(plan.manifest)).not.toContain(root);
+	});
+
 	it("blocks writes when the reviewed skill contains a secret", () => {
 		const root = makeSkill({ "SKILL.md": "TOKEN=ghp_abcdefghijklmnopqrstuvwxyz123456\n" });
 		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));

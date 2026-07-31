@@ -12,6 +12,10 @@ const bundledSkillSchema = z.object({
 	kind: z.literal("bundled"),
 	path: portablePath,
 	sha256: z.string().regex(/^[a-f0-9]{64}$/),
+	// This is intentionally a list of agent identities, not filesystem paths.
+	// Agent paths are machine-local implementation details and must never leak
+	// into a portable profile or be replayed on another computer.
+	installations: z.array(stableId).min(1).optional(),
 });
 
 const referenceSkillSchema = z.object({

@@ -41,4 +41,15 @@ describe("sync inventory", () => {
 			]));
 		expect(inventory.collisions).toEqual([{ displayName: "Writing guide", candidateKeys: expect.any(Array) }]);
 	});
+
+	it("keeps a unique skill key stable when its content changes", () => {
+		const codex = root();
+		skill(codex, "writing", "---\nname: Writing guide\ndescription: First\n---\n# Guide\n");
+		const first = scanSyncInventoryFromRoots([{ agentSlug: "codex", path: codex, kind: "agent-local" }]);
+		skill(codex, "writing", "---\nname: Writing guide\ndescription: Updated\n---\n# Guide\n");
+		const second = scanSyncInventoryFromRoots([{ agentSlug: "codex", path: codex, kind: "agent-local" }]);
+		expect(first.items[0]?.candidateKey).toBe("writing-guide");
+		expect(second.items[0]?.candidateKey).toBe("writing-guide");
+		expect(first.items[0]?.contentHash).not.toBe(second.items[0]?.contentHash);
+	});
 });

@@ -14,6 +14,7 @@ export type BundledSkillCandidate = {
 	kind?: "bundled";
 	id: string;
 	sourcePath: string;
+	installationAgentSlugs?: string[];
 };
 
 export type ReferenceSkillCandidate = {
@@ -54,7 +55,15 @@ export function createSyncPublishPlan(
 		}
 		const skill = bundledSkills.find((item) => item.id === candidate.id);
 		if (!skill) throw new Error(`Missing bundled export plan: ${candidate.id}`);
-		return { id: skill.id, kind: "bundled" as const, path: skill.bundledPath, sha256: skill.sha256 };
+		return {
+			id: skill.id,
+			kind: "bundled" as const,
+			path: skill.bundledPath,
+			sha256: skill.sha256,
+			...(candidate.installationAgentSlugs?.length
+				? { installations: [...new Set(candidate.installationAgentSlugs)].sort() }
+				: {}),
+		};
 	});
 	return {
 		manifest: validateSyncManifest(manifest),

@@ -281,6 +281,7 @@ function createSyncCenterPublishPlan(selectedKeys?: string[]) {
     kind: 'bundled' as const,
     id: item.candidateKey,
     sourcePath: item.sourcePath,
+    installationAgentSlugs: item.locations.map((location) => location.agentSlug),
   })))
 }
 
@@ -298,6 +299,43 @@ function syncPublishPlanToJson(plan: ReturnType<typeof createSyncPublishPlan>): 
     secret_findings: syncSecretFindingsForJson(plan.bundledSkills),
     references: [],
   }
+}
+
+async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc: BunSideRpc): Promise<{ restored: string[] }> {
+  assertSyncStableId(profileId)
+  const skillIds = selectedSyncSkillIds(ids)
+  if (!hasSyncWorkspace(profileId)) throw new Error('This library has not been set up on this computer')
+  const workspace = syncWorkspacePath(profileId)
+  const status = await getSyncWorkspaceStatus(workspace)
+  if (!status.remoteUrl || status.changed) throw new Error('Sync workspace must be clean and connected before applying remote changes')
+  await fetchSyncWorkspace(workspace)
+  await fastForwardSyncWorkspace(workspace)
+  const plan = createSyncRestorePlan(workspace, sharedSkillsDir())
+  const ledger = readSyncLedger(profileId)
+  const entries = new Map(plan.entries.map((entry) => [entry.id, entry]))
+  for (const id of skillIds) {
+    const entry = entries.get(id)
+    if (!entry) throw new Error(`Remote skill is not available: ${id}`)
+    const action = classifyThreeWaySkill(id, ledger?.skills[id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256).action
+    if (action !== 'take-remote') throw new Error(`Remote change must be resolved manually: ${id}`)
+  }
+  applySyncRestorePlan(plan, skillIds, profileId)
+  const agents = loadDetectedAgents('sync_apply_remote_changes')
+  const manifestSkills = new Map(plan.manifest.skills.filter((skill) => skill.kind === 'bundled').map((skill) => [skill.id, skill]))
+  for (const id of skillIds) {
+    const skill = manifestSkills.get(id)
+    // v1 manifests without per-skill routing retain the old, explicit
+    // profile policy. New Sync Center profiles always carry installations.
+    const targets = skill?.installations
+      ? skill.installations.filter((slug) => agents.some((agent) => agent.slug === slug && agent.detected))
+      : agents.filter((agent) => agent.detected).map((agent) => agent.slug)
+    if (targets.length > 0) installSkillFromPath(join(sharedSkillsDir(), id), targets, agents, id)
+  }
+  const nextSkills = new Map(Object.entries(ledger?.skills ?? {}).map(([id, entry]) => [id, entry.sha256]))
+  for (const id of skillIds) nextSkills.set(id, entries.get(id)!.remoteSha256)
+  writeSyncLedgerAt(syncLedgerPath(profileId), makeSyncLedger(profileId, [...nextSkills.entries()].map(([id, sha256]) => ({ id, sha256 }))))
+  rpc.send('skills_changed')
+  return { restored: skillIds }
 }
 
 function skillSourceParamToInternal(s: SkillSourceParam): SkillSource {
@@ -419,6 +457,12 @@ export function createRequestHandlers(ctx: {
       applySyncPublishPlan(workspace, plan)
       const commit = await commitSyncWorkspace(workspace, 'Skiller sync: protect agent library')
       await pushSyncWorkspace(workspace)
+      writeSyncLedgerAt(
+        syncLedgerPath(profileId),
+        makeSyncLedger(profileId, plan.manifest.skills
+          .filter((skill): skill is Extract<typeof skill, { kind: 'bundled' }> => skill.kind === 'bundled')
+          .map((skill) => ({ id: skill.id, sha256: skill.sha256 }))),
+      )
       return { commit, pushed: true }
     },
     sync_three_way_review: async (params: { profileId: string }): Promise<SyncThreeWayReviewJson> => {
@@ -440,6 +484,7 @@ export function createRequestHandlers(ctx: {
         })),
       }
     },
+    sync_apply_remote_changes: async (params: { profileId: string; skillIds: string[] }) => applyReviewedRemoteChanges(params.profileId, params.skillIds, rpc),
     sync_recovery_status: async (params: { profileId: string }) => {
       assertSyncStableId(params.profileId)
       return { pending: readRestoreJournalAt(syncJournalPath(params.profileId)) !== null }

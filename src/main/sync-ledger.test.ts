@@ -11,6 +11,7 @@ describe("sync three-way ledger", () => {
 	it("never turns an unknown local difference into an overwrite", () => {
 		expect(classifyThreeWaySkill("writing", null, "local", "remote").action).toBe("unmanaged");
 		expect(classifyThreeWaySkill("writing", null, null, "remote").action).toBe("take-remote");
+		expect(classifyThreeWaySkill("writing", null, "remote", "remote").action).toBe("unchanged");
 	});
 
 	it("classifies local, remote, and concurrent changes from the last applied hash", () => {

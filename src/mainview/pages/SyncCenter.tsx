@@ -25,6 +25,7 @@ export default function SyncCenter() {
   const [remoteUrl, setRemoteUrl] = useState('')
   const [preview, setPreview] = useState<SyncPublishPreviewJson | null>(null)
   const [remoteReview, setRemoteReview] = useState<SyncThreeWayReviewJson | null>(null)
+  const [remoteSelections, setRemoteSelections] = useState<string[]>([])
   const [busy, setBusy] = useState<'idle' | 'reviewing' | 'creating' | 'publishing'>('idle')
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -85,6 +86,9 @@ export default function SyncCenter() {
       await invoke('sync_center_publish', { remoteUrl, selectedKeys })
       toast('Your agent library is now protected.')
       setPreview(null)
+      setSetupMode(null)
+      await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
+      await queryClient.invalidateQueries({ queryKey: ['sync-center-inventory'] })
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), 'destructive')
     } finally {
@@ -96,8 +100,27 @@ export default function SyncCenter() {
     if (!profile) return
     setBusy('reviewing')
     try {
-      setRemoteReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
+      const result = await invoke('sync_three_way_review', { profileId: profile.profile_id })
+      setRemoteReview(result)
+      setRemoteSelections(result.skills.filter((skill) => skill.action === 'take-remote').map((skill) => skill.id))
       setShowInventory(true)
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), 'destructive')
+    } finally {
+      setBusy('idle')
+    }
+  }
+
+  async function applySelectedRemoteChanges() {
+    if (!profile || remoteSelections.length === 0) return
+    setBusy('publishing')
+    try {
+      const result = await invoke('sync_apply_remote_changes', { profileId: profile.profile_id, skillIds: remoteSelections })
+      toast(`Restored ${result.restored.length} remote change${result.restored.length === 1 ? '' : 's'}.`)
+      setRemoteReview(null)
+      setRemoteSelections([])
+      await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
+      await queryClient.invalidateQueries({ queryKey: ['sync-center-inventory'] })
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), 'destructive')
     } finally {
@@ -240,10 +263,18 @@ export default function SyncCenter() {
           {remoteReview && (
             <div className="mt-4 rounded-xl border border-border bg-muted/25 p-3 text-xs">
               <p className="font-semibold">Change review</p>
-              <div className="mt-2 flex flex-wrap gap-1.5 text-muted-foreground">
-                {remoteReview.skills.map((skill) => <span key={skill.id} className="rounded-full border border-border bg-background px-2 py-0.5">{skill.id}: {skill.action.replace('-', ' ')}</span>)}
+              <div className="mt-2 space-y-1 text-muted-foreground">
+                {remoteReview.skills.map((skill) => {
+                  const selectable = skill.action === 'take-remote'
+                  return <label key={skill.id} className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-background/60">
+                    <input type="checkbox" disabled={!selectable} checked={selectable && remoteSelections.includes(skill.id)} onChange={() => setRemoteSelections((current) => current.includes(skill.id) ? current.filter((id) => id !== skill.id) : [...current, skill.id])} />
+                    <span className="min-w-0 flex-1 truncate">{skill.id}</span>
+                    <span>{skill.action.replace('-', ' ')}</span>
+                  </label>
+                })}
               </div>
-              <p className="mt-2 text-muted-foreground">Nothing is applied from this review. Conflicts and unmanaged local changes stay local until you choose a resolution.</p>
+              <p className="mt-2 text-muted-foreground">Only safe remote changes can be selected. Conflicts and unmanaged local changes stay local until you choose a resolution.</p>
+              {remoteSelections.length > 0 && <Button size="sm" className="mt-3" onClick={applySelectedRemoteChanges} disabled={busy !== 'idle'}>Apply selected remote changes</Button>}
             </div>
           )}
           {!profile && (

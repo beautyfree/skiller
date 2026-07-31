@@ -11,6 +11,7 @@ import type {
   SkillSourceParam,
   SyncProfileStatusJson,
   SyncInventoryJson,
+  SyncThreeWayReviewJson,
   SyncPublishPreviewJson,
   SyncRestorePreviewJson,
   UpdateAllResultJson,
@@ -79,7 +80,7 @@ import { resolveSkillSourcePath } from './skill-paths'
 import { sharedSkillsDir } from './shared-skills'
 import { readProvenance } from './provenance'
 import { scanSyncInventory } from './sync-inventory'
-import { makeSyncLedger, readSyncLedger, writeSyncLedgerAt, syncLedgerPath } from './sync-ledger'
+import { classifyThreeWaySkill, makeSyncLedger, readSyncLedger, writeSyncLedgerAt, syncLedgerPath } from './sync-ledger'
 import { createGitHubSyncRepository } from './github-sync'
 import { applySyncPublishPlan, createSyncPublishPlan, type SyncPublishCandidate } from './sync-publish'
 import { applySyncRestorePlan, createSyncRestorePlan } from './sync-restore'
@@ -418,6 +419,25 @@ export function createRequestHandlers(ctx: {
       const commit = await commitSyncWorkspace(workspace, 'Skiller sync: protect agent library')
       await pushSyncWorkspace(workspace)
       return { commit, pushed: true }
+    },
+    sync_three_way_review: async (params: { profileId: string }): Promise<SyncThreeWayReviewJson> => {
+      assertSyncStableId(params.profileId)
+      if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
+      const workspace = syncWorkspacePath(params.profileId)
+      const status = await getSyncWorkspaceStatus(workspace)
+      if (!status.remoteUrl) throw new Error('This library has no Git remote')
+      if (status.changed) throw new Error('Sync workspace has uncommitted changes; resolve them before reviewing')
+      await fetchSyncWorkspace(workspace)
+      await fastForwardSyncWorkspace(workspace)
+      const restore = createSyncRestorePlan(workspace, sharedSkillsDir())
+      const ledger = readSyncLedger(params.profileId)
+      return {
+        profile_id: params.profileId,
+        skills: restore.entries.map((entry) => ({
+          id: entry.id,
+          action: classifyThreeWaySkill(entry.id, ledger?.skills[entry.id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256).action,
+        })),
+      }
     },
     sync_publish_preview: async (params: {
       profileId: string

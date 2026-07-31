@@ -255,6 +255,14 @@ export type SyncInventoryJson = {
   invalid_paths: number;
 };
 
+export type SyncThreeWayReviewJson = {
+  profile_id: string;
+  skills: {
+    id: string;
+    action: "take-remote" | "publish-local" | "unchanged" | "conflict" | "unmanaged";
+  }[];
+};
+
 export type SkillSourceParam =
   | { LocalPath: { path: string } }
   | { GitRepository: { repo_url: string; skill_path?: string | null } }
@@ -287,6 +295,7 @@ export type AppRPCSchema = {
         params: { remoteUrl: string; selectedKeys?: string[] };
         response: { commit: string | null; pushed: boolean };
       };
+      sync_three_way_review: { params: { profileId: string }; response: SyncThreeWayReviewJson };
       sync_publish_preview: {
         params: {
           profileId: string;

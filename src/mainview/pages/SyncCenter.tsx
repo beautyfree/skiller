@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ChevronRight, Cloud, GitBranch, ShieldCheck } from 'lucide-react'
 import { invoke } from '@/mainview/lib/native'
-import type { SyncInventoryJson, SyncProfileStatusJson, SyncPublishPreviewJson } from '@/shared/rpc-schema'
+import type { SyncInventoryJson, SyncProfileStatusJson, SyncPublishPreviewJson, SyncThreeWayReviewJson } from '@/shared/rpc-schema'
 import { Button } from '@/mainview/components/ui/button'
 import { useToast } from '@/mainview/components/ToastProvider'
 
@@ -24,6 +24,7 @@ export default function SyncCenter() {
   const [repositoryName, setRepositoryName] = useState('skiller-agent-library')
   const [remoteUrl, setRemoteUrl] = useState('')
   const [preview, setPreview] = useState<SyncPublishPreviewJson | null>(null)
+  const [remoteReview, setRemoteReview] = useState<SyncThreeWayReviewJson | null>(null)
   const [busy, setBusy] = useState<'idle' | 'reviewing' | 'creating' | 'publishing'>('idle')
   const { toast } = useToast()
   const { data: inventory, isLoading: inventoryLoading } = useQuery<SyncInventoryJson>({
@@ -78,6 +79,19 @@ export default function SyncCenter() {
       await invoke('sync_center_publish', { remoteUrl, selectedKeys })
       toast('Your agent library is now protected.')
       setPreview(null)
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), 'destructive')
+    } finally {
+      setBusy('idle')
+    }
+  }
+
+  async function reviewRemoteChanges() {
+    if (!profile) return
+    setBusy('reviewing')
+    try {
+      setRemoteReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
+      setShowInventory(true)
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), 'destructive')
     } finally {
@@ -147,7 +161,7 @@ export default function SyncCenter() {
                 {profile.behind > 0 ? ` ${profile.behind} remote change${profile.behind === 1 ? '' : 's'} available.` : ''}
               </p>
             </div>
-            <Button size="sm" onClick={() => setShowInventory(true)}>Review changes <ChevronRight className="size-3.5" /></Button>
+            <Button size="sm" onClick={reviewRemoteChanges} disabled={busy !== 'idle'}>Review changes <ChevronRight className="size-3.5" /></Button>
           </div>
         </section>
       )}
@@ -188,6 +202,15 @@ export default function SyncCenter() {
             {!inventoryLoading && protectedCount === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No valid skills were found yet.</p>}
           </div>
           {inventory?.invalid_paths ? <p className="mt-3 text-xs text-muted-foreground">{inventory.invalid_paths} unreadable or invalid skill folder{inventory.invalid_paths === 1 ? '' : 's'} were left untouched.</p> : null}
+          {remoteReview && (
+            <div className="mt-4 rounded-xl border border-border bg-muted/25 p-3 text-xs">
+              <p className="font-semibold">Change review</p>
+              <div className="mt-2 flex flex-wrap gap-1.5 text-muted-foreground">
+                {remoteReview.skills.map((skill) => <span key={skill.id} className="rounded-full border border-border bg-background px-2 py-0.5">{skill.id}: {skill.action.replace('-', ' ')}</span>)}
+              </div>
+              <p className="mt-2 text-muted-foreground">Nothing is applied from this review. Conflicts and unmanaged local changes stay local until you choose a resolution.</p>
+            </div>
+          )}
           {!profile && (
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/35 p-3">
               <p className="text-xs text-muted-foreground">{selectedKeys.length} selected. Next, choose where this protected library lives.</p>

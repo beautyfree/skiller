@@ -16,6 +16,8 @@ import {
   getInstallCommand,
   getInstallDocsUrl,
   useAgents,
+  useRuntimeAgent,
+  useSkillsCliLock,
   type AgentConfig,
 } from "@/mainview/hooks/useAgents";
 import { useSkills, installedAgents } from "@/mainview/hooks/useSkills";
@@ -33,6 +35,8 @@ export default function Dashboard() {
     isFetching: agentsFetching,
     refetch: refetchAgents,
   } = useAgents();
+  const { data: runtimeAgent } = useRuntimeAgent();
+  const { data: skillsCliLock } = useSkillsCliLock();
   const {
     data: skills,
     isLoading: skillsLoading,
@@ -113,6 +117,27 @@ export default function Dashboard() {
           icon={<Puzzle className="size-4 text-primary/70" />}
         />
       </div>
+
+      {(runtimeAgent || skillsCliLock) && (
+        <div className="rounded-xl border border-border/70 bg-muted/25 px-4 py-3 text-xs text-muted-foreground">
+          {runtimeAgent && (
+            <p>
+              {t("dashboard.runtimeAgent", {
+                agent: runtimeAgent.runtime_name,
+                source: runtimeAgent.source,
+              })}
+            </p>
+          )}
+          {skillsCliLock && (
+            <p className={runtimeAgent ? "mt-1" : undefined}>
+              {t("dashboard.skillsCliLock", {
+                count: skillsCliLock.skills.length,
+                version: skillsCliLock.version,
+              })}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Agent cards */}
       <div>

@@ -19,6 +19,9 @@ import { useTheme } from './hooks/useTheme'
 import CloseConfirmDialog from './components/CloseConfirmDialog'
 import { useToast } from './components/ToastProvider'
 import AppUpdateBanner from './components/AppUpdateBanner'
+import ReleaseNotesDialog from './components/ReleaseNotesDialog'
+import releaseNotes from './release-notes.generated.json'
+import { shouldShowReleaseNotes, type ReleaseNote } from '@/shared/release-notes'
 
 const GITHUB_REPO_URL =
   'https://github.com/beautyfree/skiller'
@@ -38,6 +41,7 @@ function AppInner() {
   const [telemetryReady, setTelemetryReady] = useState(false)
   const [closeDialogOpen, setCloseDialogOpen] = useState(false)
   const [showGithubStarPrompt, setShowGithubStarPrompt] = useState(false)
+  const [releaseNotesVersion, setReleaseNotesVersion] = useState<string | null>(null)
   // Onboarding shows on very first launch (or when user explicitly replays it
   // from Settings). Guarded by a localStorage flag — we respect privacy mode
   // by falling back to "not done" if storage throws, which still shows once.
@@ -63,6 +67,9 @@ function AppInner() {
                 to: currentVersion,
               }),
             )
+            if (shouldShowReleaseNotes(previousVersion, currentVersion, releaseNotes as ReleaseNote[])) {
+              setReleaseNotesVersion(currentVersion)
+            }
           }
           localStorage.setItem(LAST_SEEN_VERSION_STORAGE_KEY, currentVersion)
         } catch {
@@ -74,6 +81,12 @@ function AppInner() {
       cancelled = true
     }
   }, [t, toast])
+
+  useEffect(() => {
+    const handler = () => setReleaseNotesVersion((releaseNotes as ReleaseNote[])[0]?.version ?? null)
+    window.addEventListener('skiller:open-release-notes', handler)
+    return () => window.removeEventListener('skiller:open-release-notes', handler)
+  }, [])
 
   useEffect(() => {
     if (!telemetryReady || appOpenedTrackedRef.current) return
@@ -311,6 +324,12 @@ function AppInner() {
         onDone={() => setCloseDialogOpen(false)}
       />
       <AppUpdateBanner />
+      <ReleaseNotesDialog
+        open={releaseNotesVersion !== null}
+        notes={releaseNotes as ReleaseNote[]}
+        initialVersion={releaseNotesVersion}
+        onClose={() => setReleaseNotesVersion(null)}
+      />
       {onboardingOpen && (
         <OnboardingWizard onClose={() => setOnboardingOpen(false)} />
       )}

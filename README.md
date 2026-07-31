@@ -18,7 +18,7 @@ Skiller gives you one control center to:
 
 ## Supported agents
 
-Skiller supports **44 agents** natively — drop a skill into one place and it propagates to all of them.
+Skiller supports **49 agents** natively — drop a skill into one place and it propagates to all of them.
 
 <table>
   <tr>
@@ -50,11 +50,22 @@ Skiller supports **44 agents** natively — drop a skill into one place and it p
 <details>
 <summary><b>+ 28 more agents</b> (click to expand)</summary>
 
-Adal · Amp · Augment · Bob · Command Code · Continue · Cortex · Crush · DeepAgents · Firebender · Goose · iFlow CLI · Junie · Kilo · Kimi CLI · Kode · MCPJam · Mistral Vibe · Mux · Neovate · OpenHands · Pi · Pochi · Qwen Code · Replit · Roo · Trae (CN) · Zencoder
+Adal · Amp · Antigravity CLI · Augment · Bob · Command Code · Continue · Cortex · Crush · DeepAgents · Dexto · Firebender · Goose · iFlow CLI · Junie · Kilo · Kimi CLI · Kode · Loaf · MCPJam · Mistral Vibe · Mux · Neovate · OpenHands · Pi · Pochi · PromptScript · Qwen Code · Replit · Roo · Trae (CN) · Zed · Zencoder
 
 Skiller auto-detects any of these the moment they're installed — no setup required.
 
 </details>
+
+### Skills CLI compatibility
+
+Project skills use the shared `.agents/skills/` convention wherever an agent supports it. The universal-agent snapshot is pinned in [`agents/skills-sh-universal.json`](agents/skills-sh-universal.json) to the upstream [Skills CLI](https://github.com/vercel-labs/skills) commit; maintainers refresh it deliberately with:
+
+```bash
+node scripts/sync-skills-sh-universal-agents.mjs --refresh --ref <immutable-commit-sha>
+node scripts/sync-skills-sh-universal-agents.mjs --check
+```
+
+Skiller also reads the Skills CLI v3 global `.skill-lock.json` (`$XDG_STATE_HOME/skills/.skill-lock.json` or `~/.agents/.skill-lock.json`) through its local API. It is strictly read-only, so Skills CLI remains the owner of update history and selected agents. Runtime agent context is exposed separately using `AI_AGENT` and `@vercel/detect-agent`; it never marks an agent as installed or changes install targets.
 
 ## Product Tour
 
@@ -106,8 +117,11 @@ Once installed, Skiller keeps itself current:
 - Checks for new versions on launch, then every 6 hours in the background.
 - Downloads the full updated bundle on demand (click **Download update** in Settings → App Updates).
 - Shows status and a one-click **Restart & install** button once ready.
+- After the first launch of a new version, opens **What's new** with the release's dated changes. The same window and recent release history are always available from Settings → App Updates.
 
 Powered by [`electron-updater`](https://www.electron.build/auto-update) reading from this repo's GitHub Releases.
+
+Release notes are generated at build time from the Release Please-maintained [`CHANGELOG.md`](CHANGELOG.md); no separate in-app changelog needs manual editing.
 
 ## For Developers
 

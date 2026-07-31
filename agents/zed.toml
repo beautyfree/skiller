@@ -1,0 +1,8 @@
+slug = "zed"
+name = "Zed"
+enabled = true
+project_skills_dir = ".agents/skills"
+global_paths = ["~/.config/zed/skills"]
+skill_format = "skill-md"
+install_docs_url = "https://zed.dev/docs/ai/agent-panel"
+detect_paths = ["/Applications/Zed.app", "~/.config/zed", "~/.var/app/dev.zed.Zed/config/zed"]

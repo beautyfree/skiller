@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.25](https://github.com/beautyfree/skiller/compare/v0.2.24...v0.2.25) (2026-07-31)
+
+
+### Bug Fixes
+
+* **ci:** resolve release PR verification head ([1ace7f2](https://github.com/beautyfree/skiller/commit/1ace7f21456de1518deec2092a1118f50c52215c))
+* **ci:** verify the release PR head commit ([dea6413](https://github.com/beautyfree/skiller/commit/dea64133d380248ddfb7cc69c8ab3a215d69d949))
+
+
+### Documentation
+
+* add release hardening checklist ([d7bb47b](https://github.com/beautyfree/skiller/commit/d7bb47b41c2f478000423fcebd90b592e5490d60))
+
 ## [0.2.24](https://github.com/beautyfree/skiller/compare/v0.2.23...v0.2.24) (2026-07-31)
 
 

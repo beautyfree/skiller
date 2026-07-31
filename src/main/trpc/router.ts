@@ -20,6 +20,8 @@ export function createAppRouter(ctx: {
   return t.router({
     list_agents: proc.query(() => h.list_agents()),
     detect_agents: proc.query(() => h.detect_agents()),
+    detect_runtime_agent: proc.query(() => h.detect_runtime_agent()),
+    read_skills_cli_lock: proc.query(() => h.read_skills_cli_lock()),
     scan_all_skills: proc.query(() => h.scan_all_skills()),
     scan_agent_skills: proc.input(anyIn).query(({ input }) => h.scan_agent_skills(input)),
     install_skill: proc.input(anyIn).mutation(({ input }) => h.install_skill(input)),

@@ -59,6 +59,27 @@ export type AgentConfigJson = {
   detection_reason: "cli" | "marker" | "skills-only" | "not-found";
 };
 
+/** Metadata read from the Skills CLI lock file; Skiller never writes this file. */
+export type SkillsCliLockJson = {
+  path: string;
+  version: number;
+  skills: {
+    name: string;
+    source: string;
+    source_type: string;
+    source_url: string;
+    ref: string | null;
+    skill_path: string | null;
+    updated_at: string;
+  }[];
+} | null;
+
+export type RuntimeAgentJson = {
+  runtime_name: string;
+  mapped_agent_slug: string | null;
+  source: "AI_AGENT" | "@vercel/detect-agent";
+} | null;
+
 export type RepoEntryJson = {
   repo_url?: string | null;
   local_path?: string | null;
@@ -194,6 +215,8 @@ export type AppRPCSchema = {
     requests: {
       list_agents: { params?: void; response: AgentConfigJson[] };
       detect_agents: { params?: void; response: AgentConfigJson[] };
+      detect_runtime_agent: { params?: void; response: RuntimeAgentJson };
+      read_skills_cli_lock: { params?: void; response: SkillsCliLockJson };
       scan_all_skills: { params?: void; response: SkillJson[] };
       scan_agent_skills: { params: { agentSlug: string }; response: SkillJson[] };
       install_skill: { params: { source: SkillSourceParam; targetAgents: string[] }; response: void };

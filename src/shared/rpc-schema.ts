@@ -244,6 +244,17 @@ export type SyncProfileStatusJson = {
   behind: number;
 };
 
+export type SyncInventoryJson = {
+  items: {
+    candidate_key: string;
+    display_name: string;
+    content_hash: string;
+    locations: { agent_slug: string; kind: "shared" | "agent-local" | "inherited" }[];
+  }[];
+  collisions: { display_name: string; candidate_keys: string[] }[];
+  invalid_paths: number;
+};
+
 export type SkillSourceParam =
   | { LocalPath: { path: string } }
   | { GitRepository: { repo_url: string; skill_path?: string | null } }
@@ -267,6 +278,7 @@ export type AppRPCSchema = {
       scan_all_skills: { params?: void; response: SkillJson[] };
       scan_agent_skills: { params: { agentSlug: string }; response: SkillJson[] };
       list_sync_profiles: { params?: void; response: SyncProfileStatusJson[] };
+      scan_sync_inventory: { params?: void; response: SyncInventoryJson };
       sync_publish_preview: {
         params: {
           profileId: string;

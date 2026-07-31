@@ -25,6 +25,7 @@ export function createAppRouter(ctx: {
     scan_all_skills: proc.query(() => h.scan_all_skills()),
     scan_agent_skills: proc.input(anyIn).query(({ input }) => h.scan_agent_skills(input)),
     list_sync_profiles: proc.query(() => h.list_sync_profiles()),
+    scan_sync_inventory: proc.query(() => h.scan_sync_inventory()),
     sync_publish_preview: proc.input(anyIn).query(({ input }) => h.sync_publish_preview(input)),
     sync_profile_publish: proc.input(anyIn).mutation(({ input }) => h.sync_profile_publish(input)),
     sync_profile_clone: proc.input(anyIn).mutation(({ input }) => h.sync_profile_clone(input)),

@@ -10,6 +10,7 @@ import type {
   SkillRepoJson,
   SkillSourceParam,
   SyncProfileStatusJson,
+  SyncInventoryJson,
   SyncPublishPreviewJson,
   SyncRestorePreviewJson,
   UpdateAllResultJson,
@@ -77,6 +78,7 @@ import {
 import { resolveSkillSourcePath } from './skill-paths'
 import { sharedSkillsDir } from './shared-skills'
 import { readProvenance } from './provenance'
+import { scanSyncInventory } from './sync-inventory'
 import { createGitHubSyncRepository } from './github-sync'
 import { applySyncPublishPlan, createSyncPublishPlan, type SyncPublishCandidate } from './sync-publish'
 import { applySyncRestorePlan, createSyncRestorePlan } from './sync-restore'
@@ -245,6 +247,23 @@ async function listSyncProfiles(): Promise<SyncProfileStatusJson[]> {
   return result
 }
 
+function syncInventoryToJson(): SyncInventoryJson {
+  const inventory = scanSyncInventory(loadDetectedAgents('scan_sync_inventory'))
+  return {
+    items: inventory.items.map((item) => ({
+      candidate_key: item.candidateKey,
+      display_name: item.displayName,
+      content_hash: item.contentHash,
+      locations: item.locations.map((location) => ({ agent_slug: location.agentSlug, kind: location.kind })),
+    })),
+    collisions: inventory.collisions.map((collision) => ({
+      display_name: collision.displayName,
+      candidate_keys: collision.candidateKeys,
+    })),
+    invalid_paths: inventory.invalidPaths,
+  }
+}
+
 function skillSourceParamToInternal(s: SkillSourceParam): SkillSource {
   if (s === 'Unknown') return { kind: 'Unknown' }
   if ('LocalPath' in s) return { kind: 'LocalPath', path: s.LocalPath.path }
@@ -342,6 +361,7 @@ export function createRequestHandlers(ctx: {
         .map(skillToJson)
     },
     list_sync_profiles: async (): Promise<SyncProfileStatusJson[]> => listSyncProfiles(),
+    scan_sync_inventory: async (): Promise<SyncInventoryJson> => syncInventoryToJson(),
     sync_publish_preview: async (params: {
       profileId: string
       mode: 'private' | 'team' | 'public'

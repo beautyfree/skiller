@@ -1,5 +1,32 @@
 [
   {
+    "version": "0.2.26",
+    "date": "2026-07-31",
+    "sections": [
+      {
+        "title": "Features",
+        "changes": [
+          "add skills cli compatibility and release notes"
+        ]
+      },
+      {
+        "title": "Bug Fixes",
+        "changes": [
+          "**ci:** package releases without builder publishing",
+          "**ci:** resolve draft releases with release permissions",
+          "**ci:** retry draft release resolution",
+          "**release:** disable electron-builder autopublish"
+        ]
+      },
+      {
+        "title": "Documentation",
+        "changes": [
+          "record release hardening evidence"
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.25",
     "date": "2026-07-31",
     "sections": [

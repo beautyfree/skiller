@@ -55,6 +55,7 @@ describe("detectAgents", () => {
 			]);
 
 			expect(agent.detected).toBe(true);
+			expect(agent.detection_reason).toBe("marker");
 		}
 	});
 
@@ -72,6 +73,7 @@ describe("detectAgents", () => {
 		]);
 
 		expect(agent.detected).toBe(false);
+		expect(agent.detection_reason).toBe("not-found");
 	});
 
 	it("still recognizes an explicit detection marker", () => {
@@ -88,6 +90,7 @@ describe("detectAgents", () => {
 		]);
 
 		expect(agent.detected).toBe(true);
+		expect(agent.detection_reason).toBe("marker");
 	});
 
 	it("does not treat a marker containing only Skiller's skills path as an agent install", () => {
@@ -106,6 +109,7 @@ describe("detectAgents", () => {
 		]);
 
 		expect(agent.detected).toBe(false);
+		expect(agent.detection_reason).toBe("skills-only");
 	});
 
 	it("recognizes a marker with agent state in addition to the skills path", () => {
@@ -125,6 +129,20 @@ describe("detectAgents", () => {
 		]);
 
 		expect(agent.detected).toBe(true);
+		expect(agent.detection_reason).toBe("marker");
+	});
+
+	it("reports CLI detection separately from filesystem markers", () => {
+		const [agent] = detectAgents([
+			defaultAgentConfig({
+				slug: "bun",
+				name: "Bun",
+				cli_command: "bun",
+			}),
+		]);
+
+		expect(agent.detected).toBe(true);
+		expect(agent.detection_reason).toBe("cli");
 	});
 });
 

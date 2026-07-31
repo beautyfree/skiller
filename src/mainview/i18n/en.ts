@@ -58,6 +58,11 @@ const en = {
     skillCount: "{{count}} skill installed",
     skillCount_other: "{{count}} skills installed",
     notInstalled: "Not installed",
+    detection: "Detection",
+    detectionCli: "CLI found on PATH",
+    detectionMarker: "Application state found",
+    detectionSkillsOnly: "Only a skills folder was found",
+    detectionNotFound: "No CLI or application state found",
     installationGuide: "Installation Guide",
     /** Compact label for agent card button (grid-friendly) */
     installationGuideShort: "Install",

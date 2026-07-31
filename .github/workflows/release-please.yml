@@ -69,13 +69,7 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           skip-github-release: true
-          # IMPORTANT: tags created by GITHUB_TOKEN do NOT trigger other
-          # workflows (GitHub deliberately breaks action→action chains). We
-          # need release.yml to fire on the v* tag push so bins get built,
-          # so use a fine-grained PAT with Contents:write + PRs:write on
-          # this repo, stored as repo secret RELEASE_PLEASE_TOKEN.
-          # Fallback to GITHUB_TOKEN so the workflow doesn't hard-fail when
-          # the secret isn't configured; you'll just have to re-push tags
-          # manually (git push --delete origin vX.Y.Z && git push origin
-          # vX.Y.Z) to trigger the build.
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # Release builds use release.yml's `workflow_run` trigger after the
+          # release-finalization workflow succeeds. GITHUB_TOKEN is therefore
+          # sufficient and a missing PAT cannot leave a draft unreleased.
+          token: ${{ secrets.GITHUB_TOKEN }}

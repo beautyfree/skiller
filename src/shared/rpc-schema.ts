@@ -302,6 +302,7 @@ export type AppRPCSchema = {
       };
       sync_three_way_review: { params: { profileId: string }; response: SyncThreeWayReviewJson };
       sync_apply_remote_changes: { params: { profileId: string; skillIds: string[] }; response: { restored: string[] } };
+	  sync_apply_conflicting_remote_changes: { params: { profileId: string; skillIds: string[] }; response: { restored: string[] } };
       sync_publish_local_changes: { params: { profileId: string; skillIds: string[] }; response: { commit: string | null; pushed: boolean } };
 	  sync_keep_local_changes: { params: { profileId: string; skillIds: string[] }; response: { kept: string[] } };
       sync_recovery_status: { params: { profileId: string }; response: { pending: boolean } };

@@ -317,7 +317,7 @@ function syncPublishPlanToJson(plan: ReturnType<typeof createSyncPublishPlan>): 
   }
 }
 
-async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc: BunSideRpc): Promise<{ restored: string[] }> {
+async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc: BunSideRpc, allowConflict = false): Promise<{ restored: string[] }> {
   assertSyncStableId(profileId)
   const skillIds = selectedSyncSkillIds(ids)
   if (!hasSyncWorkspace(profileId)) throw new Error('This library has not been set up on this computer')
@@ -333,7 +333,7 @@ async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc:
     const entry = entries.get(id)
     if (!entry) throw new Error(`Remote skill is not available: ${id}`)
     const action = classifyThreeWaySkill(id, ledger?.skills[id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256, ledger?.skills[id]?.kept_remote_sha256).action
-    if (action !== 'take-remote') throw new Error(`Remote change must be resolved manually: ${id}`)
+	if (action !== 'take-remote' && !(allowConflict && action === 'conflict')) throw new Error(`Remote change must be resolved manually: ${id}`)
   }
   applySyncRestorePlan(plan, skillIds, profileId)
   const agents = loadDetectedAgents('sync_apply_remote_changes')
@@ -568,6 +568,7 @@ export function createRequestHandlers(ctx: {
       }
     },
     sync_apply_remote_changes: async (params: { profileId: string; skillIds: string[] }) => applyReviewedRemoteChanges(params.profileId, params.skillIds, rpc),
+	 sync_apply_conflicting_remote_changes: async (params: { profileId: string; skillIds: string[] }) => applyReviewedRemoteChanges(params.profileId, params.skillIds, rpc, true),
 	 sync_publish_local_changes: async (params: { profileId: string; skillIds: string[] }) => publishReviewedLocalChanges(params.profileId, params.skillIds),
 	 sync_keep_local_changes: async (params: { profileId: string; skillIds: string[] }) => keepReviewedLocalChanges(params.profileId, params.skillIds),
     sync_recovery_status: async (params: { profileId: string }) => {

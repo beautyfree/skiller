@@ -178,6 +178,21 @@ export default function SyncCenter() {
     }
   }
 
+	async function useRemoteForConflict(skillId: string) {
+	  if (!profile) return
+	  setBusy('publishing')
+	  try {
+		const result = await invoke('sync_apply_conflicting_remote_changes', { profileId: profile.profile_id, skillIds: [skillId] })
+		toast(`Replaced the local copy of ${result.restored[0]} with the reviewed remote version.`)
+		setRemoteReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
+		await queryClient.invalidateQueries({ queryKey: ['sync-center-inventory'] })
+	  } catch (error) {
+		toast(error instanceof Error ? error.message : String(error), 'destructive')
+	  } finally {
+		setBusy('idle')
+	  }
+	}
+
   async function recoverInterruptedRestore() {
     if (!profile) return
     setBusy('reviewing')
@@ -326,6 +341,7 @@ export default function SyncCenter() {
 					<input type="checkbox" disabled={!selectable} checked={selectable && selected.includes(skill.id)} onChange={() => setSelected((current) => current.includes(skill.id) ? current.filter((id) => id !== skill.id) : [...current, skill.id])} />
                     <span className="min-w-0 flex-1 truncate">{skill.id}</span>
                     <span>{skill.action.replace('-', ' ')}</span>
+					{skill.action === 'conflict' && <Button size="xs" variant="ghost" className="h-6 px-1.5 text-[10px]" onClick={(event) => { event.preventDefault(); void useRemoteForConflict(skill.id) }} disabled={busy !== 'idle'}>Use remote</Button>}
                   </label>
                 })}
               </div>

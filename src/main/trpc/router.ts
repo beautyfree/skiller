@@ -31,6 +31,7 @@ export function createAppRouter(ctx: {
     sync_center_publish: proc.input(anyIn).mutation(({ input }) => h.sync_center_publish(input)),
     sync_three_way_review: proc.input(anyIn).mutation(({ input }) => h.sync_three_way_review(input)),
     sync_apply_remote_changes: proc.input(anyIn).mutation(({ input }) => h.sync_apply_remote_changes(input)),
+	 sync_apply_conflicting_remote_changes: proc.input(anyIn).mutation(({ input }) => h.sync_apply_conflicting_remote_changes(input)),
     sync_publish_local_changes: proc.input(anyIn).mutation(({ input }) => h.sync_publish_local_changes(input)),
 	 sync_keep_local_changes: proc.input(anyIn).mutation(({ input }) => h.sync_keep_local_changes(input)),
     sync_recovery_status: proc.input(anyIn).query(({ input }) => h.sync_recovery_status(input)),

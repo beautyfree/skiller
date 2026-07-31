@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { planBundledSkillExport } from "./sync-export";
 import { applySyncPublishPlan, createSyncPublishPlan } from "./sync-publish";
+import { applySyncRestorePlan, createSyncRestorePlan } from "./sync-restore";
 import {
 	assertPortableRelativePath,
 	createSyncManifest,
@@ -177,5 +178,50 @@ describe("sync publish plan", () => {
 		const plan = createSyncPublishPlan("personal", "private", [{ id: "private", sourcePath: root }]);
 		expect(() => applySyncPublishPlan(workspace, plan)).toThrow("blocked");
 		expect(existsSync(join(workspace, "skiller-sync.yaml"))).toBe(false);
+	});
+});
+
+describe("sync restore preview", () => {
+	it("classifies bundled skills before restoring them", () => {
+		const source = makeSkill({ "SKILL.md": "# Writing\n" });
+		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+		const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
+		tempDirs.push(workspace, canonical);
+		applySyncPublishPlan(workspace, createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: source }]));
+
+		expect(createSyncRestorePlan(workspace, canonical).entries).toMatchObject([{ id: "writing", action: "create" }]);
+		mkdirSync(join(canonical, "writing"));
+		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Local change\n");
+		expect(createSyncRestorePlan(workspace, canonical).entries).toMatchObject([{ id: "writing", action: "conflict" }]);
+		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Writing\n");
+		expect(createSyncRestorePlan(workspace, canonical).entries).toMatchObject([{ id: "writing", action: "unchanged" }]);
+	});
+
+	it("rejects a remote bundle whose contents no longer match its manifest", () => {
+		const source = makeSkill({ "SKILL.md": "# Writing\n" });
+		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+		const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
+		tempDirs.push(workspace, canonical);
+		applySyncPublishPlan(workspace, createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: source }]));
+		writeFileSync(join(workspace, "skills", "writing", "SKILL.md"), "# Tampered\n");
+		expect(() => createSyncRestorePlan(workspace, canonical)).toThrow("integrity mismatch");
+	});
+
+	it("restores only explicitly selected entries and protects a changed local skill", () => {
+		const source = makeSkill({ "SKILL.md": "# Remote\n" });
+		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+		const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
+		tempDirs.push(workspace, canonical);
+		applySyncPublishPlan(workspace, createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: source }]));
+
+		const createPlan = createSyncRestorePlan(workspace, canonical);
+		applySyncRestorePlan(createPlan, ["writing"]);
+		expect(readFileSync(join(canonical, "writing", "SKILL.md"), "utf8")).toBe("# Remote\n");
+
+		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Local\n");
+		const conflictPlan = createSyncRestorePlan(workspace, canonical);
+		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Changed after preview\n");
+		expect(() => applySyncRestorePlan(conflictPlan, ["writing"])).toThrow("changed after preview");
+		expect(readFileSync(join(canonical, "writing", "SKILL.md"), "utf8")).toBe("# Changed after preview\n");
 	});
 });

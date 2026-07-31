@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { planBundledSkillExport } from "./sync-export";
+import { applySyncPublishPlan, createSyncPublishPlan } from "./sync-publish";
 import {
 	assertPortableRelativePath,
 	createSyncManifest,
@@ -10,6 +11,14 @@ import {
 	stringifySyncManifest,
 } from "./sync-profile";
 import { scanTextForSecrets } from "./sync-secret-scan";
+import {
+	cloneSyncWorkspace,
+	commitSyncWorkspace,
+	getSyncWorkspaceStatus,
+	initializeSyncWorkspace,
+	pushSyncWorkspace,
+} from "./sync-workspace";
+import simpleGit from "simple-git";
 
 const tempDirs: string[] = [];
 
@@ -123,5 +132,50 @@ describe("bundled skill export plan", () => {
 		const linked = makeSkill({ "SKILL.md": "# Linked\n" });
 		symlinkSync(join(root, "SKILL.md"), join(linked, "copied.md"));
 		expect(() => planBundledSkillExport("linked", linked)).toThrow("rejects symlink");
+	});
+});
+
+describe("sync Git workspace", () => {
+	it("publishes and restores through a generic local Git remote without a personal identity", async () => {
+		const root = mkdtempSync(join(tmpdir(), "skiller-sync-git-"));
+		tempDirs.push(root);
+		const remote = join(root, "remote.git");
+		const publisher = join(root, "publisher");
+		const restore = join(root, "restore");
+		await simpleGit().raw(["init", "--bare", remote]);
+
+		await initializeSyncWorkspace(publisher, remote);
+		writeFileSync(join(publisher, "skiller-sync.yaml"), "schema_version: 1\n");
+		expect(await commitSyncWorkspace(publisher, "Skiller sync: publish profile")).toMatch(/^[a-f0-9]{40}$/);
+		await pushSyncWorkspace(publisher);
+		expect(await getSyncWorkspaceStatus(publisher)).toMatchObject({ changed: false, ahead: 0, remoteUrl: remote });
+
+		await cloneSyncWorkspace(remote, restore);
+		expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe("schema_version: 1\n");
+		expect(await simpleGit(restore).raw(["config", "user.email"])).toBe("sync@skiller.local\n");
+	});
+});
+
+describe("sync publish plan", () => {
+	it("requires a clean reviewed plan before writing a bundled skill and manifest", () => {
+		const root = makeSkill({ "SKILL.md": "# Writing\n", "references/style.md": "Short sentences.\n" });
+		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+		tempDirs.push(workspace);
+		const plan = createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: root }]);
+		applySyncPublishPlan(workspace, plan);
+		expect(readFileSync(join(workspace, "skills/writing/SKILL.md"), "utf8")).toBe("# Writing\n");
+		expect(parseSyncManifest(readFileSync(join(workspace, "skiller-sync.yaml"), "utf8"))).toMatchObject({
+			profile: { id: "personal", mode: "private" },
+			skills: [{ id: "writing", path: "skills/writing" }],
+		});
+	});
+
+	it("blocks writes when the reviewed skill contains a secret", () => {
+		const root = makeSkill({ "SKILL.md": "TOKEN=ghp_abcdefghijklmnopqrstuvwxyz123456\n" });
+		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+		tempDirs.push(workspace);
+		const plan = createSyncPublishPlan("personal", "private", [{ id: "private", sourcePath: root }]);
+		expect(() => applySyncPublishPlan(workspace, plan)).toThrow("blocked");
+		expect(existsSync(join(workspace, "skiller-sync.yaml"))).toBe(false);
 	});
 });

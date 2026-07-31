@@ -30,7 +30,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       prs_created: ${{ steps.release_please.outputs.prs_created }}
-      pr: ${{ steps.release_please.outputs.pr }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
         with:
@@ -90,11 +89,13 @@ jobs:
     steps:
       - id: pr
         env:
-          PR: ${{ needs.release-please.outputs.pr }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          echo "head_sha=$(jq -r '.sha' <<<"$PR")" >> "$GITHUB_OUTPUT"
-          echo "head_ref=$(jq -r '.headBranchName' <<<"$PR")" >> "$GITHUB_OUTPUT"
+          pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=main" --jq '[.[] | select(.head.ref | startswith("release-please--"))] | sort_by(.updated_at) | last')"
+          [[ -n "$pr" && "$pr" != "null" ]] || { echo "No open Release Please PR found"; exit 1; }
+          echo "head_sha=$(jq -r '.head.sha' <<<"$pr")" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$(jq -r '.head.ref' <<<"$pr")" >> "$GITHUB_OUTPUT"
       - id: check
         env:
           GH_TOKEN: ${{ github.token }}

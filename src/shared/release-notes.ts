@@ -19,11 +19,18 @@ export function parseChangelog(markdown: string, limit = 20): ReleaseNote[] {
 		const sections = sectionMatches.flatMap((section, sectionIndex) => {
 			const start = (section.index ?? 0) + section[0].length;
 			const end = sectionMatches[sectionIndex + 1]?.index ?? body.length;
+			const seenChanges = new Set<string>();
 			const changes = body
 				.slice(start, end)
 				.split("\n")
 				.filter((line) => /^\s*[-*]\s+/.test(line))
-				.map((line) => normalizeReleaseNoteLine(line));
+				.map((line) => normalizeReleaseNoteLine(line))
+				.filter((change) => {
+					const key = change.toLowerCase();
+					if (seenChanges.has(key)) return false;
+					seenChanges.add(key);
+					return true;
+				});
 			return changes.length > 0 ? [{ title: section[1].trim(), changes }] : [];
 		});
 		return { version: match[1], date: match[2] ?? null, sections };

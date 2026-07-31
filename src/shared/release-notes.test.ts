@@ -39,6 +39,17 @@ describe("release notes", () => {
 		expect(findReleaseNote(notes, "9.9.9")).toBeNull();
 	});
 
+	it("deduplicates equivalent changelog entries created by a commit and its merge", () => {
+		const notes = parseChangelog(`## [1.2.0] (2026-07-31)
+
+### Features
+
+* **ui:** polish the release dialog
+* **UI:** polish the release dialog
+`);
+		expect(notes[0]?.sections[0]?.changes).toEqual(["**ui:** polish the release dialog"]);
+	});
+
 	it("opens only after a real upgrade with notes", () => {
 		const notes = parseChangelog(changelog);
 		expect(shouldShowReleaseNotes(null, "1.2.0", notes)).toBe(false);

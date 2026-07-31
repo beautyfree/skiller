@@ -29,6 +29,8 @@ export function createAppRouter(ctx: {
     sync_center_publish_preview: proc.input(anyIn.optional()).query(({ input }) => h.sync_center_publish_preview(input)),
     sync_center_publish: proc.input(anyIn).mutation(({ input }) => h.sync_center_publish(input)),
     sync_three_way_review: proc.input(anyIn).mutation(({ input }) => h.sync_three_way_review(input)),
+    sync_recovery_status: proc.input(anyIn).query(({ input }) => h.sync_recovery_status(input)),
+    sync_recovery_rollback: proc.input(anyIn).mutation(({ input }) => h.sync_recovery_rollback(input)),
     sync_publish_preview: proc.input(anyIn).query(({ input }) => h.sync_publish_preview(input)),
     sync_profile_publish: proc.input(anyIn).mutation(({ input }) => h.sync_profile_publish(input)),
     sync_profile_clone: proc.input(anyIn).mutation(({ input }) => h.sync_profile_clone(input)),

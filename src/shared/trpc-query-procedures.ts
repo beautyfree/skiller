@@ -6,6 +6,7 @@ const QUERY_NAMES = new Set<string>([
   'list_sync_profiles',
   'scan_sync_inventory',
   'sync_center_publish_preview',
+  'sync_recovery_status',
   'sync_publish_preview',
   'read_skill_content',
   'fetch_remote_skill_content',

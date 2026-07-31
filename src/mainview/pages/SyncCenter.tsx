@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ChevronRight, Cloud, GitBranch, ShieldCheck } from 'lucide-react'
 import { invoke } from '@/mainview/lib/native'
 import type { SyncInventoryJson, SyncProfileStatusJson, SyncPublishPreviewJson, SyncThreeWayReviewJson } from '@/shared/rpc-schema'
@@ -27,6 +27,7 @@ export default function SyncCenter() {
   const [remoteReview, setRemoteReview] = useState<SyncThreeWayReviewJson | null>(null)
   const [busy, setBusy] = useState<'idle' | 'reviewing' | 'creating' | 'publishing'>('idle')
   const { toast } = useToast()
+  const queryClient = useQueryClient()
   const { data: inventory, isLoading: inventoryLoading } = useQuery<SyncInventoryJson>({
     queryKey: ['sync-center-inventory'],
     queryFn: () => invoke('scan_sync_inventory'),
@@ -37,6 +38,11 @@ export default function SyncCenter() {
   })
 
   const profile = profiles?.[0]
+  const { data: recovery } = useQuery<{ pending: boolean }>({
+    queryKey: ['sync-recovery', profile?.profile_id],
+    queryFn: () => invoke('sync_recovery_status', { profileId: profile!.profile_id }),
+    enabled: Boolean(profile),
+  })
   const protectedCount = inventory?.items.length ?? 0
   const agentCount = new Set(inventory?.items.flatMap((item) => item.locations.map((location) => location.agent_slug)) ?? []).size
 
@@ -92,6 +98,22 @@ export default function SyncCenter() {
     try {
       setRemoteReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
       setShowInventory(true)
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), 'destructive')
+    } finally {
+      setBusy('idle')
+    }
+  }
+
+  async function recoverInterruptedRestore() {
+    if (!profile) return
+    setBusy('reviewing')
+    try {
+      const result = await invoke('sync_recovery_rollback', { profileId: profile.profile_id })
+      toast(result.recovered ? 'Interrupted restore was rolled back safely.' : 'No interrupted restore was found.')
+      await queryClient.invalidateQueries({ queryKey: ['sync-recovery', profile.profile_id] })
+      await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
+      await queryClient.invalidateQueries({ queryKey: ['sync-center-inventory'] })
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), 'destructive')
     } finally {
@@ -163,6 +185,19 @@ export default function SyncCenter() {
             </div>
             <Button size="sm" onClick={reviewRemoteChanges} disabled={busy !== 'idle'}>Review changes <ChevronRight className="size-3.5" /></Button>
           </div>
+        </section>
+      )}
+
+      {profile && recovery?.pending && (
+        <section className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400" />
+            <div>
+              <h2 className="text-sm font-semibold text-amber-950 dark:text-amber-100">An interrupted restore needs recovery</h2>
+              <p className="mt-1 text-xs text-amber-900/80 dark:text-amber-200/80">Skiller kept backups before the operation. Restore the pre-change state before reviewing anything else.</p>
+            </div>
+          </div>
+          <Button size="sm" variant="outline" onClick={recoverInterruptedRestore} disabled={busy !== 'idle'}>Restore pre-change state</Button>
         </section>
       )}
 

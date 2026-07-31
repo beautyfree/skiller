@@ -81,6 +81,7 @@ import { sharedSkillsDir } from './shared-skills'
 import { readProvenance } from './provenance'
 import { scanSyncInventory } from './sync-inventory'
 import { classifyThreeWaySkill, makeSyncLedger, readSyncLedger, writeSyncLedgerAt, syncLedgerPath } from './sync-ledger'
+import { readRestoreJournalAt, recoverRestoreJournalAt, syncJournalPath } from './sync-journal'
 import { createGitHubSyncRepository } from './github-sync'
 import { applySyncPublishPlan, createSyncPublishPlan, type SyncPublishCandidate } from './sync-publish'
 import { applySyncRestorePlan, createSyncRestorePlan } from './sync-restore'
@@ -439,6 +440,14 @@ export function createRequestHandlers(ctx: {
         })),
       }
     },
+    sync_recovery_status: async (params: { profileId: string }) => {
+      assertSyncStableId(params.profileId)
+      return { pending: readRestoreJournalAt(syncJournalPath(params.profileId)) !== null }
+    },
+    sync_recovery_rollback: async (params: { profileId: string }) => {
+      assertSyncStableId(params.profileId)
+      return { recovered: recoverRestoreJournalAt(syncJournalPath(params.profileId)) }
+    },
     sync_publish_preview: async (params: {
       profileId: string
       mode: 'private' | 'team' | 'public'
@@ -558,7 +567,7 @@ export function createRequestHandlers(ctx: {
         .filter((skill): skill is Extract<typeof skill, { kind: 'reference' }> => skill.kind === 'reference')
       const available = new Set([...plan.entries.map((entry) => entry.id), ...referenceSkills.map((skill) => skill.id)])
       for (const id of skillIds) if (!available.has(id)) throw new Error(`Skill is not present in this sync profile: ${id}`)
-      applySyncRestorePlan(plan, skillIds.filter((id) => plan.entries.some((entry) => entry.id === id)))
+      applySyncRestorePlan(plan, skillIds.filter((id) => plan.entries.some((entry) => entry.id === id)), params.profileId)
 
       const agents = loadDetectedAgents('sync_restore_apply')
       const targetAgentSlugs = plan.manifest.agent_policy.mode === 'selected'

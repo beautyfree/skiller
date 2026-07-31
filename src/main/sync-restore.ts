@@ -3,6 +3,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSyn
 import { dirname, join, resolve, sep } from "node:path";
 import { parseSyncManifest, type SyncManifest } from "./sync-profile";
 import { planBundledSkillExport, type SyncExportFinding } from "./sync-export";
+import { recoverRestoreJournalAt, syncJournalPath, writeRestoreJournalAt, type RestoreJournal } from "./sync-journal";
 
 export type SyncRestoreAction = "create" | "unchanged" | "conflict";
 
@@ -74,7 +75,7 @@ export function createSyncRestorePlan(workspacePath: string, canonicalSkillsPath
  * Applies only entries explicitly selected by the user after preview. It
  * refuses to overwrite a local skill that changed since that preview.
  */
-export function applySyncRestorePlan(plan: SyncRestorePlan, selectedIds: string[]): void {
+export function applySyncRestorePlan(plan: SyncRestorePlan, selectedIds: string[], profileId?: string): void {
 	if (plan.secretFindings.length > 0) {
 		throw new Error(`Sync restore is blocked by ${plan.secretFindings.length} secret finding(s)`);
 	}
@@ -86,6 +87,27 @@ export function applySyncRestorePlan(plan: SyncRestorePlan, selectedIds: string[
 	const backupRoot = `${stagedRoot}-backup`;
 	const staged = entries.map((entry) => ({ entry, stagingPath: stageRestoreEntry(stagedRoot, entry) }));
 	const applied: { targetPath: string; backupPath: string; hadPrevious: boolean }[] = [];
+	const journalPath = profileId ? syncJournalPath(profileId) : null;
+	if (journalPath) {
+		// A stale journal represents an interrupted earlier restore and must be
+		// recovered before a new plan changes the same canonical library.
+		recoverRestoreJournalAt(journalPath);
+	}
+	const journal: RestoreJournal | null = journalPath ? {
+		schema_version: 1,
+		profile_id: profileId!,
+		staged_root: stagedRoot,
+		backup_root: backupRoot,
+		phase: "applying",
+		entries: staged.map(({ entry }) => ({
+			id: entry.id,
+			targetPath: entry.targetPath,
+			backupPath: join(backupRoot, entry.id),
+			hadPrevious: existsSync(entry.targetPath),
+			stage: "pending",
+		})),
+	} : null;
+	if (journal && journalPath) writeRestoreJournalAt(journalPath, journal);
 	try {
 		for (const { entry, stagingPath } of staged) {
 			assertRestorePrecondition(entry);
@@ -94,6 +116,10 @@ export function applySyncRestorePlan(plan: SyncRestorePlan, selectedIds: string[
 			if (hadPrevious) {
 				mkdirSync(dirname(backupPath), { recursive: true });
 				renameSync(entry.targetPath, backupPath);
+				if (journal && journalPath) {
+					journal.entries.find((item) => item.id === entry.id)!.stage = "backed-up";
+					writeRestoreJournalAt(journalPath, journal);
+				}
 			}
 			try {
 				mkdirSync(dirname(entry.targetPath), { recursive: true });
@@ -103,13 +129,23 @@ export function applySyncRestorePlan(plan: SyncRestorePlan, selectedIds: string[
 				throw error;
 			}
 			applied.push({ targetPath: entry.targetPath, backupPath, hadPrevious });
+			if (journal && journalPath) {
+				journal.entries.find((item) => item.id === entry.id)!.stage = "applied";
+				writeRestoreJournalAt(journalPath, journal);
+			}
+		}
+		if (journal && journalPath) {
+			journal.phase = "completed";
+			writeRestoreJournalAt(journalPath, journal);
 		}
 		rmSync(backupRoot, { recursive: true, force: true });
+		if (journalPath) rmSync(journalPath, { force: true });
 	} catch (error) {
 		for (const item of applied.reverse()) {
 			if (existsSync(item.targetPath)) rmSync(item.targetPath, { recursive: true, force: true });
 			if (item.hadPrevious && existsSync(item.backupPath)) renameSync(item.backupPath, item.targetPath);
 		}
+		if (journalPath) rmSync(journalPath, { force: true });
 		throw error;
 	} finally {
 		if (existsSync(stagedRoot)) rmSync(stagedRoot, { recursive: true, force: true });

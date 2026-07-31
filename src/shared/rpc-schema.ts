@@ -296,6 +296,8 @@ export type AppRPCSchema = {
         response: { commit: string | null; pushed: boolean };
       };
       sync_three_way_review: { params: { profileId: string }; response: SyncThreeWayReviewJson };
+      sync_recovery_status: { params: { profileId: string }; response: { pending: boolean } };
+      sync_recovery_rollback: { params: { profileId: string }; response: { recovered: boolean } };
       sync_publish_preview: {
         params: {
           profileId: string;

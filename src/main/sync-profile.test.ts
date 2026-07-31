@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { planBundledSkillExport } from "./sync-export";
-import { applySyncPublishPlan, createSyncPublishPlan } from "./sync-publish";
+import { applySyncPublishPlan, createSyncPublishPlan, mergeBundledUpdateIntoManifest } from "./sync-publish";
 import { applySyncRestorePlan, createSyncRestorePlan } from "./sync-restore";
 import {
 	assertPortableRelativePath,
@@ -20,6 +20,7 @@ import {
 	getSyncWorkspaceStatus,
 	initializeSyncWorkspace,
 	pushSyncWorkspace,
+	refreshSyncWorkspaceStatus,
 } from "./sync-workspace";
 import simpleGit from "simple-git";
 
@@ -182,6 +183,28 @@ describe("sync Git workspace", () => {
 
 		expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe("second\n");
 	});
+
+	it("checks remote metadata without merging a remote change into the managed checkout", async () => {
+		const root = mkdtempSync(join(tmpdir(), "skiller-sync-git-"));
+		tempDirs.push(root);
+		const remote = join(root, "remote.git");
+		const publisher = join(root, "publisher");
+		const observer = join(root, "observer");
+		await simpleGit().raw(["init", "--bare", remote]);
+		await initializeSyncWorkspace(publisher, remote);
+		writeFileSync(join(publisher, "skiller-sync.yaml"), "first\n");
+		await commitSyncWorkspace(publisher, "first");
+		await pushSyncWorkspace(publisher);
+		await cloneSyncWorkspace(remote, observer);
+
+		writeFileSync(join(publisher, "skiller-sync.yaml"), "second\n");
+		await commitSyncWorkspace(publisher, "second");
+		await pushSyncWorkspace(publisher);
+		await refreshSyncWorkspaceStatus(observer);
+
+		expect(await getSyncWorkspaceStatus(observer)).toMatchObject({ behind: 1, changed: false });
+		expect(readFileSync(join(observer, "skiller-sync.yaml"), "utf8")).toBe("first\n");
+	});
 });
 
 describe("sync publish plan", () => {
@@ -232,6 +255,20 @@ describe("sync publish plan", () => {
 			installations: ["claude-code", "codex"],
 		}));
 		expect(stringifySyncManifest(plan.manifest)).not.toContain(root);
+	});
+
+	it("keeps unrelated remote skills when publishing one reviewed local change", () => {
+		const first = makeSkill({ "SKILL.md": "# First\n" });
+		const second = makeSkill({ "SKILL.md": "# Second\n" });
+		const changed = makeSkill({ "SKILL.md": "# First, local revision\n" });
+		const base = createSyncPublishPlan("personal", "private", [
+			{ id: "first", sourcePath: first },
+			{ id: "second", sourcePath: second },
+		]);
+		const update = createSyncPublishPlan("personal", "private", [{ id: "first", sourcePath: changed }]);
+		const merged = mergeBundledUpdateIntoManifest(base.manifest, update);
+		expect(merged.manifest.skills.map((skill) => skill.id)).toEqual(["first", "second"]);
+		expect(merged.manifest.skills.find((skill) => skill.id === "second")).toEqual(base.manifest.skills[1]);
 	});
 
 	it("blocks writes when the reviewed skill contains a secret", () => {

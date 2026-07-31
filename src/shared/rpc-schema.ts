@@ -242,6 +242,10 @@ export type SyncProfileStatusJson = {
   changed: boolean;
   ahead: number;
   behind: number;
+	/** Timestamp of the last non-interactive remote metadata check. */
+	last_checked_at: string | null;
+	/** Authentication/network problem from the last check, never credential text. */
+	check_error: string | null;
 };
 
 export type SyncInventoryJson = {
@@ -286,6 +290,7 @@ export type AppRPCSchema = {
       scan_all_skills: { params?: void; response: SkillJson[] };
       scan_agent_skills: { params: { agentSlug: string }; response: SkillJson[] };
       list_sync_profiles: { params?: void; response: SyncProfileStatusJson[] };
+	  refresh_sync_profiles: { params?: void; response: SyncProfileStatusJson[] };
       scan_sync_inventory: { params?: void; response: SyncInventoryJson };
       sync_center_publish_preview: {
         params?: { selectedKeys?: string[] };
@@ -297,6 +302,7 @@ export type AppRPCSchema = {
       };
       sync_three_way_review: { params: { profileId: string }; response: SyncThreeWayReviewJson };
       sync_apply_remote_changes: { params: { profileId: string; skillIds: string[] }; response: { restored: string[] } };
+	  sync_publish_local_changes: { params: { profileId: string; skillIds: string[] }; response: { commit: string | null; pushed: boolean } };
       sync_recovery_status: { params: { profileId: string }; response: { pending: boolean } };
       sync_recovery_rollback: { params: { profileId: string }; response: { recovered: boolean } };
       sync_publish_preview: {

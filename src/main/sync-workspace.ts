@@ -109,6 +109,17 @@ export async function fetchSyncWorkspace(workspacePath: string): Promise<void> {
 }
 
 /**
+ * Metadata-only background check. It deliberately disables terminal prompts:
+ * a periodic status refresh must never steal focus or wait for a password.
+ * Fetching updates only Git's remote-tracking metadata; it never merges,
+ * writes a managed skill, commits, or pushes.
+ */
+export async function refreshSyncWorkspaceStatus(workspacePath: string): Promise<void> {
+	const git = gitAt(workspacePath).env({ GIT_TERMINAL_PROMPT: "0" });
+	await git.raw(["-c", "credential.interactive=false", "fetch", "origin", "--prune", "--no-tags"]);
+}
+
+/**
  * Advance only a clean managed checkout. We never create a merge commit or
  * overwrite a locally-ahead profile while preparing a restore preview.
  */

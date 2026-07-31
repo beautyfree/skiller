@@ -26,6 +26,7 @@ export default function SyncCenter() {
   const [preview, setPreview] = useState<SyncPublishPreviewJson | null>(null)
   const [remoteReview, setRemoteReview] = useState<SyncThreeWayReviewJson | null>(null)
   const [remoteSelections, setRemoteSelections] = useState<string[]>([])
+	const [localSelections, setLocalSelections] = useState<string[]>([])
   const [busy, setBusy] = useState<'idle' | 'reviewing' | 'creating' | 'publishing'>('idle')
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -103,7 +104,39 @@ export default function SyncCenter() {
       const result = await invoke('sync_three_way_review', { profileId: profile.profile_id })
       setRemoteReview(result)
       setRemoteSelections(result.skills.filter((skill) => skill.action === 'take-remote').map((skill) => skill.id))
+	  setLocalSelections(result.skills.filter((skill) => skill.action === 'publish-local').map((skill) => skill.id))
       setShowInventory(true)
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), 'destructive')
+    } finally {
+      setBusy('idle')
+    }
+  }
+
+	async function publishSelectedLocalChanges() {
+	  if (!profile || localSelections.length === 0) return
+	  setBusy('publishing')
+	  try {
+		await invoke('sync_publish_local_changes', { profileId: profile.profile_id, skillIds: localSelections })
+		toast(`Published ${localSelections.length} reviewed local change${localSelections.length === 1 ? '' : 's'}.`)
+		setRemoteReview(null)
+		setLocalSelections([])
+		await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
+	  } catch (error) {
+		toast(error instanceof Error ? error.message : String(error), 'destructive')
+	  } finally {
+		setBusy('idle')
+	  }
+	}
+
+  async function refreshRemoteStatus() {
+    setBusy('reviewing')
+    try {
+      const refreshed = await invoke('refresh_sync_profiles')
+      queryClient.setQueryData(['sync-profiles'], refreshed)
+      const current = refreshed.find((item) => item.profile_id === profile?.profile_id)
+      if (current?.check_error) toast(current.check_error, 'destructive')
+      else toast(current?.behind ? `${current.behind} remote change${current.behind === 1 ? '' : 's'} ready to review.` : 'Your remote library is up to date.')
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), 'destructive')
     } finally {
@@ -206,8 +239,12 @@ export default function SyncCenter() {
                 {profile.behind > 0 ? ` ${profile.behind} remote change${profile.behind === 1 ? '' : 's'} available.` : ''}
               </p>
             </div>
-            <Button size="sm" onClick={reviewRemoteChanges} disabled={busy !== 'idle'}>Review changes <ChevronRight className="size-3.5" /></Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={refreshRemoteStatus} disabled={busy !== 'idle'}>Check now</Button>
+              <Button size="sm" onClick={reviewRemoteChanges} disabled={busy !== 'idle'}>Review changes <ChevronRight className="size-3.5" /></Button>
+            </div>
           </div>
+		  {profile.check_error && <p className="mt-3 text-xs text-amber-700 dark:text-amber-300">{profile.check_error}</p>}
         </section>
       )}
 
@@ -265,16 +302,19 @@ export default function SyncCenter() {
               <p className="font-semibold">Change review</p>
               <div className="mt-2 space-y-1 text-muted-foreground">
                 {remoteReview.skills.map((skill) => {
-                  const selectable = skill.action === 'take-remote'
+				  const selectable = skill.action === 'take-remote' || skill.action === 'publish-local'
+				  const selected = skill.action === 'take-remote' ? remoteSelections : localSelections
+				  const setSelected = skill.action === 'take-remote' ? setRemoteSelections : setLocalSelections
                   return <label key={skill.id} className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-background/60">
-                    <input type="checkbox" disabled={!selectable} checked={selectable && remoteSelections.includes(skill.id)} onChange={() => setRemoteSelections((current) => current.includes(skill.id) ? current.filter((id) => id !== skill.id) : [...current, skill.id])} />
+					<input type="checkbox" disabled={!selectable} checked={selectable && selected.includes(skill.id)} onChange={() => setSelected((current) => current.includes(skill.id) ? current.filter((id) => id !== skill.id) : [...current, skill.id])} />
                     <span className="min-w-0 flex-1 truncate">{skill.id}</span>
                     <span>{skill.action.replace('-', ' ')}</span>
                   </label>
                 })}
               </div>
-              <p className="mt-2 text-muted-foreground">Only safe remote changes can be selected. Conflicts and unmanaged local changes stay local until you choose a resolution.</p>
+			  <p className="mt-2 text-muted-foreground">Remote-only changes can be applied; local-only changes can be published. Conflicts and unmanaged skills stay local until you resolve them manually.</p>
               {remoteSelections.length > 0 && <Button size="sm" className="mt-3" onClick={applySelectedRemoteChanges} disabled={busy !== 'idle'}>Apply selected remote changes</Button>}
+			  {localSelections.length > 0 && <Button size="sm" variant="outline" className="mt-3 ml-2" onClick={publishSelectedLocalChanges} disabled={busy !== 'idle'}>Publish selected local changes</Button>}
             </div>
           )}
           {!profile && (

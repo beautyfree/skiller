@@ -83,7 +83,7 @@ import { scanSyncInventory } from './sync-inventory'
 import { classifyThreeWaySkill, makeSyncLedger, readSyncLedger, writeSyncLedgerAt, syncLedgerPath } from './sync-ledger'
 import { readRestoreJournalAt, recoverRestoreJournalAt, syncJournalPath } from './sync-journal'
 import { createGitHubSyncRepository } from './github-sync'
-import { applySyncPublishPlan, createSyncPublishPlan, type SyncPublishCandidate } from './sync-publish'
+import { applySyncPublishPlan, createSyncPublishPlan, mergeBundledUpdateIntoManifest, type SyncPublishCandidate } from './sync-publish'
 import { applySyncRestorePlan, createSyncRestorePlan } from './sync-restore'
 import { assertCredentialFreeGitRemote, assertPortableRelativePath, assertSyncStableId, parseSyncManifest, type SyncManifest } from './sync-profile'
 import {
@@ -98,6 +98,7 @@ import {
   setSyncWorkspaceRemote,
   syncProfilesDirectory,
   syncWorkspacePath,
+	refreshSyncWorkspaceStatus,
 } from './sync-workspace'
 import {
   effectiveMacOSWindowBlur,
@@ -222,7 +223,7 @@ function buildSyncPublishPreview(
   }
 }
 
-async function listSyncProfiles(): Promise<SyncProfileStatusJson[]> {
+async function listSyncProfiles(refreshRemote = false): Promise<SyncProfileStatusJson[]> {
   const directory = syncProfilesDirectory()
   if (!existsSync(directory)) return []
   const result: SyncProfileStatusJson[] = []
@@ -232,7 +233,20 @@ async function listSyncProfiles(): Promise<SyncProfileStatusJson[]> {
       if (!hasSyncWorkspace(profileId)) continue
       const workspace = syncWorkspacePath(profileId)
       const manifest = parseSyncManifest(readFileSync(join(workspace, 'skiller-sync.yaml'), 'utf8'))
-      const status = await getSyncWorkspaceStatus(workspace)
+	  let status = await getSyncWorkspaceStatus(workspace)
+	  let checkError: string | null = null
+	  let checkedAt: string | null = null
+	  if (refreshRemote && status.remoteUrl) {
+		try {
+		  await refreshSyncWorkspaceStatus(workspace)
+		  checkedAt = new Date().toISOString()
+		  status = await getSyncWorkspaceStatus(workspace)
+		} catch {
+		  // Intentionally do not surface arbitrary Git output: it can include a
+		  // remote URL. The user gets a clear, non-sensitive next step instead.
+		  checkError = 'Could not check the remote. Connect or authenticate, then retry from Sync Center.'
+		}
+	  }
       result.push({
         profile_id: profileId,
         mode: manifest.profile.mode,
@@ -242,6 +256,8 @@ async function listSyncProfiles(): Promise<SyncProfileStatusJson[]> {
         changed: status.changed,
         ahead: status.ahead,
         behind: status.behind,
+		last_checked_at: checkedAt,
+		check_error: checkError,
       })
     } catch {
       // An incomplete/non-Skiller Git folder is intentionally not a profile.
@@ -336,6 +352,47 @@ async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc:
   writeSyncLedgerAt(syncLedgerPath(profileId), makeSyncLedger(profileId, [...nextSkills.entries()].map(([id, sha256]) => ({ id, sha256 }))))
   rpc.send('skills_changed')
   return { restored: skillIds }
+}
+
+/**
+ * Explicitly publishes only entries that changed locally while the remote
+ * stayed at the last applied base. The current remote manifest is retained
+ * verbatim for every other skill, so a granular publish cannot erase a
+ * colleague's unrelated addition.
+ */
+async function publishReviewedLocalChanges(profileId: string, ids: string[]): Promise<{ commit: string | null; pushed: boolean }> {
+  assertSyncStableId(profileId)
+  const skillIds = selectedSyncSkillIds(ids)
+  if (!hasSyncWorkspace(profileId)) throw new Error('This library has not been set up on this computer')
+  const workspace = syncWorkspacePath(profileId)
+  let status = await getSyncWorkspaceStatus(workspace)
+  if (!status.remoteUrl || status.changed) throw new Error('Sync workspace must be clean and connected before publishing local changes')
+  await fetchSyncWorkspace(workspace)
+  await fastForwardSyncWorkspace(workspace)
+  const restore = createSyncRestorePlan(workspace, sharedSkillsDir())
+  const existing = restore.manifest
+  const ledger = readSyncLedger(profileId)
+  const entries = new Map(restore.entries.map((entry) => [entry.id, entry]))
+  const existingBundled = new Map(existing.skills.filter((skill) => skill.kind === 'bundled').map((skill) => [skill.id, skill]))
+  const candidates: SyncPublishCandidate[] = []
+  for (const id of skillIds) {
+    const entry = entries.get(id)
+    const current = existingBundled.get(id)
+    if (!entry || !current || entry.localSha256 === null) throw new Error(`Local skill is not available: ${id}`)
+    const action = classifyThreeWaySkill(id, ledger?.skills[id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256).action
+    if (action !== 'publish-local') throw new Error(`Local change must be resolved manually: ${id}`)
+    candidates.push({ id, sourcePath: entry.targetPath, installationAgentSlugs: current.installations })
+  }
+  const update = createSyncPublishPlan(profileId, existing.profile.mode, candidates, existing.agent_policy)
+	const publishedBundles = new Map(update.manifest.skills.filter((skill) => skill.kind === 'bundled').map((skill) => [skill.id, skill]))
+	const merged = mergeBundledUpdateIntoManifest(existing, update)
+  applySyncPublishPlan(workspace, merged)
+  const commit = await commitSyncWorkspace(workspace, 'Skiller sync: publish reviewed local changes')
+  await pushSyncWorkspace(workspace)
+  const nextSkills = new Map(Object.entries(ledger?.skills ?? {}).map(([id, entry]) => [id, entry.sha256]))
+  for (const id of skillIds) nextSkills.set(id, publishedBundles.get(id)!.sha256)
+  writeSyncLedgerAt(syncLedgerPath(profileId), makeSyncLedger(profileId, [...nextSkills.entries()].map(([id, sha256]) => ({ id, sha256 }))))
+  return { commit, pushed: true }
 }
 
 function skillSourceParamToInternal(s: SkillSourceParam): SkillSource {
@@ -435,6 +492,7 @@ export function createRequestHandlers(ctx: {
         .map(skillToJson)
     },
     list_sync_profiles: async (): Promise<SyncProfileStatusJson[]> => listSyncProfiles(),
+	refresh_sync_profiles: async (): Promise<SyncProfileStatusJson[]> => listSyncProfiles(true),
     scan_sync_inventory: async (): Promise<SyncInventoryJson> => syncInventoryToJson(),
     sync_center_publish_preview: async (params?: { selectedKeys?: string[] }): Promise<SyncPublishPreviewJson> => {
       return syncPublishPlanToJson(createSyncCenterPublishPlan(params?.selectedKeys))
@@ -485,6 +543,7 @@ export function createRequestHandlers(ctx: {
       }
     },
     sync_apply_remote_changes: async (params: { profileId: string; skillIds: string[] }) => applyReviewedRemoteChanges(params.profileId, params.skillIds, rpc),
+	 sync_publish_local_changes: async (params: { profileId: string; skillIds: string[] }) => publishReviewedLocalChanges(params.profileId, params.skillIds),
     sync_recovery_status: async (params: { profileId: string }) => {
       assertSyncStableId(params.profileId)
       return { pending: readRestoreJournalAt(syncJournalPath(params.profileId)) !== null }
@@ -563,6 +622,8 @@ export function createRequestHandlers(ctx: {
         changed: status.changed,
         ahead: status.ahead,
         behind: status.behind,
+		last_checked_at: new Date().toISOString(),
+		check_error: null,
       }
     },
     sync_github_create_repo: async (params: { repository: string; visibility: 'private' | 'public' }) => ({

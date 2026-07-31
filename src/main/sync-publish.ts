@@ -33,6 +33,29 @@ export type SyncPublishPlan = {
 	secretFindings: SyncExportFinding[];
 };
 
+/**
+ * Applies a reviewed subset update to an already-fetched manifest.  This is
+ * used for granular "publish my local change" actions: an untouched remote
+ * skill remains in the manifest and in the worktree rather than disappearing
+ * because the user chose to publish just one skill.
+ */
+export function mergeBundledUpdateIntoManifest(base: SyncManifest, update: SyncPublishPlan): SyncPublishPlan {
+	const replacement = new Map(update.manifest.skills.map((skill) => [skill.id, skill]));
+	for (const skill of update.manifest.skills) {
+		const previous = base.skills.find((item) => item.id === skill.id);
+		if (!previous || previous.kind !== "bundled" || skill.kind !== "bundled") {
+			throw new Error(`Granular sync update is not a known bundled skill: ${skill.id}`);
+		}
+	}
+	return {
+		...update,
+		manifest: validateSyncManifest({
+			...base,
+			skills: base.skills.map((skill) => replacement.get(skill.id) ?? skill),
+		}),
+	};
+}
+
 export function createSyncPublishPlan(
 	profileId: string,
 	mode: SyncManifest["profile"]["mode"],

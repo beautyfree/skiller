@@ -87,10 +87,12 @@ function LayoutInner({
   const { data: projects } = useProjects()
   const { data: syncProfiles } = useQuery<SyncProfileStatusJson[]>({
     queryKey: ['sync-profiles'],
-    queryFn: () => invoke('list_sync_profiles'),
-    refetchInterval: 60_000,
+    // Safe metadata check only: no local skills are touched, no merge/commit
+    // is performed and Git is forbidden from showing an auth prompt.
+    queryFn: () => invoke('refresh_sync_profiles'),
+    refetchInterval: 5 * 60_000,
   })
-  const syncNeedsReview = Boolean(syncProfiles?.some((profile) => profile.changed || profile.ahead > 0 || profile.behind > 0))
+  const syncNeedsReview = Boolean(syncProfiles?.some((profile) => profile.changed || profile.ahead > 0 || profile.behind > 0 || profile.check_error))
   const [searchParams] = useSearchParams()
 
   const detectedAgents = useMemo(

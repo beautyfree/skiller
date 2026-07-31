@@ -13,6 +13,8 @@ import type {
   UpdateProgressJson,
 } from '../shared/rpc-schema'
 import { detectAgents, loadAgentConfigs } from './registry'
+import { detectRuntimeAgent } from './runtime-agent'
+import { readSkillsCliLock } from './skills-cli-lock'
 import { getAgentsDir } from './paths'
 import type { AgentConfig } from './types'
 import type { SkillSource } from './skill-types'
@@ -186,6 +188,10 @@ export function createRequestHandlers(ctx: {
       const out = loadDetectedAgents('detect_agents').map(agentConfigToJson)
       return out
     },
+    // Runtime context is informational only. It must never influence the
+    // installable-agent list, which remains guarded by registry detection.
+    detect_runtime_agent: async () => detectRuntimeAgent(),
+    read_skills_cli_lock: async () => readSkillsCliLock(),
     scan_all_skills: async () => {
       const agents = loadDetectedAgents('scan_all_skills')
       const skills = scanAllSkills(agents)

@@ -43,6 +43,8 @@ const en = {
     installedSkills: "Installed Skills",
     agents: "Agents",
     detectedOf: "{{detected}} of {{total}} detected",
+    runtimeAgent: "Current runtime: {{agent}} ({{source}}). This does not change installed-agent detection.",
+    skillsCliLock: "Skills CLI lock: {{count}} skills (format v{{version}}), read-only.",
     refreshTitle: "Refresh agents and skills",
     searchPlaceholder: "Search name / slug / path...",
     filterAll: "All",
@@ -345,6 +347,7 @@ const en = {
     updateVersionOnly: "Version {{version}}",
     updateLastChecked: "Last checked {{time}}",
     updateWelcomeToast: "Updated successfully: {{from}} → {{to}}",
+    viewReleaseNotes: "What's new",
     updateBannerTitle: "Skiller {{version}} is available",
     updateBannerReadyTitle: "Update ready to install",
     updateBannerDescription: "You are on {{current}}. Download {{latest}} now.",
@@ -370,6 +373,14 @@ const en = {
     about: "About",
     saveFailedTitle: "Could not save settings",
     saveFailedDesc: "Something went wrong while saving. Try again.",
+  },
+
+  releaseNotes: {
+    eyebrow: "What's new",
+    versionLabel: "Release version",
+    close: "Close release notes",
+    empty: "No user-facing changes were recorded for this release.",
+    done: "Done",
   },
 
   // === Repos ===

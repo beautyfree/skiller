@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "repository": "https://github.com/vercel-labs/skills",
+    "commit": "1164afa5f0e21ebd01e6fc11249759353f494ad1",
+    "sourcePath": "src/agents.ts"
+  },
+  "agents": [
+    "amp",
+    "antigravity",
+    "antigravity-cli",
+    "cline",
+    "codex",
+    "cursor",
+    "deepagents",
+    "dexto",
+    "firebender",
+    "gemini-cli",
+    "github-copilot",
+    "kimi-code-cli",
+    "loaf",
+    "opencode",
+    "promptscript",
+    "replit",
+    "universal",
+    "warp",
+    "zed"
+  ],
+  "pseudoAgents": [
+    "universal"
+  ],
+  "aliases": {
+    "github-copilot": "copilot-cli",
+    "kimi-code-cli": "kimi-cli"
+  }
+}

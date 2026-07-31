@@ -12,6 +12,7 @@
     "url": "https://github.com/beautyfree/skiller"
   },
   "type": "module",
+  "packageManager": "bun@1.3.14",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

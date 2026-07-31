@@ -125,8 +125,9 @@ after the preview, conflict, and recovery paths are proven.
   generic Git worktree (SSH, HTTPS, `file://`, GitHub/GitLab/Gitea/self-hosted),
   review-before-commit/push, connect-existing-remote, pull/fast-forward review,
   selected transactional restore, and re-installation for detected agents.
-- [ ] Phase 2 — GitHub create-repository shortcut, offline/auth/branch-protection
-  diagnostics, persistent restore journal, and a guided fresh-machine flow.
+- [~] Phase 2 — GitHub create-repository shortcut through the user's existing
+  `gh` session is implemented; offline/auth/branch-protection diagnostics,
+  persistent restore journal, and a guided fresh-machine flow remain.
 - [~] Phase 3 — pinned source-reference authoring and a per-agent-policy
   editor are implemented; explicit three-way conflict choices, public-file
   review, and team-oriented templates remain.

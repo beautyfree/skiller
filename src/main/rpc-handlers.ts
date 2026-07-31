@@ -77,6 +77,7 @@ import {
 import { resolveSkillSourcePath } from './skill-paths'
 import { sharedSkillsDir } from './shared-skills'
 import { readProvenance } from './provenance'
+import { createGitHubSyncRepository } from './github-sync'
 import { applySyncPublishPlan, createSyncPublishPlan, type SyncPublishCandidate } from './sync-publish'
 import { applySyncRestorePlan, createSyncRestorePlan } from './sync-restore'
 import { assertCredentialFreeGitRemote, assertPortableRelativePath, assertSyncStableId, parseSyncManifest, type SyncManifest } from './sync-profile'
@@ -413,6 +414,9 @@ export function createRequestHandlers(ctx: {
         behind: status.behind,
       }
     },
+    sync_github_create_repo: async (params: { repository: string; visibility: 'private' | 'public' }) => ({
+      remoteUrl: await createGitHubSyncRepository(params.repository, params.visibility),
+    }),
     sync_pull_preview: async (params: { profileId: string }): Promise<SyncRestorePreviewJson> => {
       assertSyncStableId(params.profileId)
       if (!hasSyncWorkspace(params.profileId)) throw new Error('Sync profile has not been set up on this computer')

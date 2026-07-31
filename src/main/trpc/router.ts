@@ -28,6 +28,7 @@ export function createAppRouter(ctx: {
     sync_publish_preview: proc.input(anyIn).query(({ input }) => h.sync_publish_preview(input)),
     sync_profile_publish: proc.input(anyIn).mutation(({ input }) => h.sync_profile_publish(input)),
     sync_profile_clone: proc.input(anyIn).mutation(({ input }) => h.sync_profile_clone(input)),
+    sync_github_create_repo: proc.input(anyIn).mutation(({ input }) => h.sync_github_create_repo(input)),
     sync_pull_preview: proc.input(anyIn).mutation(({ input }) => h.sync_pull_preview(input)),
     sync_restore_apply: proc.input(anyIn).mutation(({ input }) => h.sync_restore_apply(input)),
     install_skill: proc.input(anyIn).mutation(({ input }) => h.install_skill(input)),

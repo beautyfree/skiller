@@ -256,6 +256,17 @@ export default function SettingsPage() {
     },
     onError: (err) => toast(err instanceof Error ? err.message : String(err), 'destructive'),
   })
+  const syncGitHubMutation = useMutation({
+    mutationFn: () => invoke('sync_github_create_repo', {
+      repository: syncProfileId,
+      visibility: syncMode === 'public' ? 'public' : 'private',
+    }),
+    onSuccess: (result) => {
+      setSyncRemoteUrl(result.remoteUrl)
+      toast('GitHub repository created. Review and push when ready.')
+    },
+    onError: (err) => toast(err instanceof Error ? err.message : String(err), 'destructive'),
+  })
   const syncRestoreMutation = useMutation({
     mutationFn: () => invoke('sync_restore_apply', {
       profileId: syncProfileId,
@@ -906,6 +917,9 @@ export default function SettingsPage() {
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={reviewSyncPublish} disabled={syncPublishMutation.isPending}>
               Review publish
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => syncGitHubMutation.mutate()} disabled={syncGitHubMutation.isPending}>
+              Create GitHub repo
             </Button>
             <Button size="sm" variant="outline" onClick={() => syncCloneMutation.mutate()} disabled={syncCloneMutation.isPending || !syncRemoteUrl}>
               Connect existing remote

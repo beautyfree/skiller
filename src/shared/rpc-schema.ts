@@ -293,6 +293,10 @@ export type AppRPCSchema = {
         params: { profileId: string; remoteUrl: string };
         response: SyncProfileStatusJson;
       };
+      sync_github_create_repo: {
+        params: { repository: string; visibility: "private" | "public" };
+        response: { remoteUrl: string };
+      };
       sync_pull_preview: { params: { profileId: string }; response: SyncRestorePreviewJson };
       sync_restore_apply: {
         params: { profileId: string; skillIds: string[] };

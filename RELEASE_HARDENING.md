@@ -25,12 +25,12 @@ evidence that electron-updater can consume the release.
 | Status | Work item | Acceptance evidence |
 | --- | --- | --- |
 | [ ] | Protect `main` with a GitHub ruleset | Direct pushes and force-pushes are blocked; pull requests require the `Verify` check and the rule is visible through the GitHub API. |
-| [ ] | Gate releases on an independent verification job | The release workflow runs typecheck, all tests, and a Linux packaging smoke before any platform upload or publication. A failed verification keeps the release draft unpublished. |
-| [ ] | Minimize and harden privileged Actions use | Every action is pinned to an immutable commit SHA; job permissions are least-privilege; build jobs do not receive a GitHub write token unless uploading; no third-party release uploader has access to macOS signing secrets. |
-| [ ] | Make build inputs reproducible | Bun is pinned to an explicit version used by both CI and release; the version and lockfile are recorded in the repository. |
-| [ ] | Resolve only the draft made for the exact release commit | The release workflow matches `target_commitish` to the triggering SHA and fails safely rather than selecting an unrelated draft. |
-| [ ] | Add post-release updater smoke checks | Before publishing, validate every `latest*.yml` manifest against the target version and attached assets; after publishing, verify the release is public and has all expected updater manifests and platform installers. |
-| [ ] | Publish only user-facing and updater-required files | Upload explicit `latest*.yml`, installers, archives, and blockmaps; exclude `builder-debug.yml` and other internal build files. |
+| [x] | Gate releases on an independent verification job | `verify-release` now runs typecheck, all tests, and Linux packaging before platform uploads or publication. |
+| [x] | Minimize and harden privileged Actions use | Actions are pinned to immutable SHA; permissions are job-scoped; `gh release upload` replaces the third-party uploader; build no longer gets `GH_TOKEN`. |
+| [x] | Make build inputs reproducible | CI and release use Bun `1.3.14`; package metadata records the same version. |
+| [x] | Resolve only the draft made for the exact release commit | Draft lookup now requires the exact triggering SHA. |
+| [x] | Add post-release updater smoke checks | Publication is followed by checks for public status, updater manifests, version, and required installers. |
+| [x] | Publish only user-facing and updater-required files | Upload uses explicit updater-manifest and distribution patterns; `builder-debug.yml` is excluded. |
 | [ ] | Validate the hardened flow end-to-end | Publish one patch release without manual tags or intervention; record workflow URL, release URL, all platform job results, and updater-manifest checks below. |
 
 ## Implementation order

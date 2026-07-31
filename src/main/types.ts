@@ -1,6 +1,7 @@
 /** Agent TOML model — same shape as the former Rust/Tauri implementation */
 
 export type SkillFormat = "skill-md";
+export type DetectionReason = "cli" | "marker" | "skills-only" | "not-found";
 
 export interface AgentHooks {
 	install?: string;
@@ -43,6 +44,7 @@ export interface AgentConfig {
 	install_source_label?: string | null;
 	detect_paths: string[];
 	detected: boolean;
+	detection_reason: DetectionReason;
 }
 
 export function defaultAgentConfig(partial: Partial<AgentConfig> & Pick<AgentConfig, "slug" | "name">): AgentConfig {
@@ -50,8 +52,9 @@ export function defaultAgentConfig(partial: Partial<AgentConfig> & Pick<AgentCon
 		enabled: true,
 		global_paths: [],
 		additional_readable_paths: [],
-		detect_paths: [],
-		detected: false,
+	detect_paths: [],
+	detected: false,
+	detection_reason: "not-found",
 		skill_format: "skill-md",
 		...partial,
 	};

@@ -15,6 +15,7 @@ export interface AgentConfig {
   install_docs_url_linux: string | null;
   install_source_label: string | null;
   detected: boolean;
+  detection_reason: "cli" | "marker" | "skills-only" | "not-found";
 }
 
 type OS = "windows" | "linux" | "macos";

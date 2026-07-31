@@ -3,7 +3,7 @@ name: Release Please Tag and Release
 # Handles only release finalization for merged release PRs:
 # - creates/pushes vX.Y.Z tag
 # - creates draft GitHub release
-# Build/upload/publish is still done by release.yml (tag-triggered workflow).
+# Build/upload/publish is handled by release.yml after this workflow completes.
 
 on:
   push:
@@ -32,5 +32,7 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           skip-github-pull-request: true
-          # Use PAT so pushed tags can trigger downstream tag workflows.
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # Release builds start from release.yml's `workflow_run` trigger.
+          # This deliberately uses the repository token: no long-lived PAT is
+          # needed, and GitHub cannot silently suppress the build hand-off.
+          token: ${{ secrets.GITHUB_TOKEN }}

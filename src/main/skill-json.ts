@@ -80,6 +80,7 @@ export function agentConfigToJson(
 		install_source_label: a.install_source_label ?? null,
 		detect_paths: a.detect_paths,
 		detected: a.detected,
+		detection_reason: a.detection_reason,
 	};
 }
 

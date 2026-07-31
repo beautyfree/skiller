@@ -84,13 +84,16 @@ export function detectAgents(configs: AgentConfig[]): AgentConfig[] {
 }
 
 function detectAgent(config: AgentConfig): AgentConfig {
-	let detected = config.cli_command ? commandExists(config.cli_command) : false;
-	if (!detected) {
-		detected = config.detect_paths.some(
-			(p) => existsSync(p) && !isSkillsOnlyMarker(p, config.global_paths),
-		);
+	if (config.cli_command && commandExists(config.cli_command)) {
+		return { ...config, detected: true, detection_reason: "cli" };
 	}
-	return { ...config, detected };
+
+	const marker = config.detect_paths.find((path) => existsSync(path));
+	if (!marker) return { ...config, detected: false, detection_reason: "not-found" };
+	if (isSkillsOnlyMarker(marker, config.global_paths)) {
+		return { ...config, detected: false, detection_reason: "skills-only" };
+	}
+	return { ...config, detected: true, detection_reason: "marker" };
 }
 
 /**

@@ -1,0 +1,9 @@
+slug = "loaf"
+name = "Loaf"
+enabled = true
+project_skills_dir = ".agents/skills"
+global_paths = ["~/.config/loaf/skills"]
+skill_format = "skill-md"
+cli_command = "loaf"
+install_docs_url = "https://loaf.ai/"
+detect_paths = ["~/.config/loaf"]

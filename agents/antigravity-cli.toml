@@ -1,0 +1,9 @@
+slug = "antigravity-cli"
+name = "Antigravity CLI"
+enabled = true
+project_skills_dir = ".agents/skills"
+global_paths = ["~/.gemini/antigravity-cli/skills"]
+skill_format = "skill-md"
+cli_command = "antigravity"
+install_docs_url = "https://antigravity.google/"
+detect_paths = ["~/.gemini/antigravity-cli"]

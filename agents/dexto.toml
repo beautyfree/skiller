@@ -1,0 +1,9 @@
+slug = "dexto"
+name = "Dexto"
+enabled = true
+project_skills_dir = ".agents/skills"
+global_paths = ["~/.config/agents/skills"]
+skill_format = "skill-md"
+cli_command = "dexto"
+install_docs_url = "https://dexto.ai/"
+detect_paths = ["~/.dexto"]

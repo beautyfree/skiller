@@ -18,6 +18,18 @@ export interface AgentConfig {
   detection_reason: "cli" | "marker" | "skills-only" | "not-found";
 }
 
+export interface RuntimeAgent {
+  runtime_name: string;
+  mapped_agent_slug: string | null;
+  source: "AI_AGENT" | "@vercel/detect-agent";
+}
+
+export interface SkillsCliLock {
+  path: string;
+  version: number;
+  skills: { name: string }[];
+}
+
 type OS = "windows" | "linux" | "macos";
 
 function detectOS(): OS {
@@ -109,6 +121,24 @@ export function useAllAgents() {
   return useQuery<AgentConfig[]>({
     queryKey: ["all-agents"],
     queryFn: async () => (await invoke("list_agents")) as AgentConfig[],
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/** Informational only — it is deliberately not merged with install detection. */
+export function useRuntimeAgent() {
+  return useQuery<RuntimeAgent | null>({
+    queryKey: ["runtime-agent"],
+    queryFn: async () => (await invoke("detect_runtime_agent")) as RuntimeAgent | null,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/** Read-only view of provenance maintained by the Skills CLI. */
+export function useSkillsCliLock() {
+  return useQuery<SkillsCliLock | null>({
+    queryKey: ["skills-cli-lock"],
+    queryFn: async () => (await invoke("read_skills_cli_lock")) as SkillsCliLock | null,
     staleTime: 5 * 60 * 1000,
   });
 }

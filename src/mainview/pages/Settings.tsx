@@ -666,6 +666,16 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+          <div className="pt-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => window.dispatchEvent(new Event('skiller:open-release-notes'))}
+            >
+              <Info className="size-3.5" />
+              {t('settings.viewReleaseNotes')}
+            </Button>
+          </div>
         </section>
 
 

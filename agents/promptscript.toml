@@ -1,0 +1,9 @@
+slug = "promptscript"
+name = "PromptScript"
+enabled = true
+project_skills_dir = ".agents/skills"
+global_paths = ["~/.config/agents/skills"]
+skill_format = "skill-md"
+cli_command = "promptscript"
+install_docs_url = "https://promptscript.dev/"
+detect_paths = ["~/.promptscript"]

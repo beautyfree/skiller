@@ -56,7 +56,7 @@ describe("shared skills scanner", () => {
 		expect(skills[0]?.installations).toEqual([expect.objectContaining({ agent_slug: "codex", is_symlink: true })]);
 	});
 
-	it("does not turn a configured readable path into an agent installation", () => {
+	it("shows a configured non-shared readable path as an inherited agent link", () => {
 		const shared = root();
 		const claude = root();
 		const warp = root();
@@ -66,7 +66,10 @@ describe("shared skills scanner", () => {
 
 		const skills = scanAllSkills([claudeAgent, warpAgent], shared);
 		expect(skills).toHaveLength(1);
-		expect(skills[0]?.installations).toEqual([expect.objectContaining({ agent_slug: "claude-code" })]);
+		expect(skills[0]?.installations).toEqual(expect.arrayContaining([
+			expect.objectContaining({ agent_slug: "claude-code", is_inherited: false }),
+			expect.objectContaining({ agent_slug: "warp", is_inherited: true, inherited_from: "claude-code" }),
+		]));
 	});
 
 	it("does not mistake identical agent-local copies for the shared library", () => {

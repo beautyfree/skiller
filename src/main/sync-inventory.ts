@@ -144,6 +144,9 @@ export function scanSyncInventory(configs: AgentConfig[]): SyncInventory {
 	const roots: Root[] = [{ path: sharedSkillsDir(), kind: "shared" }];
 	for (const agent of configs.filter((agent) => agent.detected)) {
 		for (const path of agent.global_paths) roots.push({ agentSlug: agent.slug, path, kind: "agent-local" });
+		for (const readable of agent.additional_readable_paths) {
+			if (readable.source_agent !== "shared") roots.push({ agentSlug: agent.slug, path: readable.path, kind: "inherited" });
+		}
 	}
 	return scanSyncInventoryFromRoots(roots);
 }

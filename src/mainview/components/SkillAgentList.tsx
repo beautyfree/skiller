@@ -3,7 +3,7 @@ import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AgentRow } from "@/mainview/components/AgentRow";
 import type { AgentConfig } from "@/mainview/hooks/useAgents";
-import type { Skill } from "@/mainview/hooks/useSkills";
+import type { Skill, SkillInstallation } from "@/mainview/hooks/useSkills";
 
 export type BusyOp = "installing" | "syncing" | "uninstalling";
 
@@ -65,8 +65,10 @@ export const SkillAgentList = memo(function SkillAgentList({
         const installation = skill?.installations.find(
           (i) => i.agent_slug === agent.slug
         );
-		const isDirect = Boolean(installation);
-		const status = isDirect ? "installed" : "not-installed";
+		const isDirect = installation ? !installation.is_inherited : false;
+		const isInherited = installation?.is_inherited ?? false;
+		const status = isDirect ? "installed" : isInherited ? "inherited" : "not-installed";
+		const sourceTag = resolveSourceTag(installation, isInherited, detectedAgents);
 
         const key = skillId ? busyKey(skillId, agent.slug) : "";
         const busyOp = busyAgents.get(key);
@@ -79,6 +81,7 @@ export const SkillAgentList = memo(function SkillAgentList({
             name={agent.name}
             status={status}
             path={installation?.path}
+			tags={sourceTag ? <span className="shrink-0 text-[10px] text-muted-foreground/60">{t("skills.via", { name: sourceTag })}</span> : undefined}
             onUninstall={!readOnly && isDirect && skill ? () => onUninstall(skill.id, agent.slug) : undefined}
             onInstall={readOnly ? undefined : () => onInstall([agent.slug])}
             uninstallTitle={`${t("skills.uninstall")} ${agent.name}`}
@@ -107,4 +110,9 @@ export function installedAgentCount(
   if (!skill) return 0;
   const detected = new Set(detectedAgents.map((a) => a.slug));
   return skill.installations.filter((i) => detected.has(i.agent_slug)).length;
+}
+
+function resolveSourceTag(installation: SkillInstallation | undefined, isInherited: boolean, detectedAgents: AgentConfig[]): string | undefined {
+	if (!isInherited || !installation?.inherited_from) return undefined;
+	return detectedAgents.find((agent) => agent.slug === installation.inherited_from)?.name ?? installation.inherited_from;
 }

@@ -209,7 +209,7 @@ export default function SyncCenter() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-8 pb-12 animate-fade-in-up">
+    <div className={`mx-auto w-full max-w-4xl px-6 py-8 pb-12 animate-fade-in-up ${showInventory ? 'flex h-full min-h-0 flex-col overflow-hidden' : 'min-h-full'}`}>
       {!profile && !profilesLoading && !showInventory && (
         <section className="relative overflow-hidden rounded-[28px] bg-primary px-6 py-7 text-primary-foreground shadow-[0_28px_70px_-36px_color-mix(in_srgb,var(--primary)_90%,transparent)] sm:px-9 sm:py-9">
           <div className="absolute -right-14 -top-20 size-72 rounded-full border border-white/15" />
@@ -271,7 +271,7 @@ export default function SyncCenter() {
       )}
 
       {showInventory && (
-        <section className="mt-5 rounded-2xl border border-border bg-card p-5 shadow-(--ds-shadow-layered-subtle)">
+        <section className={`rounded-2xl border border-border bg-card p-5 shadow-(--ds-shadow-layered-subtle) ${!profile ? 'mt-0 flex min-h-0 flex-1 flex-col overflow-hidden' : 'mt-5'}`}>
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Step 1 of 2</p>
@@ -282,7 +282,7 @@ export default function SyncCenter() {
             </div>
           </div>
 		  {!profile && !preview && (
-			<div className="sticky bottom-3 z-10 mt-5 flex w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/82 p-3 shadow-(--ds-shadow-layered-medium) backdrop-blur-md">
+			<div className="order-3 mt-4 flex shrink-0 w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/82 p-3 shadow-(--ds-shadow-layered-medium) backdrop-blur-md">
 			  <div>
 				<p className="text-xs font-semibold">{selectedKeys.length} skills ready to protect</p>
 				<p className="mt-0.5 text-[11px] text-muted-foreground">You can change the selection below. The repository is created only after a final review.</p>
@@ -294,14 +294,14 @@ export default function SyncCenter() {
 			</div>
 		  )}
 
-          {!preview && <>
+		  {!preview && <div className="order-2 mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
           {(inventory?.collisions.length ?? 0) > 0 && (
             <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
               <p>{plural(inventory?.collisions.length ?? 0, 'skill')} have the same name but different contents. Sync Center will ask which version to protect; it will never choose by filename.</p>
             </div>
           )}
-          <div className="mt-4 divide-y divide-border/60 rounded-xl border border-border/70 pb-28">
+          <div className="divide-y divide-border/60 rounded-xl border border-border/70 pb-4">
             {inventory?.items.map((item) => (
               <label key={item.candidate_key} className="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-xs hover:bg-muted/30">
                 <input
@@ -319,7 +319,7 @@ export default function SyncCenter() {
             {!inventoryLoading && protectedCount === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No valid skills were found yet.</p>}
           </div>
           {inventory?.invalid_paths ? <p className="mt-3 text-xs text-muted-foreground">{inventory.invalid_paths} unreadable or invalid skill folder{inventory.invalid_paths === 1 ? '' : 's'} were left untouched.</p> : null}
-		  </>}
+		  </div>}
           {remoteReview && (
             <div className="mt-4 rounded-xl border border-border bg-muted/25 p-3 text-xs">
               <p className="font-semibold">Change review</p>

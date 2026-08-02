@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useSearchParams } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import { useMemo, useState, useCallback, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -94,6 +94,7 @@ function LayoutInner({
   })
   const syncNeedsReview = Boolean(syncProfiles?.some((profile) => profile.changed || profile.ahead > 0 || profile.behind > 0 || profile.check_error))
   const [searchParams] = useSearchParams()
+	const location = useLocation()
 
   const detectedAgents = useMemo(
     () => agents?.filter((a) => a.detected) ?? [],
@@ -341,7 +342,7 @@ function LayoutInner({
         {/* Main column: inset rounded panel — separate from sidebar; footer stays on canvas */}
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <main className="main-workspace-panel relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-border bg-card shadow-(--ds-shadow-layered-subtle) select-none">
-            <InsetScrollArea className="min-h-0 flex-1 pr-0">
+            <InsetScrollArea className="min-h-0 flex-1 pr-0" scroll={location.pathname !== '/sync'}>
               {loading ? (
                 <div className="space-y-4 px-6 py-6 animate-pulse">
                   <div className="grid grid-cols-3 gap-4">

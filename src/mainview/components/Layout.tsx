@@ -322,7 +322,7 @@ function LayoutInner({
                 {detectedAgents.length === 0 && <div className="flex-1 min-h-2" />}
 
                 <div className="shrink-0 flex flex-col gap-0.5 border-t border-border/50 pt-2">
-                  <NavLink to="/sync" className={navLinkClass}>
+                  <NavLink to="/sync" className={navLinkClass} onClick={() => window.dispatchEvent(new Event('skiller:sync-home'))}>
                     <Cloud className="size-4" aria-hidden="true" />
                     Sync Center
                     {syncNeedsReview && <span className="ml-auto size-1.5 rounded-full bg-amber-500" title="Sync changes need review" />}

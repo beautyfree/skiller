@@ -65,18 +65,28 @@ export default function SyncCenter() {
     setSelectionReady(true)
   }, [inventory, selectionReady])
 
-  async function reviewBackup(mode: 'github' | 'custom') {
+  async function prepareStorageChoice() {
     setBusy('reviewing')
     try {
       const result = await invoke('sync_center_publish_preview', { selectedKeys })
       setPreview(result)
-      setSetupMode(mode)
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), 'destructive')
     } finally {
       setBusy('idle')
     }
   }
+
+	useEffect(() => {
+	  const returnHome = () => {
+		setShowInventory(false)
+		setPreview(null)
+		setSetupMode(null)
+		setRemoteUrl('')
+	  }
+	  window.addEventListener('skiller:sync-home', returnHome)
+	  return () => window.removeEventListener('skiller:sync-home', returnHome)
+	}, [])
 
   async function createGitHubRepository() {
     setBusy('creating')
@@ -300,10 +310,9 @@ export default function SyncCenter() {
 		  ) : null}
 		  {!profile && !preview && (
 			<div className="order-3 mt-4 flex shrink-0 w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/82 px-3 py-2 shadow-(--ds-shadow-layered-medium) backdrop-blur-md">
-			  <p className="text-xs font-semibold">{selectedKeys.length} skills selected</p>
+			  <p className="text-xs font-semibold">{selectedKeys.length} skills selected <span className="ml-1 font-normal text-muted-foreground">Ready for the next step</span></p>
 			  <div className="flex gap-2">
-				<Button size="xs" variant="outline" onClick={() => reviewBackup('custom')} disabled={busy !== 'idle' || selectedKeys.length === 0}>Other Git server</Button>
-				<Button size="xs" onClick={() => reviewBackup('github')} disabled={busy !== 'idle' || selectedKeys.length === 0}>Continue with GitHub <ChevronRight className="size-3.5" /></Button>
+				<Button size="xs" onClick={prepareStorageChoice} disabled={busy !== 'idle' || selectedKeys.length === 0}>Continue <ChevronRight className="size-3.5" /></Button>
 			</div>
 			</div>
 		  )}
@@ -313,7 +322,7 @@ export default function SyncCenter() {
 			{inventoryVirtualizer.getVirtualItems().map((virtualItem) => {
 			  const item = inventoryItems[virtualItem.index]
 			  if (!item) return null
-			  return <div key={virtualItem.key} data-index={virtualItem.index} ref={inventoryVirtualizer.measureElement} className="absolute left-0 top-0 w-full border-b border-border/60" style={{ transform: `translateY(${virtualItem.start}px)` }}>
+			  return <div key={virtualItem.key} className="absolute left-0 top-0 w-full border-b border-border/60" style={{ transform: `translateY(${virtualItem.start}px)` }}>
               <label className="flex cursor-pointer items-center gap-3 px-2 py-2.5 text-xs hover:bg-muted/30">
                 <input
                   type="checkbox"
@@ -355,13 +364,13 @@ export default function SyncCenter() {
 			  {keepLocalSelections.length > 0 && <Button size="sm" variant="outline" className="mt-3 ml-2" onClick={keepSelectedLocalChanges} disabled={busy !== 'idle'}>Keep selected local changes</Button>}
             </div>
           )}
-          {preview && setupMode && (
+          {preview && (
             <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/5 p-5 text-xs">
 			  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Step 2 of 2</p>
               <p className="mt-1 text-base font-semibold">Choose where to keep your library</p>
 			  <p className="mt-2 font-medium">{preview.skills.length} skills · {preview.skills.reduce((total, skill) => total + skill.file_count, 0)} files</p>
               {preview.secret_findings.length > 0 ? <p className="mt-2 text-destructive">Blocked by {preview.secret_findings.length} possible secret(s). Remove them before creating a backup.</p> : <p className="mt-2 text-muted-foreground">No secret patterns found. This review is rebuilt immediately before commit.</p>}
-              {setupMode === 'github' ? (
+			  {!setupMode ? <div className="mt-4 flex flex-wrap gap-2"><Button size="sm" onClick={() => setSetupMode('github')} disabled={preview.secret_findings.length > 0}>Continue with GitHub <ChevronRight className="size-3.5" /></Button><Button size="sm" variant="outline" onClick={() => setSetupMode('custom')} disabled={preview.secret_findings.length > 0}>Other Git server</Button></div> : setupMode === 'github' ? (
                 <div className="mt-3 flex flex-wrap items-end gap-2">
                   {!remoteUrl ? <>
                     <label className="grid gap-1 text-[11px] text-muted-foreground">Repository name

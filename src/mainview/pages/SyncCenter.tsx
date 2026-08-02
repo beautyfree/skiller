@@ -282,9 +282,7 @@ export default function SyncCenter() {
             </div>
           </div>
 		  {!profile && !preview && (
-			<div className="pointer-events-none fixed bottom-0 left-[calc(var(--skiller-sidebar-width)+1.5rem)] right-8 z-50 h-[72px]">
-			  <div className="absolute inset-0 backdrop-blur-md" />
-			  <div className="pointer-events-auto absolute bottom-0 left-1/2 flex w-[min(42rem,calc(100%-2rem))] -translate-x-1/2 flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/95 p-3 shadow-(--ds-shadow-layered-medium)">
+			<div className="sticky bottom-3 z-10 mt-5 flex w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/82 p-3 shadow-(--ds-shadow-layered-medium) backdrop-blur-md">
 			  <div>
 				<p className="text-xs font-semibold">{selectedKeys.length} skills ready to protect</p>
 				<p className="mt-0.5 text-[11px] text-muted-foreground">You can change the selection below. The repository is created only after a final review.</p>
@@ -292,7 +290,6 @@ export default function SyncCenter() {
 			  <div className="flex gap-2">
 				<Button size="sm" variant="outline" onClick={() => reviewBackup('custom')} disabled={busy !== 'idle' || selectedKeys.length === 0}>Other Git server</Button>
 				<Button size="sm" onClick={() => reviewBackup('github')} disabled={busy !== 'idle' || selectedKeys.length === 0}>Continue with GitHub <ChevronRight className="size-3.5" /></Button>
-			  </div>
 			</div>
 			</div>
 		  )}

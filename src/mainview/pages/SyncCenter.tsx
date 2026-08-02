@@ -58,6 +58,7 @@ export default function SyncCenter() {
   })
   const protectedCount = inventory?.items.length ?? 0
   const agentCount = new Set(inventory?.items.flatMap((item) => item.locations.map((location) => location.agent_slug)) ?? []).size
+	const isLanding = !profile && !profilesLoading && !showInventory
 
   useEffect(() => {
     if (!inventory || selectionReady) return
@@ -230,20 +231,20 @@ export default function SyncCenter() {
   }
 
   return (
-    <div className={`mx-auto w-full max-w-4xl px-6 py-8 animate-fade-in-up ${showInventory ? 'flex h-full min-h-0 flex-col overflow-hidden pb-3' : 'min-h-full pb-12'}`}>
-      {!profile && !profilesLoading && !showInventory && (
-        <section className="relative overflow-hidden rounded-[28px] bg-primary px-6 py-7 text-primary-foreground shadow-[0_28px_70px_-36px_color-mix(in_srgb,var(--primary)_90%,transparent)] sm:px-9 sm:py-9">
-          <div className="absolute -right-14 -top-20 size-72 rounded-full border border-white/15" />
-          <div className="absolute -bottom-28 right-28 size-64 rounded-full border border-white/10" />
+    <div className={isLanding ? 'h-full w-full animate-fade-in-up' : `mx-auto w-full max-w-4xl px-6 py-8 animate-fade-in-up ${showInventory ? 'flex h-full min-h-0 flex-col overflow-hidden pb-3' : 'min-h-full pb-12'}`}>
+      {isLanding && (
+        <section className="relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden bg-primary px-6 py-10 text-center text-primary-foreground">
+          <div className="absolute -left-28 -top-24 size-80 rounded-full border border-white/15" />
+          <div className="absolute -bottom-36 -right-20 size-[28rem] rounded-full border border-white/12" />
           <div className="relative max-w-2xl">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary-foreground/70"><Cloud className="size-3.5" /> Your agent library</div>
-            <h1 className="mt-5 max-w-xl text-3xl font-semibold tracking-[-0.045em] sm:text-4xl">Your best agent setup deserves a way back.</h1>
-            <p className="mt-4 max-w-lg text-sm leading-relaxed text-primary-foreground/80">Keep your skills in one private library. Move to a new Mac, try a new agent, or recover from a bad change — without copying hidden folders or risking private data.</p>
-            <div className="mt-7"><Button size="lg" className="bg-background text-foreground shadow-none hover:bg-background/90" onClick={() => setShowInventory(true)}>Start protected backup <ChevronRight className="size-4" /></Button></div>
-            <div className="mt-8 flex flex-wrap gap-x-7 gap-y-2 text-xs text-primary-foreground/75">
-              <span>{inventoryLoading ? 'Scanning your setup…' : `${plural(protectedCount, 'skill')} found`}</span>
+            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-primary-foreground/70"><Cloud className="size-3.5" /> Sync Center</div>
+            <h1 className="mt-6 text-balance text-4xl font-semibold tracking-[-0.055em] sm:text-5xl">Keep your agent setup<br />ready for anything.</h1>
+            <p className="mx-auto mt-5 max-w-xl text-sm leading-relaxed text-primary-foreground/82 sm:text-base">Your skills, connections and hard-won workflow belong in one private library — ready when you change Macs, add an agent, or need to recover fast.</p>
+            <div className="mt-8"><Button size="lg" className="bg-background text-foreground shadow-none hover:bg-background/90" onClick={() => setShowInventory(true)}>Protect this setup <ChevronRight className="size-4" /></Button></div>
+            <div className="mt-9 flex flex-wrap justify-center gap-x-7 gap-y-2 text-xs text-primary-foreground/76">
+              <span>{inventoryLoading ? 'Scanning your setup…' : `${plural(protectedCount, 'skill')} ready to protect`}</span>
               <span>{inventoryLoading ? '' : `${plural(agentCount, 'agent')} connected`}</span>
-              <span>Nothing leaves this Mac without approval</span>
+              <span>Private by default</span>
             </div>
           </div>
         </section>

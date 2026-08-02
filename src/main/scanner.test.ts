@@ -55,4 +55,17 @@ describe("shared skills scanner", () => {
 		expect(skills[0]?.scope).toEqual({ kind: "SharedGlobal" });
 		expect(skills[0]?.installations).toEqual([expect.objectContaining({ agent_slug: "codex", is_symlink: true, is_inherited: false })]);
 	});
+
+	it("does not turn a configured readable path into an agent installation", () => {
+		const shared = root();
+		const claude = root();
+		const warp = root();
+		writeSkill(claude, "writing");
+		const claudeAgent = defaultAgentConfig({ slug: "claude-code", name: "Claude Code", detected: true, detection_reason: "marker", global_paths: [claude] });
+		const warpAgent = defaultAgentConfig({ slug: "warp", name: "Warp", detected: true, detection_reason: "marker", global_paths: [warp], additional_readable_paths: [{ path: claude, source_agent: "claude-code" }] });
+
+		const skills = scanAllSkills([claudeAgent, warpAgent], shared);
+		expect(skills).toHaveLength(1);
+		expect(skills[0]?.installations).toEqual([expect.objectContaining({ agent_slug: "claude-code", is_inherited: false })]);
+	});
 });

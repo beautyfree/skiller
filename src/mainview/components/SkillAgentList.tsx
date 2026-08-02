@@ -50,10 +50,18 @@ export const SkillAgentList = memo(function SkillAgentList({
   const anyBusy = skillId
     ? detectedAgents.some((a) => busyAgents.has(busyKey(skillId, a.slug)))
     : false;
+	const sharedSkill = skill?.scope.type === "SharedGlobal";
+	const visibleAgents = sharedSkill
+		? detectedAgents.filter((agent) => skill?.installations.some((installation) => installation.agent_slug === agent.slug))
+		: detectedAgents;
+
+	if (sharedSkill && visibleAgents.length === 0) {
+		return <p className="text-xs text-muted-foreground">{t("skills.sharedNoAgentLinks")}</p>;
+	}
 
   return (
     <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2">
-      {detectedAgents.map((agent) => {
+      {visibleAgents.map((agent) => {
         const installation = skill?.installations.find(
           (i) => i.agent_slug === agent.slug
         );

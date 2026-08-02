@@ -2161,7 +2161,7 @@ function SkillDetail({
             {t("skills.sharedLibrarySkillHint")}
           </p>
         )}
-        <DetailSection label={t("skills.agentsLabel", { installed: installedAgentCount(skill, detectedAgents), total: detectedAgents.length })}>
+        <DetailSection label={skill.scope.type === "SharedGlobal" ? t("skills.agentLinksLabel", { count: installedAgentCount(skill, detectedAgents) }) : t("skills.agentsLabel", { installed: installedAgentCount(skill, detectedAgents), total: detectedAgents.length })}>
           <SkillAgentList
             skill={skill}
             detectedAgents={detectedAgents}

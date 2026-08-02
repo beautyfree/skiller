@@ -273,11 +273,6 @@ function LayoutInner({
                       )}
                     </NavLink>
 
-                    <NavLink to="/sync" className={navLinkClass}>
-                      <Cloud className="size-4" aria-hidden="true" />
-                      Sync Center
-                      {syncNeedsReview && <span className="ml-auto size-1.5 rounded-full bg-amber-500" title="Sync changes need review" />}
-                    </NavLink>
                   </div>
                 </div>
 
@@ -329,6 +324,11 @@ function LayoutInner({
                   <NavLink to="/settings" className={navLinkClass}>
                     <Settings className="size-4" aria-hidden="true" />
                     {t('sidebar.settings')}
+                  </NavLink>
+                  <NavLink to="/sync" className={navLinkClass}>
+                    <Cloud className="size-4" aria-hidden="true" />
+                    Sync Center
+                    {syncNeedsReview && <span className="ml-auto size-1.5 rounded-full bg-amber-500" title="Sync changes need review" />}
                   </NavLink>
                 </div>
               </nav>

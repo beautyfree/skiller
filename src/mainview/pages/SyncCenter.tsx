@@ -5,6 +5,7 @@ import { invoke } from '@/mainview/lib/native'
 import type { SyncInventoryJson, SyncProfileStatusJson, SyncPublishPreviewJson, SyncThreeWayReviewJson } from '@/shared/rpc-schema'
 import { Button } from '@/mainview/components/ui/button'
 import { useToast } from '@/mainview/components/ToastProvider'
+import { AgentIcon } from '@/mainview/components/AgentIcon'
 
 function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? '' : 's'}`
@@ -282,19 +283,17 @@ export default function SyncCenter() {
             </div>
           </div>
 		  {!profile && !preview && (
-			<div className="order-3 mt-4 flex shrink-0 w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/82 p-3 shadow-(--ds-shadow-layered-medium) backdrop-blur-md">
-			  <div>
-				<p className="text-xs font-semibold">{selectedKeys.length} skills ready to protect</p>
-				<p className="mt-0.5 text-[11px] text-muted-foreground">You can change the selection below. The repository is created only after a final review.</p>
-			  </div>
+			<div className="order-3 mt-4 flex shrink-0 w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/82 px-3 py-2 shadow-(--ds-shadow-layered-medium) backdrop-blur-md">
+			  <p className="text-xs font-semibold">{selectedKeys.length} skills selected</p>
 			  <div className="flex gap-2">
-				<Button size="sm" variant="outline" onClick={() => reviewBackup('custom')} disabled={busy !== 'idle' || selectedKeys.length === 0}>Other Git server</Button>
-				<Button size="sm" onClick={() => reviewBackup('github')} disabled={busy !== 'idle' || selectedKeys.length === 0}>Continue with GitHub <ChevronRight className="size-3.5" /></Button>
+				<Button size="xs" variant="outline" onClick={() => reviewBackup('custom')} disabled={busy !== 'idle' || selectedKeys.length === 0}>Other Git server</Button>
+				<Button size="xs" onClick={() => reviewBackup('github')} disabled={busy !== 'idle' || selectedKeys.length === 0}>Continue with GitHub <ChevronRight className="size-3.5" /></Button>
 			</div>
 			</div>
 		  )}
 
 		  {!preview && <div className="order-2 mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+		  {inventory?.invalid_paths ? <div className="mb-3 flex items-start gap-2 border-b border-amber-500/25 pb-3 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" /><p>{inventory.invalid_paths} unreadable or invalid skill folders were left untouched and will not be included.</p></div> : null}
           {(inventory?.collisions.length ?? 0) > 0 && (
             <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
@@ -303,7 +302,7 @@ export default function SyncCenter() {
           )}
           <div className="divide-y divide-border/60 pb-4">
             {inventory?.items.map((item) => (
-              <label key={item.candidate_key} className="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-xs hover:bg-muted/30">
+              <label key={item.candidate_key} className="flex cursor-pointer items-center gap-3 px-2 py-2.5 text-xs hover:bg-muted/30">
                 <input
                   type="checkbox"
                   checked={selectedKeys.includes(item.candidate_key)}
@@ -312,13 +311,14 @@ export default function SyncCenter() {
                     : [...current, item.candidate_key])}
                 />
                 <Cloud className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate font-medium text-foreground">{item.display_name}</span>
-                <span className="text-muted-foreground">{item.locations.map((location) => location.agent_slug).join(' · ')}</span>
+                <span className="min-w-0 flex-1 break-words font-medium text-foreground">{item.display_name}</span>
+                <span className="flex shrink-0 items-center gap-1.5" aria-label={`Available to ${item.locations.map((location) => location.agent_slug).join(', ')}`}>
+				  {[...new Set(item.locations.map((location) => location.agent_slug))].map((slug) => <span key={slug} title={slug}><AgentIcon slug={slug} className="size-4" /></span>)}
+				</span>
               </label>
             ))}
             {!inventoryLoading && protectedCount === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No valid skills were found yet.</p>}
           </div>
-          {inventory?.invalid_paths ? <p className="mt-3 text-xs text-muted-foreground">{inventory.invalid_paths} unreadable or invalid skill folder{inventory.invalid_paths === 1 ? '' : 's'} were left untouched.</p> : null}
 		  </div>}
           {remoteReview && (
             <div className="mt-4 rounded-xl border border-border bg-muted/25 p-3 text-xs">

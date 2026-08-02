@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { AlertTriangle, CheckCircle2, ChevronRight, Cloud } from 'lucide-react'
@@ -11,6 +11,20 @@ import { AgentIcon } from '@/mainview/components/AgentIcon'
 function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? '' : 's'}`
 }
+
+type InventoryItem = SyncInventoryJson['items'][number]
+
+const InventorySkillRow = memo(function InventorySkillRow({ item, selected, onToggle }: { item: InventoryItem; selected: boolean; onToggle: (key: string) => void }) {
+	const agentSlugs = useMemo(() => [...new Set(item.locations.map((location) => location.agent_slug))], [item.locations])
+	return <label className="flex min-h-12 cursor-pointer items-center gap-3 px-2 py-2.5 text-xs hover:bg-muted/30">
+		<input className="cursor-pointer" type="checkbox" checked={selected} onChange={() => onToggle(item.candidate_key)} />
+		<Cloud className="size-3.5 shrink-0 text-muted-foreground" />
+		<span className="min-w-0 flex-1 break-words font-medium text-foreground">{item.display_name}</span>
+		<span className="flex shrink-0 items-center gap-1.5" aria-label={`Available to ${agentSlugs.join(', ')}`}>
+			{agentSlugs.map((slug) => <span key={slug} title={slug}><AgentIcon slug={slug} className="size-4" /></span>)}
+		</span>
+	</label>
+})
 
 /**
  * Sync has its own product surface because it describes an evolving protected
@@ -48,9 +62,13 @@ export default function SyncCenter() {
 	  count: inventoryItems.length,
 	  getScrollElement: () => inventoryScrollRef.current,
 	  estimateSize: () => 46,
-	  overscan: 10,
+	  overscan: 24,
 	  getItemKey: (index) => inventoryItems[index]?.candidate_key ?? String(index),
 	})
+	const selectedKeySet = useMemo(() => new Set(selectedKeys), [selectedKeys])
+	const toggleSelectedKey = useCallback((key: string) => {
+	  setSelectedKeys((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key])
+	}, [])
   const { data: recovery } = useQuery<{ pending: boolean }>({
     queryKey: ['sync-recovery', profile?.profile_id],
     queryFn: () => invoke('sync_recovery_status', { profileId: profile!.profile_id }),
@@ -313,7 +331,7 @@ export default function SyncCenter() {
 			<div className="order-3 mt-4 flex shrink-0 w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/82 px-3 py-2 shadow-(--ds-shadow-layered-medium) backdrop-blur-md">
 			  <p className="text-xs font-semibold">{selectedKeys.length} skills selected <span className="ml-1 font-normal text-muted-foreground">Ready for the next step</span></p>
 			  <div className="flex gap-2">
-				<Button size="xs" onClick={prepareStorageChoice} disabled={busy !== 'idle' || selectedKeys.length === 0}>Continue <ChevronRight className="size-3.5" /></Button>
+				<Button size="lg" onClick={prepareStorageChoice} disabled={busy !== 'idle' || selectedKeys.length === 0}>Continue <ChevronRight className="size-3.5" /></Button>
 			</div>
 			</div>
 		  )}
@@ -324,20 +342,7 @@ export default function SyncCenter() {
 			  const item = inventoryItems[virtualItem.index]
 			  if (!item) return null
 			  return <div key={virtualItem.key} className="absolute left-0 top-0 w-full border-b border-border/60" style={{ transform: `translateY(${virtualItem.start}px)` }}>
-              <label className="flex cursor-pointer items-center gap-3 px-2 py-2.5 text-xs hover:bg-muted/30">
-                <input
-                  type="checkbox"
-                  checked={selectedKeys.includes(item.candidate_key)}
-                  onChange={() => setSelectedKeys((current) => current.includes(item.candidate_key)
-                    ? current.filter((key) => key !== item.candidate_key)
-                    : [...current, item.candidate_key])}
-                />
-                <Cloud className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 break-words font-medium text-foreground">{item.display_name}</span>
-                <span className="flex shrink-0 items-center gap-1.5" aria-label={`Available to ${item.locations.map((location) => location.agent_slug).join(', ')}`}>
-				  {[...new Set(item.locations.map((location) => location.agent_slug))].map((slug) => <span key={slug} title={slug}><AgentIcon slug={slug} className="size-4" /></span>)}
-				</span>
-              </label>
+				<InventorySkillRow item={item} selected={selectedKeySet.has(item.candidate_key)} onToggle={toggleSelectedKey} />
 			  </div>
 			})}
 			{!inventoryLoading && protectedCount === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No valid skills were found yet.</p>}

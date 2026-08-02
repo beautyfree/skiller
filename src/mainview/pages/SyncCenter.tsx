@@ -271,7 +271,7 @@ export default function SyncCenter() {
       )}
 
       {showInventory && (
-        <section className={`rounded-2xl border border-border bg-card p-5 shadow-(--ds-shadow-layered-subtle) ${!profile ? 'mt-0 flex min-h-0 flex-1 flex-col overflow-hidden' : 'mt-5'}`}>
+        <section className={`${!profile ? 'mt-0 flex min-h-0 flex-1 flex-col overflow-hidden' : 'mt-5'} px-1`}>
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Step 1 of 2</p>
@@ -301,7 +301,7 @@ export default function SyncCenter() {
               <p>{plural(inventory?.collisions.length ?? 0, 'skill')} have the same name but different contents. Sync Center will ask which version to protect; it will never choose by filename.</p>
             </div>
           )}
-          <div className="divide-y divide-border/60 rounded-xl border border-border/70 pb-4">
+          <div className="divide-y divide-border/60 pb-4">
             {inventory?.items.map((item) => (
               <label key={item.candidate_key} className="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-xs hover:bg-muted/30">
                 <input

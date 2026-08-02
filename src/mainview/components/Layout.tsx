@@ -29,6 +29,7 @@ import { useAgents } from '@/mainview/hooks/useAgents'
 import { useSkills, allAgents } from '@/mainview/hooks/useSkills'
 import { useProjects } from '@/mainview/hooks/useProjects'
 import type { SyncProfileStatusJson } from '@/shared/rpc-schema'
+import skillerMark from '@/mainview/assets/brand/skiller-mark.png'
 
 const GITHUB_REPO_URL =
   'https://github.com/beautyfree/skiller'
@@ -171,14 +172,24 @@ function LayoutInner({
     <div className="layout-root box-border flex h-screen flex-col overflow-hidden">
       {/* Global drag band as a real layout row (not overlay). */}
       <div
-        className={`pointer-events-auto shrink-0 cursor-default select-none ${DRAG_CLASSES}`}
+        className={`relative pointer-events-auto shrink-0 cursor-default select-none ${DRAG_CLASSES}`}
         style={{ height: TITLE_BAR_DRAG_HEIGHT }}
         onMouseDown={(e) => {
           if (e.detail === 2) onTitleBarZoomGesture(e)
         }}
         onDoubleClick={onTitleBarZoomGesture}
         aria-hidden="true"
-      />
+      >
+        {/* Decorative only: stays within the native drag surface on every OS. */}
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="flex items-center gap-1.5" aria-label="Skiller">
+            <span className="grid size-[19px] place-items-center rounded-[5px] bg-[#20242d] shadow-[0_1px_2px_rgba(0,0,0,0.16)]">
+              <img src={skillerMark} alt="" draggable={false} className="size-[15px] object-contain" />
+            </span>
+            <span className="pb-px text-[13px] font-semibold tracking-[-0.045em] text-foreground/85">Skiller</span>
+          </div>
+        </div>
+      </div>
 
       <div className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${WINDOW_EDGE_INSET_RIGHT}`}>
         {/* Sidebar — same plane as canvas */}

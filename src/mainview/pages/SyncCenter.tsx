@@ -282,7 +282,7 @@ export default function SyncCenter() {
             </div>
           </div>
 		  {!profile && !preview && (
-			<div className="sticky top-3 z-10 mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/95 p-3 shadow-(--ds-shadow-layered-subtle) backdrop-blur">
+			<div className="sticky bottom-3 z-10 mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/95 p-3 shadow-(--ds-shadow-layered-subtle) backdrop-blur">
 			  <div>
 				<p className="text-xs font-semibold">{selectedKeys.length} skills ready to protect</p>
 				<p className="mt-0.5 text-[11px] text-muted-foreground">You can change the selection below. The repository is created only after a final review.</p>

@@ -40,7 +40,7 @@ describe("shared skills scanner", () => {
 
 		const skills = scanAllSkills([agent(codex, shared)], shared);
 		expect(skills).toHaveLength(1);
-		expect(skills[0]?.scope).toEqual({ kind: "SharedGlobal" });
+		expect(skills[0]?.scope).toEqual({ kind: "SharedLibrary" });
 		expect(skills[0]?.installations).toEqual([]);
 	});
 
@@ -52,8 +52,8 @@ describe("shared skills scanner", () => {
 
 		const skills = scanAllSkills([agent(codex, shared)], shared);
 		expect(skills).toHaveLength(1);
-		expect(skills[0]?.scope).toEqual({ kind: "SharedGlobal" });
-		expect(skills[0]?.installations).toEqual([expect.objectContaining({ agent_slug: "codex", is_symlink: true, is_inherited: false })]);
+		expect(skills[0]?.scope).toEqual({ kind: "SharedLibrary" });
+		expect(skills[0]?.installations).toEqual([expect.objectContaining({ agent_slug: "codex", is_symlink: true })]);
 	});
 
 	it("does not turn a configured readable path into an agent installation", () => {
@@ -66,6 +66,20 @@ describe("shared skills scanner", () => {
 
 		const skills = scanAllSkills([claudeAgent, warpAgent], shared);
 		expect(skills).toHaveLength(1);
-		expect(skills[0]?.installations).toEqual([expect.objectContaining({ agent_slug: "claude-code", is_inherited: false })]);
+		expect(skills[0]?.installations).toEqual([expect.objectContaining({ agent_slug: "claude-code" })]);
+	});
+
+	it("does not mistake identical agent-local copies for the shared library", () => {
+		const shared = root();
+		const codex = root();
+		const claude = root();
+		writeSkill(codex, "writing");
+		writeSkill(claude, "writing");
+		const codexAgent = defaultAgentConfig({ slug: "codex", name: "Codex", detected: true, detection_reason: "marker", global_paths: [codex] });
+		const claudeAgent = defaultAgentConfig({ slug: "claude-code", name: "Claude Code", detected: true, detection_reason: "marker", global_paths: [claude] });
+
+		const skills = scanAllSkills([codexAgent, claudeAgent], shared);
+		expect(skills[0]?.scope).toEqual({ kind: "AgentLocal", agent: "codex" });
+		expect(skills[0]?.installations).toHaveLength(2);
 	});
 });

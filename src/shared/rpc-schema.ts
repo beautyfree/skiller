@@ -7,6 +7,7 @@ export type SkillSourceJson =
   | "Unknown";
 
 export type SkillScopeJson =
+	| { type: "SharedLibrary" }
   | { type: "SharedGlobal" }
   | { type: "AgentLocal"; agent: string };
 
@@ -14,6 +15,7 @@ export type SkillInstallationJson = {
   agent_slug: string;
   path: string;
   is_symlink: boolean;
+	/** Deprecated. New scans always return false. */
   is_inherited: boolean;
   inherited_from?: string | null;
 };
@@ -371,8 +373,9 @@ export type AppRPCSchema = {
           failed: { id: string; error: string }[];
         };
       };
-      unlink_inherited_skill: { params: { skillId: string }; response: void };
       sync_skill: { params: { skillId: string; targetAgents: string[] }; response: void };
+	  /** Deprecated safe stub; it no longer mutates agent configuration. */
+	  unlink_inherited_skill: { params: { skillId: string }; response: void };
       update_skill: { params: { skillId: string }; response: void };
       update_all_skills: { params?: void; response: UpdateAllResultJson };
       read_skill_content: { params: { path: string }; response: string };

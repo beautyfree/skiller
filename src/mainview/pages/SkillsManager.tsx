@@ -303,7 +303,7 @@ export default function SkillsManager() {
 
   // Skills visible for the current agent filter, ignoring search (used for URL skill id + auto-select)
   const listWithoutSearch = useMemo(() => {
-    const available = mergedSkills?.filter((s) => s.scope.type === "SharedGlobal" || allAgents(s).length > 0);
+    const available = mergedSkills?.filter((s) => s.scope.type === "SharedLibrary" || allAgents(s).length > 0);
     const byAgent = filter === "all"
       ? available
       : available?.filter((s) => allAgents(s).includes(filter));
@@ -440,7 +440,7 @@ export default function SkillsManager() {
     // Shared-library skills are user-owned sources, not installations on every
     // agent that can read ~/.agents/skills. They belong in the all-skills view
     // but never in a specific agent's filter unless an explicit link exists.
-    const available = mergedSkills?.filter((s) => s.scope.type === "SharedGlobal" || allAgents(s).length > 0);
+    const available = mergedSkills?.filter((s) => s.scope.type === "SharedLibrary" || allAgents(s).length > 0);
     let list = filter === "all"
       ? available
       : available?.filter((s) => allAgents(s).includes(filter));
@@ -1663,7 +1663,7 @@ const SkillListItem = memo(function SkillListItem({
           </p>
         )}
         <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-medium tabular-nums text-muted-foreground/90">
-		  {skill.scope.type === "SharedGlobal" && (
+		  {skill.scope.type === "SharedLibrary" && (
 			<span className="rounded-full bg-secondary px-1.5 py-0.5 text-secondary-foreground">{t("skills.sharedDirectory")}</span>
 		  )}
           <span
@@ -2036,6 +2036,7 @@ function SkillDetail({
         </div>
 
         {activeAgentSlug && (() => {
+		  if (skill.scope.type === "SharedLibrary") return null;
           const agent = detectedAgents.find((a) => a.slug === activeAgentSlug);
           if (!agent) return null;
           const isInstalled = skill.installations.some((i) => i.agent_slug === activeAgentSlug);
@@ -2085,11 +2086,11 @@ function SkillDetail({
             )}
             <span className="text-xs text-muted-foreground">{t("skills.scope")}</span>
             <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium w-fit ${
-              skill.scope.type === "SharedGlobal"
+			  skill.scope.type === "SharedLibrary"
                 ? "badge-info"
                 : "bg-muted text-muted-foreground"
             }`}>
-              {skill.scope.type === "SharedGlobal"
+			  {skill.scope.type === "SharedLibrary"
                 ? t("skills.scopeGlobal")
                 : t("skills.scopeLocal", { name: detectedAgents.find((a) => a.slug === (skill.scope as { agent: string }).agent)?.name ?? "Local" })}
             </span>
@@ -2156,12 +2157,12 @@ function SkillDetail({
         <hr className="border-border" />
 
         {/* Agent Assignment */}
-        {skill.scope.type === "SharedGlobal" && (
+        {skill.scope.type === "SharedLibrary" && (
           <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
             {t("skills.sharedLibrarySkillHint")}
           </p>
         )}
-        <DetailSection label={skill.scope.type === "SharedGlobal" ? t("skills.agentLinksLabel", { count: installedAgentCount(skill, detectedAgents) }) : t("skills.agentsLabel", { installed: installedAgentCount(skill, detectedAgents), total: detectedAgents.length })}>
+        <DetailSection label={skill.scope.type === "SharedLibrary" ? t("skills.agentLinksLabel", { count: installedAgentCount(skill, detectedAgents) }) : t("skills.agentsLabel", { installed: installedAgentCount(skill, detectedAgents), total: detectedAgents.length })}>
           <SkillAgentList
             skill={skill}
             detectedAgents={detectedAgents}

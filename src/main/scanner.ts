@@ -189,12 +189,6 @@ function mergeSkill(dedup: Map<string, Skill>, key: string, incoming: Skill): vo
 			const dominated = existing.installations.some((e) => e.agent_slug === inst.agent_slug);
 			if (!dominated) existing.installations.push(inst);
 		}
-		const distinct = new Set(
-			existing.installations.filter((i) => !i.is_inherited).map((i) => i.agent_slug),
-		);
-		if (distinct.size > 1) {
-			existing.scope = { kind: "SharedGlobal" };
-		}
 		return;
 	}
 	dedup.set(key, incoming);
@@ -287,7 +281,7 @@ function scanSharedRoot(
 			source: resolveSource(dirName, canonical, provenance),
 			metadata: parsed.metadata,
 			collection: detectCollection(skillDir, root),
-			scope: { kind: "SharedGlobal" },
+			scope: { kind: "SharedLibrary" },
 			installations: [],
 			bundled_path: (provenance[dirName]?.bundled_path as string | undefined) ?? null,
 		});

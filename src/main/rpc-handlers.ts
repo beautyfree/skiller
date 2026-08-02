@@ -30,7 +30,6 @@ import {
   uninstallSkill,
   uninstallDirectSkillFromAll,
   uninstallSkillFromAll,
-  unlinkInheritedSkillFromAgentConfigs,
 } from './uninstall'
 import { updateAll, updateSingleSkill } from './update'
 import { readSettings, writeSettings } from './settings'
@@ -900,9 +899,8 @@ export function createRequestHandlers(ctx: {
       )
     },
     unlink_inherited_skill: async (params: { skillId: string }) => {
-      const { skillId } = params
-      const agents = loadDetectedAgents()
-      unlinkInheritedSkillFromAgentConfigs(skillId, agents, getAgentsDir())
+		void params
+		throw new Error('Inherited skill links are no longer managed. Use an explicit agent symlink or remove the shared skill itself.')
     },
     sync_skill: async (params: { skillId: string; targetAgents: string[] }) => {
       const { skillId, targetAgents } = params

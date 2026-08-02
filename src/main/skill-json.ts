@@ -24,6 +24,7 @@ export function skillSourceToJson(s: SkillSource): SkillSourceJson {
 }
 
 export function skillScopeToJson(s: SkillScope): SkillScopeJson {
+	if (s.kind === "SharedLibrary") return { type: "SharedLibrary" };
 	if (s.kind === "SharedGlobal") return { type: "SharedGlobal" };
 	return { type: "AgentLocal", agent: s.agent };
 }

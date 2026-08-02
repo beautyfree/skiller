@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useSearchParams } from 'react-router-dom'
-import { useMemo, useState, useCallback, useRef, useEffect } from 'react'
+import { useMemo, useState, useCallback, useRef, useEffect, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -179,7 +179,10 @@ function LayoutInner({
         aria-hidden="true"
       />
 
-      <div className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${WINDOW_EDGE_INSET_RIGHT}`}>
+      <div
+        className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${WINDOW_EDGE_INSET_RIGHT}`}
+        style={{ '--skiller-sidebar-width': `${sidebar.width}px` } as CSSProperties}
+      >
         {/* Sidebar — same plane as canvas */}
         <aside
           aria-label="Sidebar"

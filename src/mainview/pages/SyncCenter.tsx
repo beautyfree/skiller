@@ -17,7 +17,6 @@ function plural(count: number, word: string): string {
  */
 export default function SyncCenter() {
   const [showInventory, setShowInventory] = useState(false)
-  const [showAdvanced, setShowAdvanced] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [selectionReady, setSelectionReady] = useState(false)
   const [setupMode, setSetupMode] = useState<'github' | 'custom' | null>(null)
@@ -211,7 +210,7 @@ export default function SyncCenter() {
 
   return (
     <div className="mx-auto w-full max-w-4xl px-6 py-8 pb-12 animate-fade-in-up">
-      {!profile && !profilesLoading && (
+      {!profile && !profilesLoading && !showInventory && (
         <section className="relative overflow-hidden rounded-[28px] bg-primary px-6 py-7 text-primary-foreground shadow-[0_28px_70px_-36px_color-mix(in_srgb,var(--primary)_90%,transparent)] sm:px-9 sm:py-9">
           <div className="absolute -right-14 -top-20 size-72 rounded-full border border-white/15" />
           <div className="absolute -bottom-28 right-28 size-64 rounded-full border border-white/10" />
@@ -219,10 +218,7 @@ export default function SyncCenter() {
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary-foreground/70"><Cloud className="size-3.5" /> Your agent library</div>
             <h1 className="mt-5 max-w-xl text-3xl font-semibold tracking-[-0.045em] sm:text-4xl">Your best agent setup deserves a way back.</h1>
             <p className="mt-4 max-w-lg text-sm leading-relaxed text-primary-foreground/80">Keep your skills in one private library. Move to a new Mac, try a new agent, or recover from a bad change — without copying hidden folders or risking private data.</p>
-            <div className="mt-7 flex flex-wrap items-center gap-3">
-              <Button size="lg" className="bg-background text-foreground shadow-none hover:bg-background/90" onClick={() => setShowInventory(true)}>See what Skiller will protect <ChevronRight className="size-4" /></Button>
-              <button type="button" className="text-sm font-medium text-primary-foreground/80 transition hover:text-primary-foreground" onClick={() => { setShowAdvanced((value) => !value); setShowInventory(true) }}>Use another Git server</button>
-            </div>
+            <div className="mt-7"><Button size="lg" className="bg-background text-foreground shadow-none hover:bg-background/90" onClick={() => setShowInventory(true)}>Start protected backup <ChevronRight className="size-4" /></Button></div>
             <div className="mt-8 flex flex-wrap gap-x-7 gap-y-2 text-xs text-primary-foreground/75">
               <span>{inventoryLoading ? 'Scanning your setup…' : `${plural(protectedCount, 'skill')} found`}</span>
               <span>{inventoryLoading ? '' : `${plural(agentCount, 'agent')} connected`}</span>
@@ -278,14 +274,14 @@ export default function SyncCenter() {
         <section className="mt-5 rounded-2xl border border-border bg-card p-5 shadow-(--ds-shadow-layered-subtle)">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-sm font-semibold">Your setup, before anything changes</h2>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Step 1 of 2</p>
+              <h2 className="mt-1 text-lg font-semibold tracking-[-0.02em]">Review your library</h2>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 Identical skills are grouped once. A skill in an individual agent folder is not automatically moved or overwritten.
               </p>
             </div>
-            <Button size="xs" variant="ghost" onClick={() => setShowInventory(false)}>Close</Button>
           </div>
-		  {!profile && (
+		  {!profile && !preview && (
 			<div className="sticky top-3 z-10 mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/95 p-3 shadow-(--ds-shadow-layered-subtle) backdrop-blur">
 			  <div>
 				<p className="text-xs font-semibold">{selectedKeys.length} skills ready to protect</p>
@@ -297,8 +293,8 @@ export default function SyncCenter() {
 			  </div>
 			</div>
 		  )}
-		  {!profile && showAdvanced && <p className="mt-3 text-xs leading-relaxed text-muted-foreground">GitLab, Gitea, SSH, HTTPS, and local <code>file://</code> remotes are supported through the same review.</p>}
 
+          {!preview && <>
           {(inventory?.collisions.length ?? 0) > 0 && (
             <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
@@ -323,6 +319,7 @@ export default function SyncCenter() {
             {!inventoryLoading && protectedCount === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No valid skills were found yet.</p>}
           </div>
           {inventory?.invalid_paths ? <p className="mt-3 text-xs text-muted-foreground">{inventory.invalid_paths} unreadable or invalid skill folder{inventory.invalid_paths === 1 ? '' : 's'} were left untouched.</p> : null}
+		  </>}
           {remoteReview && (
             <div className="mt-4 rounded-xl border border-border bg-muted/25 p-3 text-xs">
               <p className="font-semibold">Change review</p>
@@ -346,8 +343,10 @@ export default function SyncCenter() {
             </div>
           )}
           {preview && setupMode && (
-            <div className="mt-4 rounded-xl border border-border bg-background/40 p-4 text-xs">
-              <p className="font-semibold">Review: {preview.skills.length} skills · {preview.skills.reduce((total, skill) => total + skill.file_count, 0)} files</p>
+            <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/5 p-5 text-xs">
+			  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Step 2 of 2</p>
+              <p className="mt-1 text-base font-semibold">Choose where to keep your library</p>
+			  <p className="mt-2 font-medium">{preview.skills.length} skills · {preview.skills.reduce((total, skill) => total + skill.file_count, 0)} files</p>
               {preview.secret_findings.length > 0 ? <p className="mt-2 text-destructive">Blocked by {preview.secret_findings.length} possible secret(s). Remove them before creating a backup.</p> : <p className="mt-2 text-muted-foreground">No secret patterns found. This review is rebuilt immediately before commit.</p>}
               {setupMode === 'github' ? (
                 <div className="mt-3 flex flex-wrap items-end gap-2">

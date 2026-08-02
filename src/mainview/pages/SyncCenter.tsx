@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { AlertTriangle, CheckCircle2, ChevronRight, Cloud } from 'lucide-react'
 import { invoke } from '@/mainview/lib/native'
 import type { SyncInventoryJson, SyncProfileStatusJson, SyncPublishPreviewJson, SyncThreeWayReviewJson } from '@/shared/rpc-schema'
@@ -41,6 +42,15 @@ export default function SyncCenter() {
   })
 
   const profile = profiles?.[0]
+	const inventoryItems = inventory?.items ?? []
+	const inventoryScrollRef = useRef<HTMLDivElement>(null)
+	const inventoryVirtualizer = useVirtualizer({
+	  count: inventoryItems.length,
+	  getScrollElement: () => inventoryScrollRef.current,
+	  estimateSize: () => 46,
+	  overscan: 10,
+	  getItemKey: (index) => inventoryItems[index]?.candidate_key ?? String(index),
+	})
   const { data: recovery } = useQuery<{ pending: boolean }>({
     queryKey: ['sync-recovery', profile?.profile_id],
     queryFn: () => invoke('sync_recovery_status', { profileId: profile!.profile_id }),
@@ -210,7 +220,7 @@ export default function SyncCenter() {
   }
 
   return (
-    <div className={`mx-auto w-full max-w-4xl px-6 py-8 pb-12 animate-fade-in-up ${showInventory ? 'flex h-full min-h-0 flex-col overflow-hidden' : 'min-h-full'}`}>
+    <div className={`mx-auto w-full max-w-4xl px-6 py-8 animate-fade-in-up ${showInventory ? 'flex h-full min-h-0 flex-col overflow-hidden pb-3' : 'min-h-full pb-12'}`}>
       {!profile && !profilesLoading && !showInventory && (
         <section className="relative overflow-hidden rounded-[28px] bg-primary px-6 py-7 text-primary-foreground shadow-[0_28px_70px_-36px_color-mix(in_srgb,var(--primary)_90%,transparent)] sm:px-9 sm:py-9">
           <div className="absolute -right-14 -top-20 size-72 rounded-full border border-white/15" />
@@ -282,6 +292,12 @@ export default function SyncCenter() {
               </p>
             </div>
           </div>
+		  {!profile && !preview && (inventory?.invalid_paths || inventory?.collisions.length) ? (
+			<div className="order-1 mt-3 space-y-2">
+			  {inventory?.invalid_paths ? <div className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" /><p>{inventory.invalid_paths} unreadable or invalid skill folders were left untouched and will not be included.</p></div> : null}
+			  {(inventory?.collisions.length ?? 0) > 0 && <div className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" /><p>{plural(inventory?.collisions.length ?? 0, 'skill')} have the same name but different contents. Choose the version to protect; Skiller will not decide by filename.</p></div>}
+			</div>
+		  ) : null}
 		  {!profile && !preview && (
 			<div className="order-3 mt-4 flex shrink-0 w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/82 px-3 py-2 shadow-(--ds-shadow-layered-medium) backdrop-blur-md">
 			  <p className="text-xs font-semibold">{selectedKeys.length} skills selected</p>
@@ -292,17 +308,13 @@ export default function SyncCenter() {
 			</div>
 		  )}
 
-		  {!preview && <div className="order-2 mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-		  {inventory?.invalid_paths ? <div className="mb-3 flex items-start gap-2 border-b border-amber-500/25 pb-3 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" /><p>{inventory.invalid_paths} unreadable or invalid skill folders were left untouched and will not be included.</p></div> : null}
-          {(inventory?.collisions.length ?? 0) > 0 && (
-            <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-              <p>{plural(inventory?.collisions.length ?? 0, 'skill')} have the same name but different contents. Sync Center will ask which version to protect; it will never choose by filename.</p>
-            </div>
-          )}
-          <div className="divide-y divide-border/60 pb-4">
-            {inventory?.items.map((item) => (
-              <label key={item.candidate_key} className="flex cursor-pointer items-center gap-3 px-2 py-2.5 text-xs hover:bg-muted/30">
+		  {!preview && <div ref={inventoryScrollRef} className="order-2 mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+			<div className="relative w-full" style={{ height: inventoryVirtualizer.getTotalSize() }}>
+			{inventoryVirtualizer.getVirtualItems().map((virtualItem) => {
+			  const item = inventoryItems[virtualItem.index]
+			  if (!item) return null
+			  return <div key={virtualItem.key} data-index={virtualItem.index} ref={inventoryVirtualizer.measureElement} className="absolute left-0 top-0 w-full border-b border-border/60" style={{ transform: `translateY(${virtualItem.start}px)` }}>
+              <label className="flex cursor-pointer items-center gap-3 px-2 py-2.5 text-xs hover:bg-muted/30">
                 <input
                   type="checkbox"
                   checked={selectedKeys.includes(item.candidate_key)}
@@ -316,9 +328,10 @@ export default function SyncCenter() {
 				  {[...new Set(item.locations.map((location) => location.agent_slug))].map((slug) => <span key={slug} title={slug}><AgentIcon slug={slug} className="size-4" /></span>)}
 				</span>
               </label>
-            ))}
-            {!inventoryLoading && protectedCount === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No valid skills were found yet.</p>}
-          </div>
+			  </div>
+			})}
+			{!inventoryLoading && protectedCount === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No valid skills were found yet.</p>}
+			</div>
 		  </div>}
           {remoteReview && (
             <div className="mt-4 rounded-xl border border-border bg-muted/25 p-3 text-xs">

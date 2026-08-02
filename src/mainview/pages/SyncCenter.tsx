@@ -282,8 +282,8 @@ export default function SyncCenter() {
             </div>
           </div>
 		  {!profile && !preview && (
-			<div className="pointer-events-none fixed bottom-8 left-[calc(var(--skiller-sidebar-width)+1.5rem)] right-8 z-50 h-24">
-			  <div className="absolute inset-0 bg-card/30 backdrop-blur-xl" />
+			<div className="pointer-events-none fixed bottom-0 left-[calc(var(--skiller-sidebar-width)+1.5rem)] right-8 z-50 h-[72px]">
+			  <div className="absolute inset-0 backdrop-blur-md" />
 			  <div className="pointer-events-auto absolute bottom-0 left-1/2 flex w-[min(42rem,calc(100%-2rem))] -translate-x-1/2 flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/95 p-3 shadow-(--ds-shadow-layered-medium)">
 			  <div>
 				<p className="text-xs font-semibold">{selectedKeys.length} skills ready to protect</p>

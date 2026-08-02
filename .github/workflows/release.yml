@@ -155,7 +155,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config python3 \
             libxss1 libnss3 libasound2t64 \
-            fakeroot dpkg
+            fakeroot dpkg xvfb
 
       - run: bun install --frozen-lockfile
 
@@ -216,12 +216,37 @@ jobs:
           bun run build
           bunx electron-builder --win --publish never
 
+      - name: Smoke-test packaged Windows app
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $app = Get-ChildItem artifacts/win-unpacked/*.exe | Select-Object -First 1
+          if (-not $app) { throw "Unpacked Windows application was not produced" }
+          $process = Start-Process -FilePath $app.FullName -ArgumentList "--disable-gpu" -PassThru
+          Start-Sleep -Seconds 8
+          if ($process.HasExited) { throw "Packaged Windows application exited during startup" }
+          Stop-Process -Id $process.Id -Force
+
       - name: Build Linux app
         if: matrix.platform == 'linux'
         run: |
           bun run build
           bunx electron-builder --linux --publish never
           node scripts/patch-appimage-runtime.mjs artifacts
+
+      - name: Smoke-test packaged Linux app
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          appimage="$(find artifacts -maxdepth 1 -name '*.AppImage' -print -quit)"
+          [[ -n "$appimage" ]] || { echo "AppImage was not produced"; exit 1; }
+          chmod +x "$appimage"
+          set +e
+          timeout 10s xvfb-run -a "$appimage" --appimage-extract-and-run --no-sandbox
+          status=$?
+          set -e
+          [[ "$status" == "124" ]] || { echo "Packaged Linux application exited during startup (status $status)"; exit 1; }
 
       - name: Upload release assets
         env:

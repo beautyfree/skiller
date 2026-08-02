@@ -259,7 +259,7 @@ export default function SyncCenter() {
           <div className="relative max-w-2xl">
             <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-primary-foreground/70"><Cloud className="size-3.5" /> Sync Center</div>
             <h1 className="mt-6 text-balance text-4xl font-semibold tracking-[-0.055em] sm:text-5xl">Keep your agent setup<br />ready for anything.</h1>
-            <p className="mx-auto mt-5 max-w-xl text-sm leading-relaxed text-primary-foreground/82 sm:text-base">Your skills, connections and hard-won workflow belong in one private library — ready when you change Macs, add an agent, or need to recover fast.</p>
+            <p className="mx-auto mt-5 max-w-xl text-sm leading-relaxed text-primary-foreground/82 sm:text-base">Your skills, connections and hard-won workflow belong in one private library — ready when you change computers, add an agent, or need to recover fast.</p>
             <div className="mt-8"><Button size="lg" className="bg-background text-foreground shadow-none hover:bg-background/90" onClick={() => setShowInventory(true)}>Protect this setup <ChevronRight className="size-4" /></Button></div>
             <div className="mt-9 flex flex-wrap justify-center gap-x-7 gap-y-2 text-xs text-primary-foreground/76">
               <span>{inventoryLoading ? 'Scanning your setup…' : `${plural(protectedCount, 'skill')} ready to protect`}</span>

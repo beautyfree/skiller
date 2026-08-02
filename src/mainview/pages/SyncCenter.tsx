@@ -282,7 +282,7 @@ export default function SyncCenter() {
             </div>
           </div>
 		  {!profile && !preview && (
-			<div className="sticky bottom-3 z-10 mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/95 p-3 shadow-(--ds-shadow-layered-subtle) backdrop-blur">
+			<div className="fixed bottom-10 left-1/2 z-50 flex w-[min(42rem,calc(100vw-3rem))] -translate-x-1/2 flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/95 p-3 shadow-(--ds-shadow-layered-medium) backdrop-blur">
 			  <div>
 				<p className="text-xs font-semibold">{selectedKeys.length} skills ready to protect</p>
 				<p className="mt-0.5 text-[11px] text-muted-foreground">You can change the selection below. The repository is created only after a final review.</p>
@@ -301,7 +301,7 @@ export default function SyncCenter() {
               <p>{plural(inventory?.collisions.length ?? 0, 'skill')} have the same name but different contents. Sync Center will ask which version to protect; it will never choose by filename.</p>
             </div>
           )}
-          <div className="mt-4 divide-y divide-border/60 rounded-xl border border-border/70">
+          <div className="mt-4 divide-y divide-border/60 rounded-xl border border-border/70 pb-28">
             {inventory?.items.map((item) => (
               <label key={item.candidate_key} className="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-xs hover:bg-muted/30">
                 <input

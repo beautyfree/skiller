@@ -303,7 +303,7 @@ export default function SkillsManager() {
 
   // Skills visible for the current agent filter, ignoring search (used for URL skill id + auto-select)
   const listWithoutSearch = useMemo(() => {
-    const available = mergedSkills?.filter((s) => allAgents(s).length > 0);
+    const available = mergedSkills?.filter((s) => s.scope.type === "SharedGlobal" || allAgents(s).length > 0);
     const byAgent = filter === "all"
       ? available
       : available?.filter((s) => allAgents(s).includes(filter));
@@ -437,8 +437,10 @@ export default function SkillsManager() {
 
   // Filter by agent (direct + inherited), then by search query
   const filtered = useMemo(() => {
-    // Only show skills that have at least one installation (direct or inherited)
-    const available = mergedSkills?.filter((s) => allAgents(s).length > 0);
+    // Shared-library skills are user-owned sources, not installations on every
+    // agent that can read ~/.agents/skills. They belong in the all-skills view
+    // but never in a specific agent's filter unless an explicit link exists.
+    const available = mergedSkills?.filter((s) => s.scope.type === "SharedGlobal" || allAgents(s).length > 0);
     let list = filter === "all"
       ? available
       : available?.filter((s) => allAgents(s).includes(filter));
@@ -1661,6 +1663,9 @@ const SkillListItem = memo(function SkillListItem({
           </p>
         )}
         <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-medium tabular-nums text-muted-foreground/90">
+		  {skill.scope.type === "SharedGlobal" && (
+			<span className="rounded-full bg-secondary px-1.5 py-0.5 text-secondary-foreground">{t("skills.sharedDirectory")}</span>
+		  )}
           <span
             className="inline-flex cursor-help items-center gap-0.5"
             title={t("skills.tokenTooltipListing")}
@@ -2151,6 +2156,11 @@ function SkillDetail({
         <hr className="border-border" />
 
         {/* Agent Assignment */}
+        {skill.scope.type === "SharedGlobal" && (
+          <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
+            {t("skills.sharedLibrarySkillHint")}
+          </p>
+        )}
         <DetailSection label={t("skills.agentsLabel", { installed: installedAgentCount(skill, detectedAgents), total: detectedAgents.length })}>
           <SkillAgentList
             skill={skill}

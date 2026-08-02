@@ -125,6 +125,7 @@ const en = {
     agentsLabel: "Agents ({{installed}}/{{total}})",
     via: "Source: {{name}}",
     sharedDirectory: "Shared Directory",
+	sharedLibrarySkillHint: "Stored once in your shared library. An agent appears here only when it has its own folder or an explicit link to this skill.",
     symlink: "symlink",
     inheritedOnlyHint: "Visible through linked folders",
     whyCannotUninstall: "Why can't I uninstall?",

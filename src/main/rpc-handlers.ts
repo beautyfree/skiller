@@ -273,7 +273,7 @@ function syncInventoryToJson(): SyncInventoryJson {
       candidate_key: item.candidateKey,
       display_name: item.displayName,
       content_hash: item.contentHash,
-      locations: item.locations.map((location) => ({ agent_slug: location.agentSlug, kind: location.kind })),
+      locations: item.locations.map((location) => ({ ...(location.agentSlug ? { agent_slug: location.agentSlug } : {}), kind: location.kind })),
     })),
     collisions: inventory.collisions.map((collision) => ({
       display_name: collision.displayName,
@@ -297,7 +297,7 @@ function createSyncCenterPublishPlan(selectedKeys?: string[]) {
     kind: 'bundled' as const,
     id: item.candidateKey,
     sourcePath: item.sourcePath,
-    installationAgentSlugs: item.locations.map((location) => location.agentSlug),
+    installationAgentSlugs: item.locations.flatMap((location) => location.agentSlug ? [location.agentSlug] : []),
   })))
 }
 

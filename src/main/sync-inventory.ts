@@ -8,7 +8,8 @@ import type { AgentConfig } from "./types";
 export type SyncInventoryLocationKind = "shared" | "agent-local" | "inherited";
 
 export type SyncInventoryLocation = {
-	agentSlug: string;
+	/** Omitted for the canonical shared library: it belongs to no agent. */
+	agentSlug?: string;
 	kind: SyncInventoryLocationKind;
 };
 
@@ -33,7 +34,7 @@ export type SyncInventory = {
 	invalidPaths: number;
 };
 
-type Root = { agentSlug: string; path: string; kind: SyncInventoryLocationKind };
+type Root = { agentSlug?: string; path: string; kind: SyncInventoryLocationKind };
 
 function collectSkillRoots(root: string): string[] {
 	// Importing scanner's private traversal would make a safety-critical inventory
@@ -89,7 +90,6 @@ function canonical(path: string): string | null {
  */
 export function scanSyncInventoryFromRoots(roots: Root[]): SyncInventory {
 	const byHash = new Map<string, SyncInventoryItem>();
-	const sharedRoot = canonical(sharedSkillsDir());
 	let invalidPaths = 0;
 
 	for (const root of roots) {
@@ -108,11 +108,13 @@ export function scanSyncInventoryFromRoots(roots: Root[]): SyncInventory {
 					sourcePath: actual,
 					locations: [],
 				};
-				const kind: SyncInventoryLocationKind = sharedRoot && actual.startsWith(`${sharedRoot}/`)
-					? "shared"
-					: root.kind;
+				// The root, rather than its canonical destination, defines ownership.
+				// A symlink placed in an agent's own folder is a real agent link;
+				// the canonical ~/.agents/skills root is one shared source, never one
+				// pseudo-installation per agent that happens to read it.
+				const kind = root.kind;
 				if (!item.locations.some((location) => location.agentSlug === root.agentSlug && location.kind === kind)) {
-					item.locations.push({ agentSlug: root.agentSlug, kind });
+					item.locations.push(root.agentSlug ? { agentSlug: root.agentSlug, kind } : { kind });
 				}
 				byHash.set(exportPlan.sha256, item);
 			} catch {
@@ -139,10 +141,11 @@ export function scanSyncInventoryFromRoots(roots: Root[]): SyncInventory {
 }
 
 export function scanSyncInventory(configs: AgentConfig[]): SyncInventory {
-	const roots: Root[] = [];
+	const roots: Root[] = [{ path: sharedSkillsDir(), kind: "shared" }];
 	for (const agent of configs.filter((agent) => agent.detected)) {
 		for (const path of agent.global_paths) roots.push({ agentSlug: agent.slug, path, kind: "agent-local" });
 		for (const readable of agent.additional_readable_paths) {
+			if (readable.source_agent === "shared") continue;
 			roots.push({ agentSlug: agent.slug, path: readable.path, kind: "inherited" });
 		}
 	}

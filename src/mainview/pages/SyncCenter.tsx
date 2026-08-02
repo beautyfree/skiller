@@ -15,12 +15,14 @@ function plural(count: number, word: string): string {
 type InventoryItem = SyncInventoryJson['items'][number]
 
 const InventorySkillRow = memo(function InventorySkillRow({ item, selected, onToggle }: { item: InventoryItem; selected: boolean; onToggle: (key: string) => void }) {
-	const agentSlugs = useMemo(() => [...new Set(item.locations.map((location) => location.agent_slug))], [item.locations])
+	const agentSlugs = useMemo(() => [...new Set(item.locations.flatMap((location) => location.agent_slug ? [location.agent_slug] : []))], [item.locations])
+	const isShared = item.locations.some((location) => location.kind === 'shared')
 	return <label className="flex min-h-12 cursor-pointer items-center gap-3 px-2 py-2.5 text-xs hover:bg-muted/30">
 		<input className="cursor-pointer" type="checkbox" checked={selected} onChange={() => onToggle(item.candidate_key)} />
 		<Cloud className="size-3.5 shrink-0 text-muted-foreground" />
 		<span className="min-w-0 flex-1 break-words font-medium text-foreground">{item.display_name}</span>
-		<span className="flex shrink-0 items-center gap-1.5" aria-label={`Available to ${agentSlugs.join(', ')}`}>
+		<span className="flex shrink-0 items-center gap-1.5" aria-label={agentSlugs.length ? `Linked to ${agentSlugs.join(', ')}` : isShared ? 'Shared skills library' : undefined}>
+			{isShared && <span className="text-[10px] font-medium text-muted-foreground">Shared</span>}
 			{agentSlugs.map((slug) => <span key={slug} title={slug}><AgentIcon slug={slug} className="size-4" /></span>)}
 		</span>
 	</label>
@@ -75,7 +77,7 @@ export default function SyncCenter() {
     enabled: Boolean(profile),
   })
   const protectedCount = inventory?.items.length ?? 0
-  const agentCount = new Set(inventory?.items.flatMap((item) => item.locations.map((location) => location.agent_slug)) ?? []).size
+	const agentCount = new Set(inventory?.items.flatMap((item) => item.locations.flatMap((location) => location.agent_slug ? [location.agent_slug] : [])) ?? []).size
 	const isLanding = !profile && !profilesLoading && !showInventory
 
   useEffect(() => {
@@ -261,7 +263,7 @@ export default function SyncCenter() {
             <div className="mt-8"><Button size="lg" className="bg-background text-foreground shadow-none hover:bg-background/90" onClick={() => setShowInventory(true)}>Protect this setup <ChevronRight className="size-4" /></Button></div>
             <div className="mt-9 flex flex-wrap justify-center gap-x-7 gap-y-2 text-xs text-primary-foreground/76">
               <span>{inventoryLoading ? 'Scanning your setup…' : `${plural(protectedCount, 'skill')} ready to protect`}</span>
-              <span>{inventoryLoading ? '' : `${plural(agentCount, 'agent')} connected`}</span>
+			  {agentCount > 0 && <span>{inventoryLoading ? '' : `${plural(agentCount, 'agent')} linked`}</span>}
               <span>Private by default</span>
             </div>
           </div>

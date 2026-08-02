@@ -253,7 +253,7 @@ export type SyncInventoryJson = {
     candidate_key: string;
     display_name: string;
     content_hash: string;
-    locations: { agent_slug: string; kind: "shared" | "agent-local" | "inherited" }[];
+    locations: { agent_slug?: string; kind: "shared" | "agent-local" | "inherited" }[];
   }[];
   collisions: { display_name: string; candidate_keys: string[] }[];
   invalid_paths: number;

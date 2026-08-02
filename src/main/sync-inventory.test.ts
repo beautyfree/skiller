@@ -52,4 +52,19 @@ describe("sync inventory", () => {
 		expect(second.items[0]?.candidateKey).toBe("writing-guide");
 		expect(first.items[0]?.contentHash).not.toBe(second.items[0]?.contentHash);
 	});
+
+	it("models the shared library once without assigning it to each reader", () => {
+		const shared = root();
+		const codex = root();
+		skill(shared, "writing", "---\nname: Writing guide\ndescription: Shared\n---\n# Guide\n");
+
+		const inventory = scanSyncInventoryFromRoots([
+			{ path: shared, kind: "shared" },
+			// A configured reader must not add an inherited copy of the same path.
+			{ agentSlug: "codex", path: codex, kind: "agent-local" },
+		]);
+
+		expect(inventory.items).toHaveLength(1);
+		expect(inventory.items[0]?.locations).toEqual([{ kind: "shared" }]);
+	});
 });

@@ -328,7 +328,7 @@ export default function SyncCenter() {
 			</div>
 		  ) : null}
 		  {!profile && !preview && (
-			<div className="order-3 mt-4 flex shrink-0 w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/82 px-3 py-2 shadow-(--ds-shadow-layered-medium) backdrop-blur-md">
+			<div className="order-3 mt-4 flex w-full shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 px-1 pt-3">
 			  <p className="text-xs font-semibold">{selectedKeys.length} skills selected <span className="ml-1 font-normal text-muted-foreground">Ready for the next step</span></p>
 			  <div className="flex gap-2">
 				<Button size="lg" onClick={prepareStorageChoice} disabled={busy !== 'idle' || selectedKeys.length === 0}>Continue <ChevronRight className="size-3.5" /></Button>

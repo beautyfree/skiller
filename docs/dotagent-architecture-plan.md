@@ -410,20 +410,20 @@ Exit: package builds on macOS/Linux/Windows CI and validates fixtures without to
 ### Phase 2 — inventory, source resolution, and audit
 
 - [x] Implement bounded canonical library scan and deterministic hashes without following symlinks.
-- [ ] Implement Git source normalization, clone/fetch cache, immutable resolution, and integrity.
+- [ ] Implement Git source normalization, clone/fetch cache, immutable resolution, and integrity. (Isolated clone/fetch, commit pinning, bounded scan, integrity, concurrent deterministic resolution, and stale-plan-safe lock writes are implemented; persistent cache remains.)
 - [x] Implement read-only Skills CLI v3 lock adapter with explicit unknown-version refusal.
 - [ ] Port value-free secret scanning and safe export rules. (Scanner is shared; complete export-policy extraction remains.)
-- [ ] Implement external skill audit without executing content.
-- [ ] Implement `inspect`, `resolve`, and `doctor` JSON/CLI surfaces.
+- [ ] Implement external skill audit without executing content. (Structural/path/size/link audit is implemented; provenance/license reporting remains.)
+- [ ] Implement `inspect`, `resolve`, and `doctor` JSON/CLI surfaces. (`inspect` and preview-by-default `resolve` are implemented; `doctor` remains.)
 
 Exit: a public fixture repository resolves reproducibly; tampered content, moving pins, unsafe links, and unsupported schemas fail safely.
 
 ### Phase 3 — agent catalog and materialization
 
-- [ ] Define capability descriptors and migrate agent definitions incrementally.
+- [ ] Define capability descriptors and migrate agent definitions incrementally. (Typed capability contract is implemented; Skiller catalog migration remains.)
 - [ ] Implement native-shared, per-skill symlink, Windows junction, config-path, and reviewed copy strategies.
 - [ ] Implement machine scan without treating `.agents/skills` as installation evidence.
-- [ ] Implement import/materialization plans and managed ownership markers.
+- [ ] Implement import/materialization plans and managed ownership markers. (Deterministic conflict-safe materialization plan is implemented; machine scan and markers remain.)
 - [ ] Implement journaled apply and rollback.
 - [ ] Implement `plan`, `apply`, `status`, and first `sync` command.
 

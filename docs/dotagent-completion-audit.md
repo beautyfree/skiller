@@ -4,7 +4,7 @@ Audit date: 2026-08-03
 
 Audited revisions:
 
-- `beautyfree/dotagent` `fa24b2e1acf80348c3e1e76f212c04b54f23b1f8`
+- `beautyfree/dotagent` `96ef6eee92133364f773141657be5ab0cfc4a806`
 - `beautyfree/skiller` `feat/agent-sync-foundation`, based on `75c608c` with
   the audit remediations carried by this document's commit
 
@@ -47,15 +47,16 @@ been claimed as published.
 | One engine, not two | Skiller imports dotagent schemas, discovery, catalog, audit, export, Git, reconciliation, and transaction APIs; alternate restore/setup routes and kill switch are removed | Proven |
 | Same plans across adapters | Golden fixtures prove byte-equivalent serialized import plans and IDs; renderer JSON mappings redact paths | Proven |
 | Public/private Sync Center UX | Live exact-path dev and signed arm64 packaged reviews show separate create/connect, review/apply, destination, conflict, and recovery stages | Proven for current macOS package |
-| macOS/Linux/Windows behavior | dotagent CI run `30821036175` passes on all three operating systems; platform path and strategy fixtures pass | Proven at CI level |
-| Reproducible release artifacts | Clean-commit builder creates byte-reproducible tarball, CycloneDX SBOM, checksums, docs, and a commit-bound manifest; verifier rejects tampering | Proven |
-| Published signed/provenance package | Protected OIDC workflow is ready and non-publishing run `30821075183` passed; registry publication has not been authorized or performed | **Not complete** |
+| macOS/Linux/Windows behavior | dotagent CI run `30824101405` passes on all three operating systems; platform path and strategy fixtures pass | Proven at CI level |
+| Reproducible release artifacts | Clean-commit builder creates byte-reproducible tarball, CycloneDX SBOM, checksums, version-specific notes, docs, and a commit-bound manifest; exact-allowlist verifier rejects tampering and extra assets | Proven |
+| Permanent release flow | Retry-safe publisher refuses npm integrity and Git-tag collisions, holds GitHub Release as draft until every verified asset is present, then verifies tag and asset sizes | Proven without publication |
+| Published signed/provenance package | Protected OIDC workflow is ready and non-publishing run `30824175165` passed; registry publication has not been authorized or performed | **Not complete** |
 
 ## Current verification snapshot
 
 Fresh local verification at the audited revisions:
 
-- dotagent `bun run release:check`: 108 tests, 382 assertions, lint, formatting,
+- dotagent `bun run release:check`: 114 tests, 399 assertions, lint, formatting,
   typecheck, schema drift, API drift, CLI inspect/audit smoke tests, 160 package
   files, and 33 export paths all pass;
 - Skiller `bun test`: 108 tests and 386 assertions pass;
@@ -64,9 +65,10 @@ Fresh local verification at the audited revisions:
 - Developer-ID-signed local arm64 `.app` passes
   `codesign --verify --deep --strict` and exact-path runtime review of Dashboard,
   Sync Center, and existing-library connection without visible RPC failure;
-- dotagent CI `30821036175` passes on Ubuntu, macOS, and Windows;
-- release validation run `30821075183` produced artifact `8858854620` without
-  invoking the protected npm publish job.
+- dotagent CI `30824101405` passes on Ubuntu, macOS, and Windows;
+- release validation run `30824175165` produced artifact `8860103162` with
+  digest `sha256:4a6d014193041d4accca308ad0503255b20ceb816e97af5583234bbd721faaee`
+  without invoking the protected npm/GitHub publication job.
 
 ## Sync Center interface audit
 

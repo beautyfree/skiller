@@ -1,8 +1,10 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stringify } from "yaml";
+import { randomUUID } from "node:crypto";
 import { parseLibraryLock, parseLibraryManifest } from "@beautyfree/dotagent/library";
 import { libraryManifestSchema, type LibraryLock, type LibraryManifest } from "@beautyfree/dotagent/schema";
+import { localConfigSchema, mergeConfig, parseLocalConfig, parsePortableConfig, resolveSkillAgentSelection, type LocalConfig } from "@beautyfree/dotagent/config";
 import { GitDependencyResolver } from "@beautyfree/dotagent";
 import { planResolveDependencies } from "@beautyfree/dotagent/sources";
 import type { SyncManifest } from "./sync-profile";
@@ -12,6 +14,7 @@ import { planBundledSkillExport } from "./sync-export";
 
 const CANONICAL_MANIFEST = "skills.json";
 const LEGACY_MANIFEST = "skiller-sync.yaml";
+const LOCAL_CONFIG = "dotagent.local.yaml";
 
 type CanonicalSkillerMetadata = {
   schema_version: 1;
@@ -26,6 +29,10 @@ export type CanonicalSyncLibraryPlan = {
   manifest: LibraryManifest;
   lock: LibraryLock;
   portableFiles: Record<string, string>;
+};
+
+export type CanonicalSyncLibraryOptions = {
+  license?: string;
 };
 
 function canonicalMetadata(value: unknown): CanonicalSkillerMetadata {
@@ -48,7 +55,78 @@ export function isCanonicalSyncLibrary(workspace: string): boolean {
   return existsSync(join(workspace, CANONICAL_MANIFEST));
 }
 
-export async function planCanonicalSyncLibrary(workspace: string, plan: SyncPublishPlan): Promise<CanonicalSyncLibraryPlan> {
+export function readCanonicalSyncLock(workspace: string): LibraryLock | null {
+  if (!isCanonicalSyncLibrary(workspace)) return null;
+  const result = parseLibraryLock(readFileSync(join(workspace, "skills.lock"), "utf8"));
+  if (!result.ok) throw new Error(result.issues.map((issue) => issue.message).join("; "));
+  return result.value;
+}
+
+/** Machine routing is private state and must never leak into a shared library. */
+export function readLocalSyncAgentSelection(workspace: string): string[] | null {
+  if (!isCanonicalSyncLibrary(workspace)) return null;
+  const path = join(workspace, LOCAL_CONFIG);
+  if (!existsSync(path)) return null;
+  const selected = parseLocalConfig(readFileSync(path, "utf8")).agents?.selected;
+  return selected ? [...selected] : null;
+}
+
+/**
+ * Persist a reviewed per-device routing choice while retaining future local
+ * fields. Canonical repositories gitignore this file by contract.
+ */
+export function writeLocalSyncAgentSelection(workspace: string, agentSlugs: string[]): void {
+  if (!isCanonicalSyncLibrary(workspace)) {
+    throw new Error("Local agent routing is supported only by canonical dotagent libraries");
+  }
+  const path = join(workspace, LOCAL_CONFIG);
+  const existing: LocalConfig = existsSync(path)
+    ? parseLocalConfig(readFileSync(path, "utf8"))
+    : localConfigSchema.parse({ schema_version: 1 });
+  const next = localConfigSchema.parse({
+    ...existing,
+    schema_version: 1,
+    agents: {
+      ...(existing.agents ?? {}),
+      selected: [...new Set(agentSlugs)].sort(),
+    },
+  });
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, stringify(next, { lineWidth: 100 }), { mode: 0o600 });
+    renameSync(temporary, path);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+
+export function canonicalSyncAgentRouting(
+  workspace: string,
+  detectedAgentSlugs: string[],
+): { forSkill: (skillId: string) => string[]; localFilter: string[] | null } | null {
+  if (!isCanonicalSyncLibrary(workspace)) return null;
+  const portable = parsePortableConfig(readFileSync(join(workspace, "dotagent.yaml"), "utf8"));
+  const localPath = join(workspace, LOCAL_CONFIG);
+  const local = existsSync(localPath) ? parseLocalConfig(readFileSync(localPath, "utf8")) : null;
+  const effective = mergeConfig(portable, local);
+  return {
+    forSkill: (skillId) => resolveSkillAgentSelection(effective, skillId, detectedAgentSlugs).agents,
+    localFilter: effective.agents.selected ? [...effective.agents.selected].sort() : null,
+  };
+}
+
+export async function planCanonicalSyncLibrary(
+  workspace: string,
+  plan: SyncPublishPlan,
+  options: CanonicalSyncLibraryOptions = {},
+): Promise<CanonicalSyncLibraryPlan> {
+  let existingLicense: string | undefined;
+  const existingManifestPath = join(workspace, CANONICAL_MANIFEST);
+  if (existsSync(existingManifestPath)) {
+    const existing = parseLibraryManifest(readFileSync(existingManifestPath, "utf8"));
+    if (existing.ok) existingLicense = existing.value.license;
+  }
+  const license = options.license ?? existingLicense;
   const dependencies: LibraryManifest["dependencies"] = {};
   const sourceKinds: CanonicalSkillerMetadata["source_kinds"] = {};
   const contentHashes: CanonicalSkillerMetadata["content_hashes"] = {};
@@ -74,6 +152,7 @@ export async function planCanonicalSyncLibrary(workspace: string, plan: SyncPubl
     name: plan.manifest.profile.id,
     version: "0.1.0",
     description: "A portable agent skill library managed by Skiller and beautyfree/dotagent.",
+    ...(license ? { license } : {}),
     skills: plan.manifest.skills.filter((skill) => skill.kind === "bundled").map((skill) => skill.path).sort(),
     dependencies,
     metadata: { skiller_sync: metadata },

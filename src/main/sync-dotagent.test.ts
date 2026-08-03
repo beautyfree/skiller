@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createSyncPublishPlan, applySyncPublishFiles } from "./sync-publish";
-import { isCanonicalSyncLibrary, planCanonicalSyncLibrary, readSyncManifestFromWorkspace } from "./sync-dotagent";
-import { cloneSyncWorkspace, commitSyncWorkspace, initializeSyncWorkspace, pushSyncWorkspace } from "./sync-workspace";
+import { canonicalSyncAgentRouting, isCanonicalSyncLibrary, planCanonicalSyncLibrary, readLocalSyncAgentSelection, readSyncManifestFromWorkspace, writeLocalSyncAgentSelection } from "./sync-dotagent";
+import { cloneSyncWorkspace, commitSyncWorkspace, getSyncWorkspaceStatus, initializeSyncWorkspace, pushSyncWorkspace } from "./sync-workspace";
 import { createSyncRestorePlan } from "./sync-restore";
 
 const roots: string[] = [];
@@ -93,4 +93,26 @@ describe("canonical dotagent Sync Center library", () => {
       sha256: "a".repeat(64),
     }]);
   }, 20_000);
+
+  it("keeps this computer's selected agents in a gitignored local overlay", async () => {
+    const root = mkdtempSync(join(tmpdir(), "skiller-canonical-routing-"));
+    roots.push(root);
+    const source = join(root, "source");
+    const workspace = join(root, "library");
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, "SKILL.md"), "---\nname: writing\ndescription: Writes clearly.\n---\n# Writing\n");
+    const publish = createSyncPublishPlan("public-toolkit", "public", [{ id: "writing", sourcePath: source, installationAgentSlugs: ["codex"] }]);
+    const canonical = await planCanonicalSyncLibrary(workspace, publish, { license: "MIT" });
+    applySyncPublishFiles(workspace, publish, canonical.portableFiles);
+    await initializeSyncWorkspace(workspace);
+    await commitSyncWorkspace(workspace, "Create library");
+
+    writeLocalSyncAgentSelection(workspace, ["codex", "claude-code", "codex"]);
+
+    expect(readLocalSyncAgentSelection(workspace)).toEqual(["claude-code", "codex"]);
+    expect(JSON.parse(readFileSync(join(workspace, "skills.json"), "utf8"))).toMatchObject({ license: "MIT" });
+    expect(canonicalSyncAgentRouting(workspace, ["claude-code", "codex", "cursor"])?.forSkill("writing")).toEqual(["codex"]);
+    expect(readFileSync(join(workspace, ".gitignore"), "utf8")).toContain("dotagent.local.yaml");
+    expect(await getSyncWorkspaceStatus(workspace)).toMatchObject({ changed: false });
+  });
 });

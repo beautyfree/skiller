@@ -372,6 +372,16 @@ export type SyncInventoryJson = {
 
 export type SyncThreeWayReviewJson = {
   profile_id: string;
+  dependency_changes: {
+    dependency: string;
+    action: "added" | "updated" | "removed";
+    from_commit: string | null;
+    to_commit: string | null;
+    from_license: string | null;
+    to_license: string | null;
+    skills_added: string[];
+    skills_removed: string[];
+  }[];
   skills: {
     id: string;
     kind: "bundled" | "reference" | "skills_sh";
@@ -425,7 +435,12 @@ export type AppRPCSchema = {
         response: SyncPublishPreviewJson;
       };
       sync_center_publish: {
-        params: { remoteUrl: string; selectedKeys?: string[] };
+        params: {
+          remoteUrl: string;
+          selectedKeys?: string[];
+          mode: "private" | "public";
+          license?: "MIT" | "Apache-2.0" | "CC0-1.0";
+        };
         response: { commit: string | null; pushed: boolean };
       };
       sync_three_way_review: { params: { profileId: string }; response: SyncThreeWayReviewJson };
@@ -459,7 +474,11 @@ export type AppRPCSchema = {
         response: { commit: string | null; pushed: boolean };
       };
       sync_profile_clone: {
-        params: { profileId: string; remoteUrl: string };
+        params: { profileId: string; remoteUrl: string; agentSlugs?: string[] };
+        response: SyncProfileStatusJson;
+      };
+      sync_center_connect: {
+        params: { remoteUrl: string; agentSlugs: string[] };
         response: SyncProfileStatusJson;
       };
       sync_github_create_repo: {

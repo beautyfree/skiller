@@ -5,12 +5,13 @@ import { promisify } from "node:util";
 import simpleGit from "simple-git";
 import {
 	applyLibraryCommit,
+	applyLibraryClone,
 	applyLibraryPull,
 	applyLibraryPush,
-	cloneLibrary,
 	fetchLibrary,
 	getLibraryGitStatus,
 	initializeLibraryGit,
+	planLibraryClone,
 	planLibraryCommit,
 	planLibraryPull,
 	planLibraryPush,
@@ -82,7 +83,8 @@ export async function cloneSyncWorkspace(remoteUrl: string, workspacePath: strin
 		throw new Error(`Sync workspace must be empty before clone: ${workspacePath}`);
 	}
 	try {
-		await cloneLibrary(remoteUrl, workspacePath);
+		const plan = await planLibraryClone(remoteUrl, workspacePath);
+		await applyLibraryClone(plan);
 		return;
 	} catch {
 		// Existing Skiller profiles predate the canonical dotagent manifest. Fall

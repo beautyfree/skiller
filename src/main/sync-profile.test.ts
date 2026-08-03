@@ -9,6 +9,7 @@ import {
 	assertPortableRelativePath,
 	createSyncManifest,
 	parseSyncManifest,
+	syncProfileIdFromRemote,
 	stringifySyncManifest,
 } from "./sync-profile";
 import { scanTextForSecrets } from "./sync-secret-scan";
@@ -43,6 +44,11 @@ function makeSkill(files: Record<string, string>): string {
 }
 
 describe("sync profile manifest", () => {
+	it("derives a stable private workspace id from HTTPS and SSH remotes", () => {
+		expect(syncProfileIdFromRemote("https://github.com/beautyfree/My Agent Library.git")).toBe("my-agent-library");
+		expect(syncProfileIdFromRemote("git@github.com:beautyfree/dotagents.git")).toBe("dotagents");
+	});
+
 	it("round-trips a portable private profile", () => {
 		const manifest = createSyncManifest("personal-backup", "private", {
 			mode: "selected",

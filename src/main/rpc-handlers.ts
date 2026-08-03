@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { AppPlatform } from '../shared/platform'
@@ -33,6 +33,7 @@ import { dotagentAuditToJson, dotagentDiscoveryToJson, dotagentDoctorToJson, dot
 import { doctorLibrary } from '@beautyfree/dotagent/doctor'
 import { auditLibrary } from '@beautyfree/dotagent/audit'
 import { getMaterializationStatus } from '@beautyfree/dotagent/status'
+import { diffLibraryLocks } from '@beautyfree/dotagent/sources'
 import { homedir } from 'node:os'
 import { readSkillsCliLock, type SkillsCliLockEntry } from './skills-cli-lock'
 import { getAgentsDir } from './paths'
@@ -102,9 +103,9 @@ import { readRestoreJournalAt, recoverRestoreJournalAt, syncJournalPath } from '
 import { createGitHubSyncRepository } from './github-sync'
 import { applySyncPublishFiles, applySyncPublishPlan, createSyncPublishPlan, mergeBundledUpdateIntoManifest, type SyncPublishCandidate } from './sync-publish'
 import { applySyncRestorePlan, createSyncRestorePlan } from './sync-restore'
-import { isCanonicalSyncLibrary, planCanonicalSyncLibrary, readSyncManifestFromWorkspace } from './sync-dotagent'
+import { canonicalSyncAgentRouting, isCanonicalSyncLibrary, planCanonicalSyncLibrary, readCanonicalSyncLock, readSyncManifestFromWorkspace, writeLocalSyncAgentSelection } from './sync-dotagent'
 import { classifyExternalRestore, externalKeptSourceMatches, externalSkillDirectory, externalSkillRepository, type ManagedExternalSkill, type ExternalRestoreAction } from './sync-external'
-import { assertCredentialFreeGitRemote, assertPortableRelativePath, assertSyncStableId, type SyncManifest } from './sync-profile'
+import { assertCredentialFreeGitRemote, assertPortableRelativePath, assertSyncStableId, syncProfileIdFromRemote, type SyncManifest } from './sync-profile'
 import {
   commitSyncWorkspace,
   cloneSyncWorkspace,
@@ -194,6 +195,97 @@ function syncAgentPolicy(agentSlugs: unknown, agents: AgentConfig[]): SyncManife
     }
   }
   return { mode: 'selected', agent_slugs: selected as string[] }
+}
+
+function selectedDetectedAgentSlugs(value: unknown, agents: AgentConfig[]): string[] {
+  if (!Array.isArray(value)) throw new Error('agentSlugs must be an array')
+  const selected = [...new Set(value)]
+  for (const slug of selected) {
+    if (typeof slug !== 'string') throw new Error('agentSlugs must contain only strings')
+    assertSyncStableId(slug)
+    if (!agents.some((agent) => agent.slug === slug && agent.detected)) {
+      throw new Error(`Selected sync agent is not detected: ${slug}`)
+    }
+  }
+  return (selected as string[]).sort()
+}
+
+function syncRestoreAgentRouting(
+  workspace: string,
+  manifest: SyncManifest,
+  agents: AgentConfig[],
+): { forSkill: (skillId: string) => string[] } {
+  const detected = agents.filter((agent) => agent.detected).map((agent) => agent.slug)
+  const canonical = canonicalSyncAgentRouting(workspace, detected)
+  if (canonical) return { forSkill: canonical.forSkill }
+  const fallback = manifest.agent_policy.mode === 'selected'
+    ? manifest.agent_policy.agent_slugs.filter((slug) => detected.includes(slug))
+    : detected
+  const byId = new Map(manifest.skills.map((skill) => [skill.id, skill]))
+  return {
+    forSkill: (skillId) => byId.get(skillId)?.installations?.filter((slug) => detected.includes(slug)) ?? fallback,
+  }
+}
+
+function availableSyncProfileId(remoteUrl: string): string {
+  const base = syncProfileIdFromRemote(remoteUrl)
+  for (let index = 1; index <= 99; index += 1) {
+    const candidate = index === 1 ? base : `${base.slice(0, 60 - String(index).length)}-${index}`
+    if (!existsSync(syncWorkspacePath(candidate))) return candidate
+  }
+  throw new Error('Too many local libraries use this repository name')
+}
+
+async function cloneSyncProfile(params: {
+  profileId: string
+  remoteUrl: string
+  agentSlugs?: string[]
+}): Promise<SyncProfileStatusJson> {
+  assertSyncStableId(params.profileId)
+  const remoteUrl = params.remoteUrl.trim()
+  if (!remoteUrl) throw new Error('A Git remote is required')
+  assertCredentialFreeGitRemote(remoteUrl)
+  const workspace = syncWorkspacePath(params.profileId)
+  if (hasSyncWorkspace(params.profileId) || existsSync(workspace)) {
+    throw new Error('This library already has a local workspace; connecting again would overwrite it')
+  }
+  const agents = loadDetectedAgents('sync_profile_clone')
+  const localAgentSlugs = params.agentSlugs === undefined
+    ? undefined
+    : selectedDetectedAgentSlugs(params.agentSlugs, agents)
+  try {
+    await cloneSyncWorkspace(remoteUrl, workspace)
+    const canonical = isCanonicalSyncLibrary(workspace)
+    const manifest = readSyncManifestFromWorkspace(workspace)
+    // Legacy profiles used their portable id as their local storage key.
+    // Canonical dotagent libraries deliberately separate the repository name
+    // from this computer's private profile id.
+    if (!canonical && manifest.profile.id !== params.profileId) {
+      throw new Error('The legacy remote profile id does not match the requested profile')
+    }
+    if (localAgentSlugs !== undefined) {
+      if (!canonical) throw new Error('Choose-local-agents requires a canonical dotagent library')
+      writeLocalSyncAgentSelection(workspace, localAgentSlugs)
+    }
+    const status = await getSyncWorkspaceStatus(workspace)
+    return {
+      profile_id: params.profileId,
+      mode: manifest.profile.mode,
+      skill_count: manifest.skills.length,
+      remote_url: status.remoteUrl,
+      branch: status.branch,
+      changed: status.changed,
+      ahead: status.ahead,
+      behind: status.behind,
+      last_checked_at: new Date().toISOString(),
+      check_error: null,
+    }
+  } catch (error) {
+    // The destination was proven absent above and belongs solely to this
+    // failed clone attempt, so removing it cannot touch an existing profile.
+    rmSync(workspace, { recursive: true, force: true })
+    throw error
+  }
 }
 
 function buildSyncPublishPreview(
@@ -411,8 +503,18 @@ async function mapWithConcurrency<T, Result>(items: T[], limit: number, task: (i
 }
 
 type UnresolvedSyncCenterSource = { id: string; kind: 'reference' | 'skills_sh' }
+type SyncCenterLicense = 'MIT' | 'Apache-2.0' | 'CC0-1.0'
 
-async function createSyncCenterPublishPlan(selectedKeys?: string[]): Promise<{
+function syncCenterPublicLicense(mode: 'private' | 'public', license: unknown): SyncCenterLicense | undefined {
+  if (mode === 'private') return undefined
+  if (license === 'MIT' || license === 'Apache-2.0' || license === 'CC0-1.0') return license
+  throw new Error('Choose a license before creating a public library')
+}
+
+async function createSyncCenterPublishPlan(
+  selectedKeys?: string[],
+  mode: 'private' | 'public' = 'private',
+): Promise<{
   plan: ReturnType<typeof createSyncPublishPlan>
   unresolvedSources: UnresolvedSyncCenterSource[]
 }> {
@@ -471,7 +573,7 @@ async function createSyncCenterPublishPlan(selectedKeys?: string[]): Promise<{
     return { kind: 'bundled' as const, id: item.candidateKey, sourcePath: item.sourcePath, installationAgentSlugs }
   })).filter((candidate): candidate is SyncPublishCandidate => candidate !== null)
   if (candidates.length === 0) throw new Error('No selected skills can be pinned safely. Connect or authenticate to their Git sources, then retry.')
-  return { plan: createSyncPublishPlan('agent-library', 'private', candidates), unresolvedSources }
+  return { plan: createSyncPublishPlan('agent-library', mode, candidates), unresolvedSources }
 }
 
 function syncPublishPlanToJson(plan: ReturnType<typeof createSyncPublishPlan>, unresolvedSources: UnresolvedSyncCenterSource[] = []): SyncPublishPreviewJson {
@@ -529,14 +631,13 @@ function externalReviewAction(
 async function prepareManagedExternalSkill(
 	skill: ManagedExternalSkill,
 	agents: AgentConfig[],
-	fallbackTargets: string[],
+	targets: string[],
 ): Promise<{ skill: ManagedExternalSkill; prepared: PreparedGitSkillInstall; targets: string[] } | null> {
 	const action = externalRestoreAction(skill, agents)
 	if (action === 'unchanged') return null
 	if (action === 'conflict') {
 		throw new Error(`Local skill ${skill.id} is not the pinned version in this library. Review it before replacing anything.`)
 	}
-	const targets = skill.installations?.filter((slug) => agents.some((agent) => agent.slug === slug && agent.detected)) ?? fallbackTargets
 	return {
 		skill,
 		targets,
@@ -573,24 +674,16 @@ async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc:
     const action = classifyThreeWaySkill(id, ledger?.skills[id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256, ledger?.skills[id]?.kept_remote_sha256).action
 	if (action !== 'take-remote' && !(allowConflict && action === 'conflict')) throw new Error(`Remote change must be resolved manually: ${id}`)
   }
-	const fallbackTargets = plan.manifest.agent_policy.mode === 'selected'
-		? plan.manifest.agent_policy.agent_slugs.filter((slug) => agents.some((agent) => agent.slug === slug && agent.detected))
-		: agents.filter((agent) => agent.detected).map((agent) => agent.slug)
+	const routing = syncRestoreAgentRouting(workspace, plan.manifest, agents)
 	const preparedExternal: { skill: ManagedExternalSkill; prepared: PreparedGitSkillInstall; targets: string[] }[] = []
 	try {
 		for (const id of skillIds.filter((id) => externalSkills.has(id))) {
-			const prepared = await prepareManagedExternalSkill(externalSkills.get(id)!, agents, fallbackTargets)
+			const prepared = await prepareManagedExternalSkill(externalSkills.get(id)!, agents, routing.forSkill(id))
 			if (prepared) preparedExternal.push(prepared)
 		}
 		applySyncRestorePlan(plan, skillIds.filter((id) => entries.has(id)), profileId)
-		const manifestSkills = new Map(plan.manifest.skills.filter((skill) => skill.kind === 'bundled').map((skill) => [skill.id, skill]))
 		for (const id of skillIds.filter((id) => entries.has(id))) {
-			const skill = manifestSkills.get(id)
-			// v1 manifests without per-skill routing retain the old, explicit
-			// profile policy. New Sync Center profiles always carry installations.
-			const targets = skill?.installations
-				? skill.installations.filter((slug) => agents.some((agent) => agent.slug === slug && agent.detected))
-				: agents.filter((agent) => agent.detected).map((agent) => agent.slug)
+			const targets = routing.forSkill(id)
 			if (targets.length > 0) installSkillFromPath(join(sharedSkillsDir(), id), targets, agents, id)
 		}
 		for (const entry of preparedExternal) {
@@ -848,10 +941,16 @@ export function createRequestHandlers(ctx: {
       const result = await createSyncCenterPublishPlan(params?.selectedKeys)
       return syncPublishPlanToJson(result.plan, result.unresolvedSources)
     },
-    sync_center_publish: async (params: { remoteUrl: string; selectedKeys?: string[] }) => {
+    sync_center_publish: async (params: {
+      remoteUrl: string
+      selectedKeys?: string[]
+      mode: 'private' | 'public'
+      license?: SyncCenterLicense
+    }) => {
       const remoteUrl = params.remoteUrl.trim()
       if (!remoteUrl) throw new Error('A Git remote is required')
       assertCredentialFreeGitRemote(remoteUrl)
+	  const license = syncCenterPublicLicense(params.mode, params.license)
       const profileId = 'agent-library'
       const workspace = syncWorkspacePath(profileId)
       const existingWorkspace = hasSyncWorkspace(profileId)
@@ -861,13 +960,13 @@ export function createRequestHandlers(ctx: {
 			if (status.remoteUrl && status.remoteUrl !== remoteUrl) throw new Error('This library already uses a different remote')
         if (!status.remoteUrl) await setSyncWorkspaceRemote(workspace, remoteUrl)
       }
-		const publishPlan = await createSyncCenterPublishPlan(params.selectedKeys)
+		const publishPlan = await createSyncCenterPublishPlan(params.selectedKeys, params.mode)
 		if (existingWorkspace && !isCanonicalSyncLibrary(workspace)) {
 			// Existing libraries retain their versioned legacy format until the user
 			// explicitly migrates; newly created libraries are canonical dotagent.
 			applySyncPublishPlan(workspace, publishPlan.plan)
 		} else {
-			const canonical = await planCanonicalSyncLibrary(workspace, publishPlan.plan)
+			const canonical = await planCanonicalSyncLibrary(workspace, publishPlan.plan, { license })
 			applySyncPublishFiles(workspace, publishPlan.plan, canonical.portableFiles)
 			if (!existingWorkspace) await initializeSyncWorkspace(workspace, remoteUrl)
 		}
@@ -888,14 +987,29 @@ export function createRequestHandlers(ctx: {
       const status = await getSyncWorkspaceStatus(workspace)
       if (!status.remoteUrl) throw new Error('This library has no Git remote')
       if (status.changed) throw new Error('Sync workspace has uncommitted changes; resolve them before reviewing')
+	  const previousLock = readCanonicalSyncLock(workspace)
       await fetchSyncWorkspace(workspace)
       await fastForwardSyncWorkspace(workspace)
+	  const nextLock = readCanonicalSyncLock(workspace)
+	  const dependencyChanges = previousLock && nextLock
+		? diffLibraryLocks(previousLock, nextLock).filter((change) => change.action !== 'unchanged')
+		: []
       const restore = createSyncRestorePlan(workspace, sharedSkillsDir())
       const ledger = readSyncLedger(params.profileId)
 		const agents = loadDetectedAgents('sync_three_way_review')
 		const externalSkills = restore.manifest.skills.filter((skill): skill is ManagedExternalSkill => skill.kind === 'reference' || skill.kind === 'skills_sh')
       return {
         profile_id: params.profileId,
+		dependency_changes: dependencyChanges.map((change) => ({
+			dependency: change.dependency,
+			action: change.action as 'added' | 'updated' | 'removed',
+			from_commit: change.fromCommit,
+			to_commit: change.toCommit,
+			from_license: change.fromLicense,
+			to_license: change.toLicense,
+			skills_added: change.skillsAdded,
+			skills_removed: change.skillsRemoved,
+		})),
 			skills: [
 			...restore.entries.map((entry) => ({
 				id: entry.id,
@@ -986,31 +1100,16 @@ export function createRequestHandlers(ctx: {
       }
       return { commit, pushed }
     },
-    sync_profile_clone: async (params: { profileId: string; remoteUrl: string }): Promise<SyncProfileStatusJson> => {
-      assertSyncStableId(params.profileId)
+    sync_profile_clone: async (params: { profileId: string; remoteUrl: string; agentSlugs?: string[] }): Promise<SyncProfileStatusJson> => cloneSyncProfile(params),
+    sync_center_connect: async (params: { remoteUrl: string; agentSlugs: string[] }): Promise<SyncProfileStatusJson> => {
       const remoteUrl = params.remoteUrl.trim()
-      if (!remoteUrl) throw new Error('A Git remote is required')
+      if (!remoteUrl) throw new Error('Enter the Git repository that contains your library')
       assertCredentialFreeGitRemote(remoteUrl)
-      if (hasSyncWorkspace(params.profileId) || existsSync(syncWorkspacePath(params.profileId))) {
-        throw new Error('This profile already has a local workspace; cloning would overwrite it')
-      }
-      await cloneSyncWorkspace(remoteUrl, syncWorkspacePath(params.profileId))
-      const workspace = syncWorkspacePath(params.profileId)
-      const manifest = readSyncManifestFromWorkspace(workspace)
-      if (manifest.profile.id !== params.profileId) throw new Error('The remote profile id does not match the requested profile')
-      const status = await getSyncWorkspaceStatus(workspace)
-      return {
-        profile_id: params.profileId,
-        mode: manifest.profile.mode,
-        skill_count: manifest.skills.length,
-        remote_url: status.remoteUrl,
-        branch: status.branch,
-        changed: status.changed,
-        ahead: status.ahead,
-        behind: status.behind,
-		last_checked_at: new Date().toISOString(),
-		check_error: null,
-      }
+      return cloneSyncProfile({
+        profileId: availableSyncProfileId(remoteUrl),
+        remoteUrl,
+        agentSlugs: params.agentSlugs,
+      })
     },
     sync_github_create_repo: async (params: { repository: string; visibility: 'private' | 'public' }) => ({
       remoteUrl: await createGitHubSyncRepository(params.repository, params.visibility),
@@ -1078,26 +1177,21 @@ export function createRequestHandlers(ctx: {
       ])
       for (const id of skillIds) if (!available.has(id)) throw new Error(`Skill is not present in this sync profile: ${id}`)
       const agents = loadDetectedAgents('sync_restore_apply')
-      const targetAgentSlugs = plan.manifest.agent_policy.mode === 'selected'
-        ? plan.manifest.agent_policy.agent_slugs.filter((slug) => agents.some((agent) => agent.slug === slug && agent.detected))
-        : agents.filter((agent) => agent.detected).map((agent) => agent.slug)
+	  const routing = syncRestoreAgentRouting(workspace, plan.manifest, agents)
+	  const targetAgentSlugs = [...new Set(skillIds.flatMap((id) => routing.forSkill(id)))].sort()
 		const selectedExternal = [...referenceSkills, ...skillsShSkills].filter((skill) => skillIds.includes(skill.id))
 		const preparedExternal: { skill: ManagedExternalSkill; prepared: PreparedGitSkillInstall; targets: string[] }[] = []
 		try {
 			// Resolve every external source before applying a bundled restore. A
 			// bad pin or unreachable source therefore leaves bundled skills alone.
 			for (const skill of selectedExternal) {
-				const prepared = await prepareManagedExternalSkill(skill, agents, targetAgentSlugs)
+				const prepared = await prepareManagedExternalSkill(skill, agents, routing.forSkill(skill.id))
 				if (prepared) preparedExternal.push(prepared)
 			}
 			applySyncRestorePlan(plan, skillIds.filter((id) => plan.entries.some((entry) => entry.id === id)), params.profileId)
-			const bundledById = new Map(plan.manifest.skills
-				.filter((skill): skill is Extract<typeof skill, { kind: 'bundled' }> => skill.kind === 'bundled')
-				.map((skill) => [skill.id, skill]))
 			for (const id of skillIds.filter((id) => plan.entries.some((entry) => entry.id === id))) {
-				const skill = bundledById.get(id)
-				const targets = skill?.installations?.filter((slug) => agents.some((agent) => agent.slug === slug && agent.detected)) ?? targetAgentSlugs
-				installSkillFromPath(join(sharedSkillsDir(), id), targets, agents, id)
+				const targets = routing.forSkill(id)
+				if (targets.length > 0) installSkillFromPath(join(sharedSkillsDir(), id), targets, agents, id)
 			}
 			for (const entry of preparedExternal) {
 				installPreparedGitSkill(entry.prepared, entry.targets, agents, entry.skill.kind === 'skills_sh' ? 'skills.sh' : 'sync-reference')

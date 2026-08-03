@@ -109,9 +109,9 @@ function isInternalSkillMarkdownAlias(skillDir: string, root: string): boolean {
 
 function inventoryErrorReason(error: unknown): string {
 	const message = error instanceof Error ? error.message : "";
-	if (message.startsWith("Sync export rejects symlink")) return "Contains a linked file, so Skiller will not follow it outside this skill.";
-	if (message.startsWith("Sync export exceeds")) return "Exceeds the safety limit for a portable skill bundle.";
-	if (message.startsWith("Sync export requires SKILL.md")) return "Its SKILL.md file could not be read.";
+	if (message.includes("export rejects symlink")) return "Contains a linked file, so Skiller will not follow it outside this skill.";
+	if (message.includes("export exceeds")) return "Exceeds the safety limit for a portable skill bundle.";
+	if (message.includes("export requires SKILL.md")) return "Its SKILL.md file could not be read.";
 	return "Could not be read safely.";
 }
 

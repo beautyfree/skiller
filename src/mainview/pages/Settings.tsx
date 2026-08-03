@@ -251,6 +251,7 @@ export default function SettingsPage() {
       agentSlugs: syncAgentSlugs ?? undefined,
       remoteUrl: syncRemoteUrl || null,
       push: true,
+      planId: publishPreview!.plan_id,
     }),
     onSuccess: async (result) => {
       setPublishPreview(null)
@@ -282,6 +283,7 @@ export default function SettingsPage() {
     mutationFn: () => invoke('sync_restore_apply', {
       profileId: syncProfileId,
       skillIds: restoreSkillIds,
+      reconciliationPlanId: restorePreview!.reconciliation_plan_id,
     }),
     onSuccess: async (result) => {
       setRestorePreview(null)

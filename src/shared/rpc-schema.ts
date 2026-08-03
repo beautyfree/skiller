@@ -305,6 +305,8 @@ export type SyncSecretFindingJson = {
 };
 
 export type SyncPublishPreviewJson = {
+  /** Stable identifier of the exact source/manifest preview. */
+  plan_id: string;
   profile_id: string;
   mode: "private" | "team" | "public";
   skills: {
@@ -341,7 +343,7 @@ export type SyncSkillPreviewJson = {
 export type SyncRestorePreviewJson = {
   profile_id: string;
   /** Stable identifier of the exact no-write reconciliation preview. */
-  reconciliation_plan_id: string | null;
+  reconciliation_plan_id: string;
   reconciliation_engine: "dotagent" | "legacy";
   mode: "private" | "team" | "public";
   skills: {
@@ -392,7 +394,7 @@ export type SyncInventoryJson = {
 export type SyncThreeWayReviewJson = {
   profile_id: string;
   /** Stable identifier of the exact no-write reconciliation preview. */
-  reconciliation_plan_id: string | null;
+  reconciliation_plan_id: string;
   reconciliation_engine: "dotagent" | "legacy";
   dependency_changes: {
     dependency: string;
@@ -453,7 +455,7 @@ export type AppRPCSchema = {
 		get_sync_skill_preview: { params: { skillId: string }; response: SyncSkillPreviewJson };
 		reveal_sync_secret_finding: { params: { skillId: string; relativePath: string }; response: void };
       sync_center_publish_preview: {
-        params?: { selectedKeys?: string[]; decisions?: SyncLibraryDecisionJson[] };
+        params?: { selectedKeys?: string[]; decisions?: SyncLibraryDecisionJson[]; mode?: "private" | "public" };
         response: SyncPublishPreviewJson;
       };
       sync_center_publish: {
@@ -463,16 +465,17 @@ export type AppRPCSchema = {
           decisions?: SyncLibraryDecisionJson[];
           mode: "private" | "public";
           license?: "MIT" | "Apache-2.0" | "CC0-1.0";
+          planId: string;
         };
         response: { commit: string | null; pushed: boolean };
       };
       sync_three_way_review: { params: { profileId: string }; response: SyncThreeWayReviewJson };
-      sync_apply_remote_changes: { params: { profileId: string; skillIds: string[] }; response: { restored: string[] } };
-	  sync_apply_conflicting_remote_changes: { params: { profileId: string; skillIds: string[] }; response: { restored: string[] } };
-      sync_publish_local_changes: { params: { profileId: string; skillIds: string[] }; response: { commit: string | null; pushed: boolean } };
-	  sync_adopt_local_changes: { params: { profileId: string; skillIds: string[] }; response: { commit: string | null; pushed: boolean } };
-	  sync_keep_local_changes: { params: { profileId: string; skillIds: string[] }; response: { kept: string[] } };
-	  sync_keep_external_local_changes: { params: { profileId: string; skillIds: string[] }; response: { kept: string[] } };
+      sync_apply_remote_changes: { params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }; response: { restored: string[] } };
+	  sync_apply_conflicting_remote_changes: { params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }; response: { restored: string[] } };
+      sync_publish_local_changes: { params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }; response: { commit: string | null; pushed: boolean } };
+	  sync_adopt_local_changes: { params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }; response: { commit: string | null; pushed: boolean } };
+	  sync_keep_local_changes: { params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }; response: { kept: string[] } };
+	  sync_keep_external_local_changes: { params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }; response: { kept: string[] } };
       sync_recovery_status: { params: { profileId: string }; response: { pending: boolean } };
       sync_recovery_rollback: { params: { profileId: string }; response: { recovered: boolean } };
       sync_publish_preview: {
@@ -494,6 +497,7 @@ export type AppRPCSchema = {
           agentSlugs?: string[];
           remoteUrl?: string | null;
           push: boolean;
+          planId: string;
         };
         response: { commit: string | null; pushed: boolean };
       };
@@ -511,7 +515,7 @@ export type AppRPCSchema = {
       };
       sync_pull_preview: { params: { profileId: string }; response: SyncRestorePreviewJson };
       sync_restore_apply: {
-        params: { profileId: string; skillIds: string[] };
+        params: { profileId: string; skillIds: string[]; reconciliationPlanId: string };
         response: { restored: string[]; installed_to_detected_agents: string[] };
       };
       install_skill: { params: { source: SkillSourceParam; targetAgents: string[] }; response: void };

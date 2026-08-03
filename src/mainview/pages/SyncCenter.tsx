@@ -189,10 +189,25 @@ export default function SyncCenter() {
   async function prepareStorageChoice() {
     setBusy('reviewing')
     try {
-      const result = await invoke('sync_center_publish_preview', { selectedKeys, decisions: reviewedDecisions })
+      const result = await invoke('sync_center_publish_preview', { selectedKeys, decisions: reviewedDecisions, mode: libraryMode })
       setPreview(result)
       setShowDestination(false)
     } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), 'destructive')
+    } finally {
+      setBusy('idle')
+    }
+  }
+
+  async function changeLibraryMode(mode: 'private' | 'public') {
+    if (mode === libraryMode) return
+    setLibraryMode(mode)
+    if (!preview) return
+    setBusy('reviewing')
+    try {
+      setPreview(await invoke('sync_center_publish_preview', { selectedKeys, decisions: reviewedDecisions, mode }))
+    } catch (error) {
+      setPreview(null)
       toast(error instanceof Error ? error.message : String(error), 'destructive')
     } finally {
       setBusy('idle')
@@ -262,7 +277,7 @@ export default function SyncCenter() {
   }
 
   async function publishBackup() {
-    if (!remoteUrl) return
+    if (!remoteUrl || !preview) return
     setBusy('publishing')
     try {
       await invoke('sync_center_publish', {
@@ -271,6 +286,7 @@ export default function SyncCenter() {
         decisions: reviewedDecisions,
         mode: libraryMode,
         license: libraryMode === 'public' ? libraryLicense || undefined : undefined,
+        planId: preview.plan_id,
       })
 		toast('Your skill library is ready.')
       setPreview(null)
@@ -299,10 +315,10 @@ export default function SyncCenter() {
   }
 
 	async function publishSelectedLocalChanges() {
-	  if (!profile || localSelections.length === 0) return
+	  if (!profile || !remoteReview || localSelections.length === 0) return
 	  setBusy('publishing')
 	  try {
-		await invoke('sync_publish_local_changes', { profileId: profile.profile_id, skillIds: localSelections })
+		await invoke('sync_publish_local_changes', { profileId: profile.profile_id, skillIds: localSelections, reconciliationPlanId: remoteReview.reconciliation_plan_id })
 		toast(`Published ${localSelections.length} reviewed local change${localSelections.length === 1 ? '' : 's'}.`)
 		setRemoteReview(null)
 		setLocalSelections([])
@@ -330,10 +346,10 @@ export default function SyncCenter() {
   }
 
   async function applySelectedRemoteChanges() {
-    if (!profile || remoteSelections.length === 0) return
+    if (!profile || !remoteReview || remoteSelections.length === 0) return
     setBusy('publishing')
     try {
-      const result = await invoke('sync_apply_remote_changes', { profileId: profile.profile_id, skillIds: remoteSelections })
+      const result = await invoke('sync_apply_remote_changes', { profileId: profile.profile_id, skillIds: remoteSelections, reconciliationPlanId: remoteReview.reconciliation_plan_id })
       toast(`Restored ${result.restored.length} remote change${result.restored.length === 1 ? '' : 's'}.`)
       setRemoteReview(null)
       setRemoteSelections([])
@@ -348,10 +364,10 @@ export default function SyncCenter() {
   }
 
 	async function useRemoteForConflict(skillId: string) {
-	  if (!profile) return
+	  if (!profile || !remoteReview) return
 	  setBusy('publishing')
 	  try {
-		const result = await invoke('sync_apply_conflicting_remote_changes', { profileId: profile.profile_id, skillIds: [skillId] })
+		const result = await invoke('sync_apply_conflicting_remote_changes', { profileId: profile.profile_id, skillIds: [skillId], reconciliationPlanId: remoteReview.reconciliation_plan_id })
 		toast(`Replaced the local copy of ${result.restored[0]} with the reviewed remote version.`)
 		setRemoteReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
 		await queryClient.invalidateQueries({ queryKey: ['sync-center-inventory'] })
@@ -363,10 +379,10 @@ export default function SyncCenter() {
 	}
 
 	async function adoptLocalVersion(skillId: string) {
-	  if (!profile) return
+	  if (!profile || !remoteReview) return
 	  setBusy('publishing')
 	  try {
-		await invoke('sync_adopt_local_changes', { profileId: profile.profile_id, skillIds: [skillId] })
+		await invoke('sync_adopt_local_changes', { profileId: profile.profile_id, skillIds: [skillId], reconciliationPlanId: remoteReview.reconciliation_plan_id })
 		toast(`Published the local ${skillId} as the library version.`)
 		showThreeWayReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
 		await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
@@ -378,10 +394,10 @@ export default function SyncCenter() {
 	}
 
 	async function keepConflictLocal(skillId: string, external: boolean) {
-	  if (!profile) return
+	  if (!profile || !remoteReview) return
 	  setBusy('publishing')
 	  try {
-		await invoke(external ? 'sync_keep_external_local_changes' : 'sync_keep_local_changes', { profileId: profile.profile_id, skillIds: [skillId] })
+		await invoke(external ? 'sync_keep_external_local_changes' : 'sync_keep_local_changes', { profileId: profile.profile_id, skillIds: [skillId], reconciliationPlanId: remoteReview.reconciliation_plan_id })
 		toast(`Kept ${skillId} only on this computer.`)
 		showThreeWayReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
 	  } catch (error) {
@@ -564,7 +580,7 @@ export default function SyncCenter() {
 			  {!showDestination && <><div className="min-h-0 flex-1 overflow-y-auto pr-1"><section className="mt-5 overflow-hidden rounded-xl border border-border/70 bg-background/35"><div className="border-b border-border/60 bg-primary/[0.06] px-4 py-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">Your new repository will contain</p><p className="mt-1 text-muted-foreground">A standard dotagent library: <span className="font-medium text-foreground">skills.json, skills.lock, dotagent.yaml</span>, a README, and only the reviewed outcomes below. Machine paths, tokens, and local-only decisions stay on this computer.</p></div><div className="divide-y divide-border/60"><div className="flex gap-3 px-4 py-3"><CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-500" /><div><p className="font-semibold text-foreground">{plural(previewOwnedCount, 'owned skill')} saved with {plural(previewVendoredCount, 'licensed copy')}</p><p className="mt-0.5 text-muted-foreground">{preview.skills.reduce((total, skill) => total + skill.file_count, 0)} reviewed files will live under skills/. Vendored copies retain their upstream commit, integrity, and license in dotagent.yaml.</p></div></div><div className="flex gap-3 px-4 py-3"><Info className="mt-0.5 size-4 shrink-0 text-primary" /><div><p className="font-semibold text-foreground">{preview.skills_sh.length + preview.references.length} skills recorded as immutable dependencies</p><p className="mt-0.5 text-muted-foreground">{preview.skills_sh.length} from skills.sh · {preview.references.length} from Git. Their exact commits and integrity go into skills.lock; their files are not duplicated.</p></div></div><div className={`flex gap-3 px-4 py-3 ${preview.unresolved_sources?.length ? 'bg-amber-500/[0.05]' : ''}`}><AlertTriangle className={`mt-0.5 size-4 shrink-0 ${preview.unresolved_sources?.length ? 'text-amber-600 dark:text-amber-300' : 'text-muted-foreground'}`} /><div><p className="font-semibold text-foreground">{preview.unresolved_sources?.length ? `${plural(preview.unresolved_sources.length, 'external skill')} not included yet` : `${plural(previewLocalCount, 'skill')} stay on this computer`}</p><p className="mt-0.5 text-muted-foreground">{preview.unresolved_sources?.length ? 'Their source could not be pinned, so they will not appear in this repository and remain unchanged locally.' : previewLocalCount ? 'They remain unchanged and are not written to the repository.' : 'Every reviewed skill can be included.'}</p></div></div></div></section>
 			  {preview.unresolved_sources && preview.unresolved_sources.length > 0 && <section className="mt-4 rounded-xl border border-amber-400/35 bg-amber-500/[0.07] px-4 py-3.5 text-amber-950 dark:text-amber-100"><div className="flex gap-3"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-300" /><div className="min-w-0"><p className="font-semibold">{plural(preview.unresolved_sources.length, 'external skill')} will stay on this computer</p><p className="mt-1 leading-relaxed text-amber-900/80 dark:text-amber-200/80">Skiller could not verify the source, so it will neither upload nor change these skills. Reconnect or authenticate their Git source, then refresh this review when you want to include them.</p><details className="mt-3"><summary className="cursor-pointer font-medium text-amber-900 underline-offset-2 hover:underline dark:text-amber-100">View affected skills ({preview.unresolved_sources.length})</summary><div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-amber-900/80 dark:text-amber-200/80">{preview.unresolved_sources.map((source) => <span key={`${source.kind}-${source.id}`}>{source.id}</span>)}</div></details></div></div></section>}
 			  {preview.secret_findings.length > 0 ? <section className="mt-4 border-y border-destructive/25 py-3"><p className="font-medium text-destructive">Backup is paused: review {preview.secret_findings.length} possible secret{preview.secret_findings.length === 1 ? '' : 's'} in {groupSecretFindings(preview.secret_findings).length} file{groupSecretFindings(preview.secret_findings).length === 1 ? '' : 's'} first.</p><p className="mt-1 text-muted-foreground">Skiller never shows the matched value. Lines below identify what needs your decision.</p><div className="mt-2 max-h-40 divide-y divide-destructive/10 overflow-y-auto rounded-lg border border-destructive/15 bg-background/45">{groupSecretFindings(preview.secret_findings).map((group) => <div key={`${group.skillId}-${group.relativePath}`} className="px-2.5 py-2"><div className="flex items-center gap-2"><p className="min-w-0 flex-1 truncate font-medium text-foreground">{group.skillId} <span className="font-normal text-muted-foreground">· {group.relativePath}</span></p><Button size="xs" variant="ghost" className="h-6 shrink-0 px-1.5 text-[11px]" onClick={() => void revealSecretFinding(group.skillId, group.relativePath)}><FolderOpen className="size-3" />Show file</Button></div><div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">{group.findings.map((finding) => <p key={`${finding.line}-${finding.column}-${finding.rule}`}>Line {finding.line} · Possible {secretRuleLabel(finding.rule)}</p>)}</div></div>)}</div></section> : <p className="mt-3 flex items-center gap-1.5 text-muted-foreground"><CheckCircle2 className="size-3.5 text-emerald-500" />No secret patterns found. This review is rebuilt immediately before commit.</p>}</div><div className="mt-3 flex shrink-0 items-center justify-end border-t border-border/60 pt-3"><Button size="sm" className="h-9 px-4" onClick={() => setShowDestination(true)} disabled={preview.secret_findings.length > 0}>Choose a Git home <ChevronRight className="size-3.5" /></Button></div></>}
-			  {showDestination && <div className="min-h-0 flex-1 overflow-y-auto pr-1"><section className="mt-5 rounded-xl border border-border/70 p-3.5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">Who can use this repository?</p><p className="mt-0.5 text-muted-foreground">This controls the library policy; GitHub can also apply the repository visibility for you.</p></div><div className="flex rounded-lg border border-border bg-muted/25 p-0.5"><button type="button" className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${libraryMode === 'private' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => setLibraryMode('private')}>Private</button><button type="button" className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${libraryMode === 'public' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => setLibraryMode('public')}>Public</button></div></div>{libraryMode === 'public' && <label className="mt-3 grid max-w-xs gap-1 text-[11px] font-medium">License for your library<span className="relative"><select value={libraryLicense} onChange={(event) => setLibraryLicense(event.target.value as typeof libraryLicense)} className="h-9 w-full appearance-none rounded-lg border border-border bg-background px-2.5 pr-9 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/40"><option value="">Choose a license…</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache 2.0</option><option value="CC0-1.0">CC0 1.0</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" /></span><span className="font-normal leading-relaxed text-muted-foreground">Public libraries require an explicit license; Skiller never chooses one for your work.</span></label>}</section><section className="mt-3 grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => { setSetupMode('github'); setRemoteUrl('') }} className={`rounded-xl border p-4 text-left transition-colors ${setupMode === 'github' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 hover:border-primary/45 hover:bg-muted/30'}`}><div className="flex items-center justify-between"><span className="flex items-center gap-2 font-semibold"><Github className="size-4" />GitHub</span><span className="text-[10px] font-medium text-primary">{libraryMode === 'private' ? 'Private by default' : 'Public repository'}</span></div><p className="mt-1.5 leading-relaxed text-muted-foreground">Create a new {libraryMode} repository with your existing GitHub sign-in.</p></button><button type="button" onClick={() => setSetupMode('custom')} className={`rounded-xl border p-4 text-left transition-colors ${setupMode === 'custom' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 hover:border-primary/45 hover:bg-muted/30'}`}><span className="flex items-center gap-2 font-semibold"><Server className="size-4" />Another Git server</span><p className="mt-1.5 leading-relaxed text-muted-foreground">Use GitLab, a self-hosted server, or another remote you control.</p></button></section>
+			  {showDestination && <div className="min-h-0 flex-1 overflow-y-auto pr-1"><section className="mt-5 rounded-xl border border-border/70 p-3.5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">Who can use this repository?</p><p className="mt-0.5 text-muted-foreground">This controls the library policy; GitHub can also apply the repository visibility for you.</p></div><div className="flex rounded-lg border border-border bg-muted/25 p-0.5"><button type="button" className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${libraryMode === 'private' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => void changeLibraryMode('private')}>Private</button><button type="button" className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${libraryMode === 'public' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => void changeLibraryMode('public')}>Public</button></div></div>{libraryMode === 'public' && <label className="mt-3 grid max-w-xs gap-1 text-[11px] font-medium">License for your library<span className="relative"><select value={libraryLicense} onChange={(event) => setLibraryLicense(event.target.value as typeof libraryLicense)} className="h-9 w-full appearance-none rounded-lg border border-border bg-background px-2.5 pr-9 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/40"><option value="">Choose a license…</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache 2.0</option><option value="CC0-1.0">CC0 1.0</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" /></span><span className="font-normal leading-relaxed text-muted-foreground">Public libraries require an explicit license; Skiller never chooses one for your work.</span></label>}</section><section className="mt-3 grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => { setSetupMode('github'); setRemoteUrl('') }} className={`rounded-xl border p-4 text-left transition-colors ${setupMode === 'github' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 hover:border-primary/45 hover:bg-muted/30'}`}><div className="flex items-center justify-between"><span className="flex items-center gap-2 font-semibold"><Github className="size-4" />GitHub</span><span className="text-[10px] font-medium text-primary">{libraryMode === 'private' ? 'Private by default' : 'Public repository'}</span></div><p className="mt-1.5 leading-relaxed text-muted-foreground">Create a new {libraryMode} repository with your existing GitHub sign-in.</p></button><button type="button" onClick={() => setSetupMode('custom')} className={`rounded-xl border p-4 text-left transition-colors ${setupMode === 'custom' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 hover:border-primary/45 hover:bg-muted/30'}`}><span className="flex items-center gap-2 font-semibold"><Server className="size-4" />Another Git server</span><p className="mt-1.5 leading-relaxed text-muted-foreground">Use GitLab, a self-hosted server, or another remote you control.</p></button></section>
 			  {setupMode === 'github' ? (
                 <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-border/60 pt-4">
                   {!remoteUrl ? <>

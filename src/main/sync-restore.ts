@@ -5,6 +5,7 @@ import {
 	type LibraryReconciliationPlan,
 	type ThreeWayAction,
 } from "@beautyfree/dotagent/reconcile";
+import { computePlanId } from "@beautyfree/dotagent";
 import type { SyncLedger } from "./sync-ledger";
 import { readSyncManifestFromWorkspace } from "./sync-dotagent";
 import {
@@ -48,6 +49,24 @@ type LegacyCompatibilityPlan = {
 };
 
 export type SyncRestorePlan = DotagentSyncRestorePlan | LegacyCompatibilityPlan;
+
+/** Stable, path-redacted review token for both the shared and temporary legacy engine. */
+export function syncRestorePlanId(plan: SyncRestorePlan): string {
+	if (plan.engine === "dotagent") return plan.corePlan.planId;
+	return computePlanId({
+		kind: "skiller-legacy-reconciliation",
+		schemaVersion: 1,
+		manifest: plan.manifest,
+		entries: plan.entries.map((entry) => ({
+			id: entry.id,
+			action: entry.action,
+			threeWayAction: entry.threeWayAction,
+			remoteSha256: entry.remoteSha256,
+			localSha256: entry.localSha256,
+		})),
+		secretFindings: plan.secretFindings,
+	});
+}
 
 function compatibilityAction(entry: LibraryReconciliationPlan["operations"][number]): SyncRestoreAction {
 	if (entry.expectedTarget.kind === "absent") return "create";

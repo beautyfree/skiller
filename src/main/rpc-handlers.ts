@@ -105,7 +105,7 @@ import { makeSyncLedger, readSyncLedger, writeSyncLedgerAt, syncLedgerPath } fro
 import { readRestoreJournalAt, recoverRestoreJournalAt, syncJournalPath } from './sync-journal'
 import { createGitHubSyncRepository } from './github-sync'
 import { applySyncPublishFiles, applySyncPublishPlan, createSyncPublishPlan, mergeBundledUpdateIntoManifest, type SyncPublishCandidate } from './sync-publish'
-import { applySyncRestorePlan, createSyncRestorePlan } from './sync-restore'
+import { applySyncRestorePlan, createSyncRestorePlan, syncRestorePlanId } from './sync-restore'
 import { canonicalSyncAgentRouting, isCanonicalSyncLibrary, planCanonicalSyncLibrary, readCanonicalSyncLock, readSyncManifestFromWorkspace, writeLocalSyncAgentSelection } from './sync-dotagent'
 import { classifyExternalRestore, externalKeptSourceMatches, externalSkillDirectory, externalSkillRepository, type ManagedExternalSkill, type ExternalRestoreAction } from './sync-external'
 import { assertCredentialFreeGitRemote, assertPortableRelativePath, assertSyncStableId, syncProfileIdFromRemote, type SyncManifest } from './sync-profile'
@@ -321,6 +321,7 @@ function buildSyncPublishPreview(
   return {
     plan,
     json: {
+      plan_id: plan.planId,
       profile_id: profileId,
       mode,
       skills: plan.bundledSkills.map((skill) => ({
@@ -647,6 +648,7 @@ function syncPublishPlanToJson(
   decisions: SyncCenterDecisionOutcome[] = [],
 ): SyncPublishPreviewJson {
   return {
+    plan_id: plan.planId,
     profile_id: plan.manifest.profile.id,
     mode: plan.manifest.profile.mode,
     skills: plan.bundledSkills.map((skill) => ({
@@ -669,6 +671,18 @@ function syncPublishPlanToJson(
       ...(decision.license ? { license: decision.license } : {}),
     })),
     unresolved_sources: unresolvedSources,
+  }
+}
+
+function assertReviewedPublishPlan(expectedPlanId: string, actualPlanId: string): void {
+  if (!expectedPlanId || expectedPlanId !== actualPlanId) {
+    throw new Error('Your library changed after review. Review it again before publishing.')
+  }
+}
+
+function assertReviewedReconciliationPlan(expectedPlanId: string, plan: ReturnType<typeof createSyncRestorePlan>): void {
+  if (!expectedPlanId || expectedPlanId !== syncRestorePlanId(plan)) {
+    throw new Error('The local or remote library changed after review. Review it again before applying this decision.')
   }
 }
 
@@ -719,7 +733,13 @@ async function prepareManagedExternalSkill(
 	}
 }
 
-async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc: BunSideRpc, allowConflict = false): Promise<{ restored: string[] }> {
+async function applyReviewedRemoteChanges(
+  profileId: string,
+  ids: string[],
+  rpc: BunSideRpc,
+  expectedPlanId: string,
+  allowConflict = false,
+): Promise<{ restored: string[] }> {
   assertSyncStableId(profileId)
   const skillIds = selectedSyncSkillIds(ids)
   if (!hasSyncWorkspace(profileId)) throw new Error('This library has not been set up on this computer')
@@ -730,6 +750,7 @@ async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc:
   await fastForwardSyncWorkspace(workspace)
 	const ledger = readSyncLedger(profileId)
 	const plan = createSyncRestorePlan(workspace, sharedSkillsDir(), ledger ?? undefined)
+  assertReviewedReconciliationPlan(expectedPlanId, plan)
   const entries = new Map(plan.entries.map((entry) => [entry.id, entry]))
 	const agents = loadDetectedAgents('sync_apply_remote_changes')
 	const externalSkills = new Map(plan.manifest.skills
@@ -782,6 +803,7 @@ async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc:
 async function publishReviewedLocalChanges(
   profileId: string,
   ids: string[],
+  expectedPlanId: string,
   options: { allowConflict?: boolean } = {},
 ): Promise<{ commit: string | null; pushed: boolean }> {
   assertSyncStableId(profileId)
@@ -794,6 +816,7 @@ async function publishReviewedLocalChanges(
   await fastForwardSyncWorkspace(workspace)
 	const ledger = readSyncLedger(profileId)
 	const restore = createSyncRestorePlan(workspace, sharedSkillsDir(), ledger ?? undefined)
+	assertReviewedReconciliationPlan(expectedPlanId, restore)
 	const existing = restore.manifest
   const entries = new Map(restore.entries.map((entry) => [entry.id, entry]))
   const existingSkills = new Map(existing.skills.map((skill) => [skill.id, skill]))
@@ -837,7 +860,7 @@ async function publishReviewedLocalChanges(
 }
 
 /** Record a reviewed local-over-remote choice without changing either tree. */
-async function keepReviewedLocalChanges(profileId: string, ids: string[]): Promise<{ kept: string[] }> {
+async function keepReviewedLocalChanges(profileId: string, ids: string[], expectedPlanId: string): Promise<{ kept: string[] }> {
   assertSyncStableId(profileId)
   const skillIds = selectedSyncSkillIds(ids)
   if (!hasSyncWorkspace(profileId)) throw new Error('This library has not been set up on this computer')
@@ -848,6 +871,7 @@ async function keepReviewedLocalChanges(profileId: string, ids: string[]): Promi
   await fastForwardSyncWorkspace(workspace)
 	const ledger = readSyncLedger(profileId)
 	const restore = createSyncRestorePlan(workspace, sharedSkillsDir(), ledger ?? undefined)
+  assertReviewedReconciliationPlan(expectedPlanId, restore)
   const entries = new Map(restore.entries.map((entry) => [entry.id, entry]))
   const nextSkills = new Map(Object.entries(ledger?.skills ?? {}).map(([id, entry]) => [id, { sha256: entry.sha256, keptRemoteSha256: entry.kept_remote_sha256 }]))
   for (const id of skillIds) {
@@ -866,7 +890,7 @@ async function keepReviewedLocalChanges(profileId: string, ids: string[]): Promi
  * mutates the skill or remote library. The decision is scoped to its exact
  * repository + commit, so a later remote pin forces the user to review again.
  */
-async function keepReviewedExternalChanges(profileId: string, ids: string[]): Promise<{ kept: string[] }> {
+async function keepReviewedExternalChanges(profileId: string, ids: string[], expectedPlanId: string): Promise<{ kept: string[] }> {
 	assertSyncStableId(profileId)
 	const skillIds = selectedSyncSkillIds(ids)
 	if (!hasSyncWorkspace(profileId)) throw new Error('This library has not been set up on this computer')
@@ -877,6 +901,7 @@ async function keepReviewedExternalChanges(profileId: string, ids: string[]): Pr
 	await fastForwardSyncWorkspace(workspace)
 	const ledger = readSyncLedger(profileId)
 	const restore = createSyncRestorePlan(workspace, sharedSkillsDir(), ledger ?? undefined)
+	assertReviewedReconciliationPlan(expectedPlanId, restore)
 	const agents = loadDetectedAgents('sync_keep_external_local_changes')
 	const externalSkills = new Map(restore.manifest.skills
 		.filter((skill): skill is ManagedExternalSkill => skill.kind === 'reference' || skill.kind === 'skills_sh')
@@ -1028,8 +1053,8 @@ export function createRequestHandlers(ctx: {
 	refresh_sync_profiles: async (): Promise<SyncProfileStatusJson[]> => listSyncProfiles(true),
     scan_sync_inventory: async (): Promise<SyncInventoryJson> => syncInventoryToJson(),
 		get_sync_skill_preview: async (params: { skillId: string }): Promise<SyncSkillPreviewJson> => syncSkillPreviewToJson(params.skillId),
-    sync_center_publish_preview: async (params?: { selectedKeys?: string[]; decisions?: ImportDecision[] }): Promise<SyncPublishPreviewJson> => {
-      const result = await createSyncCenterPublishPlan(params?.selectedKeys, 'private', params?.decisions)
+    sync_center_publish_preview: async (params?: { selectedKeys?: string[]; decisions?: ImportDecision[]; mode?: 'private' | 'public' }): Promise<SyncPublishPreviewJson> => {
+      const result = await createSyncCenterPublishPlan(params?.selectedKeys, params?.mode ?? 'private', params?.decisions)
       return syncPublishPlanToJson(result.plan, result.unresolvedSources, result.decisions)
     },
     sync_center_publish: async (params: {
@@ -1038,6 +1063,7 @@ export function createRequestHandlers(ctx: {
       decisions?: ImportDecision[]
       mode: 'private' | 'public'
       license?: SyncCenterLicense
+      planId: string
     }) => {
       const remoteUrl = params.remoteUrl.trim()
       if (!remoteUrl) throw new Error('A Git remote is required')
@@ -1046,13 +1072,14 @@ export function createRequestHandlers(ctx: {
       const profileId = 'agent-library'
       const workspace = syncWorkspacePath(profileId)
       const existingWorkspace = hasSyncWorkspace(profileId)
+		const publishPlan = await createSyncCenterPublishPlan(params.selectedKeys, params.mode, params.decisions)
+		assertReviewedPublishPlan(params.planId, publishPlan.plan.planId)
       if (existingWorkspace) {
         const status = await getSyncWorkspaceStatus(workspace)
         if (status.changed) throw new Error('Sync workspace has uncommitted changes; resolve them before publishing')
 			if (status.remoteUrl && status.remoteUrl !== remoteUrl) throw new Error('This library already uses a different remote')
         if (!status.remoteUrl) await setSyncWorkspaceRemote(workspace, remoteUrl)
       }
-		const publishPlan = await createSyncCenterPublishPlan(params.selectedKeys, params.mode, params.decisions)
 		if (existingWorkspace && !isCanonicalSyncLibrary(workspace)) {
 			// Existing libraries retain their versioned legacy format until the user
 			// explicitly migrates; newly created libraries are canonical dotagent.
@@ -1092,7 +1119,7 @@ export function createRequestHandlers(ctx: {
 		const externalSkills = restore.manifest.skills.filter((skill): skill is ManagedExternalSkill => skill.kind === 'reference' || skill.kind === 'skills_sh')
       return {
         profile_id: params.profileId,
-			reconciliation_plan_id: restore.engine === 'dotagent' ? restore.corePlan.planId : null,
+			reconciliation_plan_id: syncRestorePlanId(restore),
 			reconciliation_engine: restore.engine,
 		dependency_changes: dependencyChanges.map((change) => ({
 			dependency: change.dependency,
@@ -1128,12 +1155,12 @@ export function createRequestHandlers(ctx: {
 			],
       }
     },
-    sync_apply_remote_changes: async (params: { profileId: string; skillIds: string[] }) => applyReviewedRemoteChanges(params.profileId, params.skillIds, rpc),
-	 sync_apply_conflicting_remote_changes: async (params: { profileId: string; skillIds: string[] }) => applyReviewedRemoteChanges(params.profileId, params.skillIds, rpc, true),
-	 sync_publish_local_changes: async (params: { profileId: string; skillIds: string[] }) => publishReviewedLocalChanges(params.profileId, params.skillIds),
-	 sync_adopt_local_changes: async (params: { profileId: string; skillIds: string[] }) => publishReviewedLocalChanges(params.profileId, params.skillIds, { allowConflict: true }),
-	 sync_keep_local_changes: async (params: { profileId: string; skillIds: string[] }) => keepReviewedLocalChanges(params.profileId, params.skillIds),
-	 sync_keep_external_local_changes: async (params: { profileId: string; skillIds: string[] }) => keepReviewedExternalChanges(params.profileId, params.skillIds),
+    sync_apply_remote_changes: async (params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }) => applyReviewedRemoteChanges(params.profileId, params.skillIds, rpc, params.reconciliationPlanId),
+	 sync_apply_conflicting_remote_changes: async (params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }) => applyReviewedRemoteChanges(params.profileId, params.skillIds, rpc, params.reconciliationPlanId, true),
+	 sync_publish_local_changes: async (params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }) => publishReviewedLocalChanges(params.profileId, params.skillIds, params.reconciliationPlanId),
+	 sync_adopt_local_changes: async (params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }) => publishReviewedLocalChanges(params.profileId, params.skillIds, params.reconciliationPlanId, { allowConflict: true }),
+	 sync_keep_local_changes: async (params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }) => keepReviewedLocalChanges(params.profileId, params.skillIds, params.reconciliationPlanId),
+	 sync_keep_external_local_changes: async (params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }) => keepReviewedExternalChanges(params.profileId, params.skillIds, params.reconciliationPlanId),
     sync_recovery_status: async (params: { profileId: string }) => {
       assertSyncStableId(params.profileId)
       const restorePending = readRestoreJournalAt(syncJournalPath(params.profileId)) !== null
@@ -1164,12 +1191,15 @@ export function createRequestHandlers(ctx: {
       agentSlugs?: string[]
       remoteUrl?: string | null
       push: boolean
+      planId: string
     }) => {
       const skillIds = selectedSyncSkillIds(params.skillIds)
       assertSyncStableId(params.profileId)
       const workspace = syncWorkspacePath(params.profileId)
       const remoteUrl = params.remoteUrl?.trim() || null
       if (remoteUrl) assertCredentialFreeGitRemote(remoteUrl)
+		const { plan } = buildSyncPublishPreview(params.profileId, params.mode, skillIds, params.skillKinds, params.agentSlugs)
+		assertReviewedPublishPlan(params.planId, plan.planId)
 
       const existingWorkspace = hasSyncWorkspace(params.profileId)
       if (existingWorkspace) {
@@ -1180,8 +1210,6 @@ export function createRequestHandlers(ctx: {
         }
         if (remoteUrl && !status.remoteUrl) await setSyncWorkspaceRemote(workspace, remoteUrl)
       }
-
-      const { plan } = buildSyncPublishPreview(params.profileId, params.mode, skillIds, params.skillKinds, params.agentSlugs)
       if (existingWorkspace && !isCanonicalSyncLibrary(workspace)) {
 		  applySyncPublishPlan(workspace, plan)
 	  } else {
@@ -1228,7 +1256,7 @@ export function createRequestHandlers(ctx: {
       const externalSkills = plan.manifest.skills.filter((skill): skill is ManagedExternalSkill => skill.kind === 'reference' || skill.kind === 'skills_sh')
       return {
         profile_id: params.profileId,
-			reconciliation_plan_id: plan.engine === 'dotagent' ? plan.corePlan.planId : null,
+			reconciliation_plan_id: syncRestorePlanId(plan),
 			reconciliation_engine: plan.engine,
         mode: plan.manifest.profile.mode,
         skills: [
@@ -1261,13 +1289,14 @@ export function createRequestHandlers(ctx: {
         })),
       }
     },
-    sync_restore_apply: async (params: { profileId: string; skillIds: string[] }) => {
+    sync_restore_apply: async (params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }) => {
       assertSyncStableId(params.profileId)
       const skillIds = selectedSyncSkillIds(params.skillIds)
       if (!hasSyncWorkspace(params.profileId)) throw new Error('Sync profile has not been set up on this computer')
       const workspace = syncWorkspacePath(params.profileId)
 			const previousLedger = readSyncLedger(params.profileId)
 			const plan = createSyncRestorePlan(workspace, sharedSkillsDir(), previousLedger ?? undefined)
+      assertReviewedReconciliationPlan(params.reconciliationPlanId, plan)
       const referenceSkills = plan.manifest.skills
         .filter((skill): skill is Extract<typeof skill, { kind: 'reference' }> => skill.kind === 'reference')
       const skillsShSkills = plan.manifest.skills

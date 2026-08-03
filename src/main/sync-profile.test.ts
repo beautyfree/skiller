@@ -9,7 +9,7 @@ import {
 	createSyncPublishWorkspacePlan,
 	mergeBundledUpdateIntoManifest,
 } from "./sync-publish";
-import { applySyncRestorePlan, createSyncRestorePlan } from "./sync-restore";
+import { applySyncRestorePlan, createSyncRestorePlan, syncRestorePlanId } from "./sync-restore";
 import { createLegacySyncRestorePlan } from "./sync-restore-legacy";
 import { makeSyncLedger } from "./sync-ledger";
 import {
@@ -449,6 +449,7 @@ describe("sync restore preview", () => {
 		expect(repeated.engine).toBe("dotagent");
 		if (first.engine !== "dotagent" || repeated.engine !== "dotagent") throw new Error("dotagent reconciliation is required");
 		expect(first.corePlan.planId).toBe(repeated.corePlan.planId);
+		expect(syncRestorePlanId(first)).toBe(first.corePlan.planId);
 		mkdirSync(join(canonical, "writing"));
 		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Local\n");
 		compareCurrent();
@@ -465,10 +466,13 @@ describe("sync restore preview", () => {
 		const previous = process.env.SKILLER_SYNC_RECONCILE_ENGINE;
 		try {
 			process.env.SKILLER_SYNC_RECONCILE_ENGINE = "legacy";
-			expect(createSyncRestorePlan(workspace, canonical)).toMatchObject({
+			const legacy = createSyncRestorePlan(workspace, canonical);
+			expect(legacy).toMatchObject({
 				engine: "legacy",
 				entries: [{ id: "writing", action: "create", threeWayAction: "take-remote" }],
 			});
+			expect(syncRestorePlanId(legacy)).toBe(syncRestorePlanId(createSyncRestorePlan(workspace, canonical)));
+			expect(syncRestorePlanId(legacy)).toMatch(/^[a-f0-9]{64}$/);
 		} finally {
 			if (previous === undefined) delete process.env.SKILLER_SYNC_RECONCILE_ENGINE;
 			else process.env.SKILLER_SYNC_RECONCILE_ENGINE = previous;

@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { parsePortableConfig } from "@beautyfree/dotagent/config";
+import { scanOwnedSkill } from "@beautyfree/dotagent/inventory";
 import { createSyncPublishPlan, applySyncPublishFiles } from "./sync-publish";
 import { canonicalSyncAgentRouting, isCanonicalSyncLibrary, planCanonicalSyncLibrary, readLocalSyncAgentSelection, readSyncManifestFromWorkspace, writeLocalSyncAgentSelection } from "./sync-dotagent";
 import { cloneSyncWorkspace, commitSyncWorkspace, getSyncWorkspaceStatus, initializeSyncWorkspace, pushSyncWorkspace } from "./sync-workspace";
@@ -93,6 +95,47 @@ describe("canonical dotagent Sync Center library", () => {
       sha256: "a".repeat(64),
     }]);
   }, 20_000);
+
+  it("vendors an external skill only with immutable origin and license metadata", async () => {
+    const root = mkdtempSync(join(tmpdir(), "skiller-canonical-vendored-"));
+    roots.push(root);
+    const source = join(root, "review");
+    const workspace = join(root, "library");
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, "SKILL.md"), "---\nname: review\ndescription: Reviews work.\n---\n# Review\n");
+    const scanned = await scanOwnedSkill(root, "review");
+    if (!scanned.ok) throw new Error("Vendored fixture did not scan");
+    const publish = createSyncPublishPlan("agent-library", "public", [{
+      kind: "vendored",
+      id: "review",
+      sourcePath: source,
+      origin: {
+        url: "https://github.com/example/review-skills",
+        commit: "a".repeat(40),
+        skill_path: "skills/review",
+        integrity: scanned.value.integrity,
+        license: "MIT",
+      },
+    }]);
+    const canonical = await planCanonicalSyncLibrary(workspace, publish, { license: "MIT" });
+    applySyncPublishFiles(workspace, publish, canonical.portableFiles);
+
+    expect(existsSync(join(workspace, "skills", "review", "SKILL.md"))).toBe(true);
+    expect(JSON.parse(readFileSync(join(workspace, "skills.json"), "utf8"))).toMatchObject({
+      skills: ["skills/review"],
+      dependencies: {},
+    });
+    expect(parsePortableConfig(readFileSync(join(workspace, "dotagent.yaml"), "utf8")).skills.review).toEqual({
+      distribution: "vendored",
+      origin: {
+        url: "https://github.com/example/review-skills",
+        commit: "a".repeat(40),
+        skill_path: "skills/review",
+        integrity: scanned.value.integrity,
+        license: "MIT",
+      },
+    });
+  });
 
   it("keeps this computer's selected agents in a gitignored local overlay", async () => {
     const root = mkdtempSync(join(tmpdir(), "skiller-canonical-routing-"));

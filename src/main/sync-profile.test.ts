@@ -383,6 +383,21 @@ describe("sync publish plan", () => {
 		expect(merged.manifest.skills.find((skill) => skill.id === "second")).toEqual(base.manifest.skills[1]);
 	});
 
+	it("requires an explicit adoption decision before replacing a dependency with an owned local skill", () => {
+		const local = makeSkill({ "SKILL.md": "# Local fork\n" });
+		const base = createSyncPublishPlan("personal", "private", [{
+			kind: "reference",
+			id: "review",
+			repository: "https://github.com/example/review",
+			ref: "a".repeat(40),
+			skillPath: "skills/review",
+		}]);
+		const owned = createSyncPublishPlan("personal", "private", [{ id: "review", sourcePath: local }]);
+		expect(() => mergeBundledUpdateIntoManifest(base.manifest, owned)).toThrow("not a known bundled skill");
+		const adopted = mergeBundledUpdateIntoManifest(base.manifest, owned, { allowSourceConversion: true });
+		expect(adopted.manifest.skills).toMatchObject([{ id: "review", kind: "bundled" }]);
+	});
+
 	it("blocks writes when the reviewed skill contains a secret", () => {
 		const root = makeSkill({ "SKILL.md": "TOKEN=ghp_abcdefghijklmnopqrstuvwxyz123456\n" });
 		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));

@@ -416,7 +416,7 @@ Exit: fixtures explain every current Skiller source kind and expected no-write p
 
 Exit: package builds on macOS/Linux/Windows CI and validates fixtures without touching user files.
 
-Current foundation evidence (2026-08-03): the public repository is `https://github.com/beautyfree/dotagent`; current commit `8aa45ac` and CI run `30810660823` completed all three macOS/Linux/Windows matrix jobs successfully. The same commit passes 89 tests, generated-schema drift checks, a committed API-declaration snapshot for 27 typed exports, and package inspection for 148 files/30 export paths locally. CI uses a frozen install with lifecycle scripts disabled and also runs inspect/audit smoke checks. `release:check` inspects the dry-run npm tarball and all exported package targets; the release-artifact builder produces the exact tarball, SHA-256 checksum, CycloneDX SBOM, and release manifest. A manual OIDC publish workflow exists, but npm publication remains intentionally blocked by `private: true` and the placeholder version until the stable-release gates are complete.
+Current foundation evidence (2026-08-03): the public repository is `https://github.com/beautyfree/dotagent`; current commit `00999c6` and CI run `30811235962` completed all three macOS/Linux/Windows matrix jobs successfully. The same commit passes 92 tests, generated-schema drift checks, a committed API-declaration snapshot for 28 typed exports, and package inspection for 152 files/31 export paths locally. It adds the shared, runtime-validated import-decision contract used by both the CLI/core and Skiller (`owned`, `dependency`, `vendored`, `local-only`, `excluded`). CI uses a frozen install with lifecycle scripts disabled and also runs inspect/audit smoke checks. `release:check` inspects the dry-run npm tarball and all exported package targets; the release-artifact builder produces the exact tarball, SHA-256 checksum, CycloneDX SBOM, and release manifest. A manual OIDC publish workflow exists, but npm publication remains intentionally blocked by `private: true` and the placeholder version until the stable-release gates are complete.
 
 ### Phase 2 — inventory, source resolution, and audit
 
@@ -455,7 +455,7 @@ Exit: CLI and Skiller produce the same plan hash for the same library/machine fi
 
 Current integration evidence (2026-08-03): dotagent owns the legacy Skiller schemas, migrations, portable-path checks, duplicate detection, and credential-free remote validation. Skiller retains a compatibility facade so existing imports and repositories do not change. The focused Skiller sync suite passes through the package adapter; full release/platform gates remain open.
 
-Latest runtime evidence (2026-08-03): Skiller pins dotagent commit `8aa45ac`, including the authoritative 49-agent catalog, versioned schemas/fixtures, dependency audit deltas, shared portable-plus-local agent routing, reviewed clone/init/resolve plans, shared owned-skill export policy, third-party conformance fixtures, and the public API snapshot gate. Newly created Sync Center repositories use canonical `skills.json`, `skills.lock`, `dotagent.yaml`, and `skills/` content and delegate canonical Git operations to dotagent; existing `skiller-sync.yaml` repositories remain readable and writable through the versioned adapter. The Skiller adapter test proves its serialized import plan and plan ID are byte-identical to the direct dotagent planner for the same discovery fixture. The full 101-test suite, typecheck, and production Electron/Vite build pass after the final pin. The existing 1440×900 live-dev review remains valid for the unchanged renderer, while packaged-app verification remains a separate release gate.
+Latest runtime evidence (2026-08-03): Skiller pins dotagent commit `00999c6`, including the authoritative 49-agent catalog, versioned schemas/fixtures, dependency audit deltas, shared portable-plus-local agent routing, reviewed clone/init/resolve plans, shared owned-skill export policy, shared import decisions, third-party conformance fixtures, and the public API snapshot gate. Newly created Sync Center repositories use canonical `skills.json`, `skills.lock`, `dotagent.yaml`, and `skills/` content and delegate canonical Git operations to dotagent; existing `skiller-sync.yaml` repositories remain readable and writable through the versioned adapter. The Skiller adapter test proves its serialized import plan and plan ID are byte-identical to the direct dotagent planner for the same discovery fixture. The full 103-test suite, typecheck, and production Electron/Vite build pass after the final pin. A fresh live renderer review confirmed the three-step Sync Center, per-skill outcome controls, vendored-license disclosure, and license-gated continuation; native backend preview remains covered by integration tests because the standalone browser renderer has no Electron RPC bridge. Packaged-app verification remains a separate release gate.
 
 ### Phase 5 — public/private library UX
 
@@ -464,8 +464,8 @@ Latest runtime evidence (2026-08-03): Skiller pins dotagent commit `8aa45ac`, in
 - [x] Preview included files, immutable dependency references, exclusions, secret blockers, and destination before commit/push.
 - [x] Import an existing public or private canonical library from Sync Center and choose detected agents through a private `dotagent.local.yaml` overlay. The managed clone is reviewed before any agent folder changes.
 - [x] Show immutable dependency update/audit diffs, including old/new commit, license change, and selected skills added or removed.
-- [ ] Support explicit owned/dependency/vendored/local-only transitions.
-- [ ] Complete three-way conflict and adopt-local UX.
+- [x] Support explicit owned/dependency/vendored/local-only transitions. The per-skill review defaults to owned for local skills and immutable dependencies for external skills, while exposing deliberate vendoring, ownership conversion, and local-only outcomes; vendoring requires upstream license metadata and preserves commit/integrity provenance.
+- [x] Complete three-way conflict and adopt-local UX. Conflicts start without a selected winner and offer explicit use-library, publish/adopt-local, or keep-local actions; converting an external dependency to owned requires the dedicated adopt-local mutation and cannot happen through the normal publish path.
 
 Exit: a user can publish a curated public library, install it on a clean machine, modify an owned skill, and reconcile without losing unmanaged work.
 
@@ -576,7 +576,7 @@ The schemas reserve no fake fields for deferred surfaces. Add them through expli
 - [x] Windows, Linux, and macOS behavior is tested before stable release.
 - [x] Existing Skiller libraries migrate through versioned adapters without silent format rewriting.
 - [x] Existing Skills CLI locks are input adapters, not dotagent's source of truth.
-- [ ] Public library authors can choose dependency references or explicit vendoring with origin/license visibility.
+- [x] Public library authors can choose dependency references or explicit vendoring with origin/license visibility.
 - [ ] Every mutating UI and CLI flow has a no-write preview and actionable failure state.
 
 ## 17. Decision log
@@ -603,6 +603,8 @@ The schemas reserve no fake fields for deferred surfaces. Add them through expli
 | 2026-08-03 | Agent delivery descriptors expose only verified roots | an unimplemented `config-path` variant would advertise unsafe behavior; it remains absent until backed by a real minimal-patch contract and round-trip fixture |
 | 2026-08-03 | Git identity normalization is a dependency-free leaf module | config, resolution, and workspace plans share one credential-free identity without importing higher-level source logic |
 | 2026-08-03 | Third-party layouts and public declarations are committed release fixtures | root-skill/multi-skill compatibility and package API changes now fail CI unless deliberately reviewed |
+| 2026-08-03 | Import outcomes are a shared dotagent contract | Skiller and the CLI/core use the same runtime-validated owned/dependency/vendored/local-only/excluded decisions instead of UI-only booleans |
+| 2026-08-03 | Dependency-to-owned conversion is an explicit conflict action | normal publish rejects source conversion; only the reviewed adopt-local operation may turn an external skill into an owned canonical copy |
 
 ## 18. Immediate implementation checklist
 
@@ -616,3 +618,5 @@ The schemas reserve no fake fields for deferred surfaces. Add them through expli
 - [x] Add a Skiller immutable Git dependency only after the first package tests pass.
 - [x] Migrate the first vertical slices: manifest/source schemas, secret scanning, reconciliation, diagnostics, and discovery.
 - [x] Verify full Skiller tests, typecheck, and production build after each pinned runtime slice.
+- [x] Add explicit dependency/vendored/owned/local-only review outcomes and preserve vendored origin, integrity, and license in canonical repositories.
+- [x] Add explicit three-way conflict choices, including guarded dependency-to-owned adoption, without a default conflict winner.

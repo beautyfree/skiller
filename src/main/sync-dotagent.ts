@@ -121,11 +121,14 @@ export async function planCanonicalSyncLibrary(
   options: CanonicalSyncLibraryOptions = {},
 ): Promise<CanonicalSyncLibraryPlan> {
   let existingLicense: string | undefined;
+  let existingConfig: ReturnType<typeof parsePortableConfig> | null = null;
   const existingManifestPath = join(workspace, CANONICAL_MANIFEST);
   if (existsSync(existingManifestPath)) {
     const existing = parseLibraryManifest(readFileSync(existingManifestPath, "utf8"));
     if (existing.ok) existingLicense = existing.value.license;
   }
+  const existingConfigPath = join(workspace, "dotagent.yaml");
+  if (existsSync(existingConfigPath)) existingConfig = parsePortableConfig(readFileSync(existingConfigPath, "utf8"));
   const license = options.license ?? existingLicense;
   const dependencies: LibraryManifest["dependencies"] = {};
   const sourceKinds: CanonicalSkillerMetadata["source_kinds"] = {};
@@ -166,10 +169,20 @@ export async function planCanonicalSyncLibrary(
   const config = {
     schema_version: 1,
     defaults: { include: "all" },
-    skills: Object.fromEntries(plan.manifest.skills.map((skill) => [skill.id, {
-      ...(skill.installations?.length ? { agents: [...new Set(skill.installations)].sort() } : {}),
-      ...(skill.kind !== "bundled" ? { distribution: "dependency" } : {}),
-    }])),
+    skills: Object.fromEntries(plan.manifest.skills.map((skill) => {
+      const explicitDistribution = plan.bundledDistributions[skill.id];
+      const previousPolicy = existingConfig?.skills[skill.id];
+      const vendoredOrigin = plan.vendoredOrigins[skill.id]
+        ?? (!explicitDistribution && previousPolicy?.distribution === "vendored" ? previousPolicy.origin : undefined);
+      return [skill.id, {
+        ...(skill.installations?.length ? { agents: [...new Set(skill.installations)].sort() } : {}),
+        ...(skill.kind !== "bundled"
+          ? { distribution: "dependency" as const }
+          : vendoredOrigin
+            ? { distribution: "vendored" as const, origin: vendoredOrigin }
+            : {}),
+      }];
+    })),
   };
   return {
     manifest,

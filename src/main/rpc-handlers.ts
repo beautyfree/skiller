@@ -34,6 +34,8 @@ import { doctorLibrary } from '@beautyfree/dotagent/doctor'
 import { auditLibrary } from '@beautyfree/dotagent/audit'
 import { getMaterializationStatus } from '@beautyfree/dotagent/status'
 import { diffLibraryLocks } from '@beautyfree/dotagent/sources'
+import { parseImportDecisions, type ImportDecision, type ImportDisposition } from '@beautyfree/dotagent/decisions'
+import { scanOwnedSkill } from '@beautyfree/dotagent/inventory'
 import { homedir } from 'node:os'
 import { readSkillsCliLock, type SkillsCliLockEntry } from './skills-cli-lock'
 import { getAgentsDir } from './paths'
@@ -334,6 +336,10 @@ function buildSyncPublishPreview(
       skills_sh: plan.manifest.skills
         .filter((skill): skill is Extract<typeof skill, { kind: 'skills_sh' }> => skill.kind === 'skills_sh')
         .map((skill) => ({ id: skill.id, source_url: skill.source_url, ref: skill.ref, skill_path: skill.skill_path })),
+      decisions: plan.manifest.skills.map((skill) => ({
+        candidate_key: skill.id,
+        disposition: skill.kind === 'bundled' ? 'owned' as const : 'dependency' as const,
+      })),
     },
   }
 }
@@ -504,6 +510,8 @@ async function mapWithConcurrency<T, Result>(items: T[], limit: number, task: (i
 
 type UnresolvedSyncCenterSource = { id: string; kind: 'reference' | 'skills_sh' }
 type SyncCenterLicense = 'MIT' | 'Apache-2.0' | 'CC0-1.0'
+type FinalSyncCenterDisposition = Exclude<ImportDisposition, 'suggested'>
+type SyncCenterDecisionOutcome = { candidateKey: string; disposition: FinalSyncCenterDisposition; license?: string }
 
 function syncCenterPublicLicense(mode: 'private' | 'public', license: unknown): SyncCenterLicense | undefined {
   if (mode === 'private') return undefined
@@ -514,14 +522,26 @@ function syncCenterPublicLicense(mode: 'private' | 'public', license: unknown): 
 async function createSyncCenterPublishPlan(
   selectedKeys?: string[],
   mode: 'private' | 'public' = 'private',
+  reviewedDecisions?: ImportDecision[],
 ): Promise<{
   plan: ReturnType<typeof createSyncPublishPlan>
   unresolvedSources: UnresolvedSyncCenterSource[]
+  decisions: SyncCenterDecisionOutcome[]
 }> {
   const inventory = scanSyncInventory(loadDetectedAgents('sync_center_publish'))
   const selected = selectedKeys ? new Set(selectedKeys) : null
-  const items = inventory.items.filter((item) => selected === null || selected.has(item.candidateKey))
-	if (items.length === 0) throw new Error('Choose at least one skill for your library')
+  const decisions = reviewedDecisions ? parseImportDecisions(reviewedDecisions) : null
+  const decisionByKey = new Map(decisions?.map((decision) => [decision.candidateKey, decision]))
+  const inventoryKeys = new Set(inventory.items.map((item) => item.candidateKey))
+  for (const decision of decisions ?? []) {
+    if (!inventoryKeys.has(decision.candidateKey)) throw new Error(`Skill changed or disappeared after review: ${decision.candidateKey}`)
+  }
+  const requestedDisposition = (candidateKey: string): ImportDecision['disposition'] => {
+    if (decisions) return decisionByKey.get(candidateKey)?.disposition ?? 'local-only'
+    return selected === null || selected.has(candidateKey) ? 'suggested' : 'local-only'
+  }
+  const items = inventory.items.filter((item) => !['local-only', 'excluded'].includes(requestedDisposition(item.candidateKey)))
+	if (items.length === 0) throw new Error('Choose at least one skill to save or reference in your library')
   const selectedKeysSet = new Set(items.map((item) => item.candidateKey))
   const unresolved = inventory.collisions.filter((collision) => collision.candidateKeys.filter((key) => selectedKeysSet.has(key)).length > 1)
   if (unresolved.length > 0) {
@@ -530,53 +550,101 @@ async function createSyncCenterPublishPlan(
   const skillsCliEntries = readSkillsCliLock()?.skills ?? []
 	const provenance = readProvenance()
   const unresolvedSources: UnresolvedSyncCenterSource[] = []
+  const outcomes = new Map<string, SyncCenterDecisionOutcome>()
+  for (const item of inventory.items) {
+    const reviewed = decisionByKey.get(item.candidateKey)
+    const disposition = requestedDisposition(item.candidateKey)
+    if (disposition === 'local-only' || disposition === 'excluded') {
+      outcomes.set(item.candidateKey, { candidateKey: item.candidateKey, disposition })
+    } else if (disposition !== 'suggested') {
+      outcomes.set(item.candidateKey, {
+        candidateKey: item.candidateKey,
+        disposition,
+        ...(reviewed?.license ? { license: reviewed.license } : {}),
+      })
+    }
+  }
   const candidates = (await mapWithConcurrency(items, 8, async (item): Promise<SyncPublishCandidate | null> => {
     const installationAgentSlugs = item.locations.flatMap((location) => location.agentSlug ? [location.agentSlug] : [])
     const skillsCliEntry = skillsCliEntryForInventoryItem(item, skillsCliEntries)
-    if (skillsCliEntry) {
-      const skillPath = skillsCliSkillDirectory(skillsCliEntry)
-      const sourceUrl = skillsCliEntry.source_url.trim()
-      if (!sourceUrl || !skillPath) {
-        throw new Error(`The skills.sh entry for ${item.displayName} has incomplete source information and cannot be backed up safely.`)
-      }
-      try {
-        return {
+    const git = provenanceEntryForInventoryItem(item, provenance)
+    const external = skillsCliEntry
+      ? {
           kind: 'skills_sh' as const,
-          id: item.candidateKey,
-          sourceUrl,
-          ref: await resolveSkillsCliCommit(skillsCliEntry),
-          skillPath,
-			contentHash: item.contentHash,
-          installationAgentSlugs,
+          repository: skillsCliEntry.source_url.trim(),
+          requestedRef: skillsCliEntry.ref?.trim() || 'HEAD',
+          skillPath: skillsCliSkillDirectory(skillsCliEntry),
         }
-      } catch {
-        unresolvedSources.push({ id: item.candidateKey, kind: 'skills_sh' })
-        return null
+      : git?.repository?.trim()
+        ? {
+            kind: git.source === 'skills.sh' ? 'skills_sh' as const : 'reference' as const,
+            repository: git.repository.trim(),
+            requestedRef: git.ref?.trim() || 'HEAD',
+            skillPath: externalSkillDirectory(git.skill_path),
+          }
+        : null
+    const requested = requestedDisposition(item.candidateKey)
+    const disposition: FinalSyncCenterDisposition = requested === 'suggested'
+      ? external ? 'dependency' : 'owned'
+      : requested
+    const reviewed = decisionByKey.get(item.candidateKey)
+    outcomes.set(item.candidateKey, {
+      candidateKey: item.candidateKey,
+      disposition,
+      ...(reviewed?.license ? { license: reviewed.license } : {}),
+    })
+    if (disposition === 'owned') {
+      return { kind: 'bundled' as const, id: item.candidateKey, sourcePath: item.sourcePath, installationAgentSlugs }
+    }
+    if (!external?.repository || !external.skillPath) {
+      throw new Error(`${item.displayName} has no verified Git source. Save it as owned or keep it on this computer.`)
+    }
+    assertCredentialFreeGitRemote(external.repository)
+    let ref: string
+    try {
+      ref = skillsCliEntry
+        ? await resolveSkillsCliCommit(skillsCliEntry)
+        : await resolveGitCommitCached(external.repository, external.requestedRef)
+    } catch {
+      unresolvedSources.push({ id: item.candidateKey, kind: external.kind })
+      outcomes.set(item.candidateKey, { candidateKey: item.candidateKey, disposition: 'local-only' })
+      return null
+    }
+    if (disposition === 'vendored') {
+      if (!reviewed?.license) throw new Error(`Choose the upstream license before vendoring ${item.displayName}`)
+      const scanned = await scanOwnedSkill(dirname(item.sourcePath), basename(item.sourcePath))
+      if (!scanned.ok) throw new Error(`Could not verify vendored files for ${item.displayName}: ${scanned.issues[0]?.message ?? 'unsafe skill'}`)
+      return {
+        kind: 'vendored' as const,
+        id: item.candidateKey,
+        sourcePath: item.sourcePath,
+        origin: {
+          url: external.repository,
+          commit: ref,
+          skill_path: external.skillPath,
+          integrity: scanned.value.integrity,
+          license: reviewed.license,
+        },
+        installationAgentSlugs,
       }
     }
-		const git = provenanceEntryForInventoryItem(item, provenance)
-		if (git?.repository?.trim()) {
-			const repository = git.repository.trim()
-			let ref: string
-			try {
-				ref = await resolveGitCommitCached(repository, git.ref?.trim() || 'HEAD')
-			} catch {
-				unresolvedSources.push({ id: item.candidateKey, kind: git.source === 'skills.sh' ? 'skills_sh' : 'reference' })
-				return null
-			}
-			const skillPath = externalSkillDirectory(git.skill_path)
-			if (git.source === 'skills.sh') {
-				return { kind: 'skills_sh' as const, id: item.candidateKey, sourceUrl: repository, ref, skillPath, contentHash: item.contentHash, installationAgentSlugs }
-			}
-			return { kind: 'reference' as const, id: item.candidateKey, repository, ref, skillPath, contentHash: item.contentHash, installationAgentSlugs }
-		}
-    return { kind: 'bundled' as const, id: item.candidateKey, sourcePath: item.sourcePath, installationAgentSlugs }
+    return external.kind === 'skills_sh'
+      ? { kind: 'skills_sh' as const, id: item.candidateKey, sourceUrl: external.repository, ref, skillPath: external.skillPath, contentHash: item.contentHash, installationAgentSlugs }
+      : { kind: 'reference' as const, id: item.candidateKey, repository: external.repository, ref, skillPath: external.skillPath, contentHash: item.contentHash, installationAgentSlugs }
   })).filter((candidate): candidate is SyncPublishCandidate => candidate !== null)
   if (candidates.length === 0) throw new Error('No selected skills can be pinned safely. Connect or authenticate to their Git sources, then retry.')
-  return { plan: createSyncPublishPlan('agent-library', mode, candidates), unresolvedSources }
+  return {
+    plan: createSyncPublishPlan('agent-library', mode, candidates),
+    unresolvedSources,
+    decisions: inventory.items.map((item) => outcomes.get(item.candidateKey) ?? { candidateKey: item.candidateKey, disposition: 'local-only' }),
+  }
 }
 
-function syncPublishPlanToJson(plan: ReturnType<typeof createSyncPublishPlan>, unresolvedSources: UnresolvedSyncCenterSource[] = []): SyncPublishPreviewJson {
+function syncPublishPlanToJson(
+  plan: ReturnType<typeof createSyncPublishPlan>,
+  unresolvedSources: UnresolvedSyncCenterSource[] = [],
+  decisions: SyncCenterDecisionOutcome[] = [],
+): SyncPublishPreviewJson {
   return {
     profile_id: plan.manifest.profile.id,
     mode: plan.manifest.profile.mode,
@@ -594,6 +662,11 @@ function syncPublishPlanToJson(plan: ReturnType<typeof createSyncPublishPlan>, u
     skills_sh: plan.manifest.skills
       .filter((skill): skill is Extract<typeof skill, { kind: 'skills_sh' }> => skill.kind === 'skills_sh')
       .map((skill) => ({ id: skill.id, source_url: skill.source_url, ref: skill.ref, skill_path: skill.skill_path })),
+    decisions: decisions.map((decision) => ({
+      candidate_key: decision.candidateKey,
+      disposition: decision.disposition,
+      ...(decision.license ? { license: decision.license } : {}),
+    })),
     unresolved_sources: unresolvedSources,
   }
 }
@@ -705,7 +778,11 @@ async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc:
  * verbatim for every other skill, so a granular publish cannot erase a
  * colleague's unrelated addition.
  */
-async function publishReviewedLocalChanges(profileId: string, ids: string[]): Promise<{ commit: string | null; pushed: boolean }> {
+async function publishReviewedLocalChanges(
+  profileId: string,
+  ids: string[],
+  options: { allowConflict?: boolean } = {},
+): Promise<{ commit: string | null; pushed: boolean }> {
   assertSyncStableId(profileId)
   const skillIds = selectedSyncSkillIds(ids)
   if (!hasSyncWorkspace(profileId)) throw new Error('This library has not been set up on this computer')
@@ -718,19 +795,32 @@ async function publishReviewedLocalChanges(profileId: string, ids: string[]): Pr
   const existing = restore.manifest
   const ledger = readSyncLedger(profileId)
   const entries = new Map(restore.entries.map((entry) => [entry.id, entry]))
-  const existingBundled = new Map(existing.skills.filter((skill) => skill.kind === 'bundled').map((skill) => [skill.id, skill]))
+  const existingSkills = new Map(existing.skills.map((skill) => [skill.id, skill]))
+  const agents = loadDetectedAgents('sync_adopt_local_changes')
   const candidates: SyncPublishCandidate[] = []
   for (const id of skillIds) {
     const entry = entries.get(id)
-    const current = existingBundled.get(id)
-    if (!entry || !current || entry.localSha256 === null) throw new Error(`Local skill is not available: ${id}`)
-    const action = classifyThreeWaySkill(id, ledger?.skills[id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256, ledger?.skills[id]?.kept_remote_sha256).action
-    if (action !== 'publish-local') throw new Error(`Local change must be resolved manually: ${id}`)
-    candidates.push({ id, sourcePath: entry.targetPath, installationAgentSlugs: current.installations })
+    const current = existingSkills.get(id)
+    if (!current) throw new Error(`Library skill is not available: ${id}`)
+    if (current.kind === 'bundled') {
+      if (!entry || entry.localSha256 === null) throw new Error(`Local skill is not available: ${id}`)
+      const action = classifyThreeWaySkill(id, ledger?.skills[id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256, ledger?.skills[id]?.kept_remote_sha256).action
+      if (action !== 'publish-local' && !(options.allowConflict && (action === 'conflict' || action === 'unmanaged'))) {
+        throw new Error(`Local change does not need publishing: ${id}`)
+      }
+      candidates.push({ id, sourcePath: entry.targetPath, installationAgentSlugs: current.installations })
+      continue
+    }
+    if (!options.allowConflict || externalRestoreAction(current, agents) !== 'conflict') {
+      throw new Error(`External skill does not need adoption: ${id}`)
+    }
+    const sourcePath = resolveSkillSourcePath(id, agents)
+    planBundledSkillExport(id, sourcePath)
+    candidates.push({ id, sourcePath, installationAgentSlugs: current.installations })
   }
   const update = createSyncPublishPlan(profileId, existing.profile.mode, candidates, existing.agent_policy)
 	const publishedBundles = new Map(update.manifest.skills.filter((skill) => skill.kind === 'bundled').map((skill) => [skill.id, skill]))
-	const merged = mergeBundledUpdateIntoManifest(existing, update)
+	const merged = mergeBundledUpdateIntoManifest(existing, update, { allowSourceConversion: options.allowConflict })
 	if (isCanonicalSyncLibrary(workspace)) {
 		const canonical = await planCanonicalSyncLibrary(workspace, merged)
 		applySyncPublishFiles(workspace, merged, canonical.portableFiles)
@@ -937,13 +1027,14 @@ export function createRequestHandlers(ctx: {
 	refresh_sync_profiles: async (): Promise<SyncProfileStatusJson[]> => listSyncProfiles(true),
     scan_sync_inventory: async (): Promise<SyncInventoryJson> => syncInventoryToJson(),
 		get_sync_skill_preview: async (params: { skillId: string }): Promise<SyncSkillPreviewJson> => syncSkillPreviewToJson(params.skillId),
-    sync_center_publish_preview: async (params?: { selectedKeys?: string[] }): Promise<SyncPublishPreviewJson> => {
-      const result = await createSyncCenterPublishPlan(params?.selectedKeys)
-      return syncPublishPlanToJson(result.plan, result.unresolvedSources)
+    sync_center_publish_preview: async (params?: { selectedKeys?: string[]; decisions?: ImportDecision[] }): Promise<SyncPublishPreviewJson> => {
+      const result = await createSyncCenterPublishPlan(params?.selectedKeys, 'private', params?.decisions)
+      return syncPublishPlanToJson(result.plan, result.unresolvedSources, result.decisions)
     },
     sync_center_publish: async (params: {
       remoteUrl: string
       selectedKeys?: string[]
+      decisions?: ImportDecision[]
       mode: 'private' | 'public'
       license?: SyncCenterLicense
     }) => {
@@ -960,7 +1051,7 @@ export function createRequestHandlers(ctx: {
 			if (status.remoteUrl && status.remoteUrl !== remoteUrl) throw new Error('This library already uses a different remote')
         if (!status.remoteUrl) await setSyncWorkspaceRemote(workspace, remoteUrl)
       }
-		const publishPlan = await createSyncCenterPublishPlan(params.selectedKeys, params.mode)
+		const publishPlan = await createSyncCenterPublishPlan(params.selectedKeys, params.mode, params.decisions)
 		if (existingWorkspace && !isCanonicalSyncLibrary(workspace)) {
 			// Existing libraries retain their versioned legacy format until the user
 			// explicitly migrates; newly created libraries are canonical dotagent.
@@ -1037,6 +1128,7 @@ export function createRequestHandlers(ctx: {
     sync_apply_remote_changes: async (params: { profileId: string; skillIds: string[] }) => applyReviewedRemoteChanges(params.profileId, params.skillIds, rpc),
 	 sync_apply_conflicting_remote_changes: async (params: { profileId: string; skillIds: string[] }) => applyReviewedRemoteChanges(params.profileId, params.skillIds, rpc, true),
 	 sync_publish_local_changes: async (params: { profileId: string; skillIds: string[] }) => publishReviewedLocalChanges(params.profileId, params.skillIds),
+	 sync_adopt_local_changes: async (params: { profileId: string; skillIds: string[] }) => publishReviewedLocalChanges(params.profileId, params.skillIds, { allowConflict: true }),
 	 sync_keep_local_changes: async (params: { profileId: string; skillIds: string[] }) => keepReviewedLocalChanges(params.profileId, params.skillIds),
 	 sync_keep_external_local_changes: async (params: { profileId: string; skillIds: string[] }) => keepReviewedExternalChanges(params.profileId, params.skillIds),
     sync_recovery_status: async (params: { profileId: string }) => {

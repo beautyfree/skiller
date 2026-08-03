@@ -1,3 +1,5 @@
+import type { ImportDecision, ImportDisposition } from "@beautyfree/dotagent/decisions";
+
 /** Shared JSON types — SkillSource uses Rust default (externally tagged enum) */
 export type SkillSourceJson =
   | { LocalPath: { path: string } }
@@ -316,12 +318,19 @@ export type SyncPublishPreviewJson = {
   references: { id: string; repository: string; ref: string; skill_path: string }[];
   /** Dependencies installed through skills.sh, pinned before publication. */
   skills_sh: { id: string; source_url: string; ref: string; skill_path: string }[];
+  decisions: {
+    candidate_key: string;
+    disposition: Exclude<ImportDisposition, "suggested">;
+    license?: string;
+  }[];
   /**
    * External sources that could not be pinned for this attempt. They are
    * deliberately left out of the remote library and untouched locally.
    */
   unresolved_sources?: { id: string; kind: "reference" | "skills_sh" }[];
 };
+
+export type SyncLibraryDecisionJson = ImportDecision;
 
 /** Full local SKILL.md body, loaded only when a user opens its review popover. */
 export type SyncSkillPreviewJson = {
@@ -438,13 +447,14 @@ export type AppRPCSchema = {
 		get_sync_skill_preview: { params: { skillId: string }; response: SyncSkillPreviewJson };
 		reveal_sync_secret_finding: { params: { skillId: string; relativePath: string }; response: void };
       sync_center_publish_preview: {
-        params?: { selectedKeys?: string[] };
+        params?: { selectedKeys?: string[]; decisions?: SyncLibraryDecisionJson[] };
         response: SyncPublishPreviewJson;
       };
       sync_center_publish: {
         params: {
           remoteUrl: string;
           selectedKeys?: string[];
+          decisions?: SyncLibraryDecisionJson[];
           mode: "private" | "public";
           license?: "MIT" | "Apache-2.0" | "CC0-1.0";
         };
@@ -454,6 +464,7 @@ export type AppRPCSchema = {
       sync_apply_remote_changes: { params: { profileId: string; skillIds: string[] }; response: { restored: string[] } };
 	  sync_apply_conflicting_remote_changes: { params: { profileId: string; skillIds: string[] }; response: { restored: string[] } };
       sync_publish_local_changes: { params: { profileId: string; skillIds: string[] }; response: { commit: string | null; pushed: boolean } };
+	  sync_adopt_local_changes: { params: { profileId: string; skillIds: string[] }; response: { commit: string | null; pushed: boolean } };
 	  sync_keep_local_changes: { params: { profileId: string; skillIds: string[] }; response: { kept: string[] } };
 	  sync_keep_external_local_changes: { params: { profileId: string; skillIds: string[] }; response: { kept: string[] } };
       sync_recovery_status: { params: { profileId: string }; response: { pending: boolean } };

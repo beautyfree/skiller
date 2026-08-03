@@ -25,6 +25,7 @@ describe("tRPC query procedure registry", () => {
 			"sync_three_way_review",
 			"sync_apply_remote_changes",
 			"sync_publish_local_changes",
+			"sync_adopt_local_changes",
 			"sync_keep_local_changes",
 			"sync_keep_external_local_changes",
 		]) {

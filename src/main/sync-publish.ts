@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
+import type { VendoredOrigin } from "@beautyfree/dotagent/config";
 import {
 	assertPortableRelativePath,
 	createSyncManifest,
@@ -37,11 +38,25 @@ export type SkillsShSkillCandidate = {
 	installationAgentSlugs?: string[];
 };
 
-export type SyncPublishCandidate = BundledSkillCandidate | ReferenceSkillCandidate | SkillsShSkillCandidate;
+export type VendoredSkillCandidate = {
+	kind: "vendored";
+	id: string;
+	sourcePath: string;
+	origin: VendoredOrigin;
+	installationAgentSlugs?: string[];
+};
+
+export type SyncPublishCandidate =
+	| BundledSkillCandidate
+	| ReferenceSkillCandidate
+	| SkillsShSkillCandidate
+	| VendoredSkillCandidate;
 
 export type SyncPublishPlan = {
 	manifest: SyncManifest;
 	bundledSkills: BundledSkillExportPlan[];
+	bundledDistributions: Record<string, "owned" | "vendored">;
+	vendoredOrigins: Record<string, VendoredOrigin>;
 	secretFindings: SyncExportFinding[];
 };
 
@@ -51,11 +66,15 @@ export type SyncPublishPlan = {
  * skill remains in the manifest and in the worktree rather than disappearing
  * because the user chose to publish just one skill.
  */
-export function mergeBundledUpdateIntoManifest(base: SyncManifest, update: SyncPublishPlan): SyncPublishPlan {
+export function mergeBundledUpdateIntoManifest(
+	base: SyncManifest,
+	update: SyncPublishPlan,
+	options: { allowSourceConversion?: boolean } = {},
+): SyncPublishPlan {
 	const replacement = new Map(update.manifest.skills.map((skill) => [skill.id, skill]));
 	for (const skill of update.manifest.skills) {
 		const previous = base.skills.find((item) => item.id === skill.id);
-		if (!previous || previous.kind !== "bundled" || skill.kind !== "bundled") {
+		if (!previous || skill.kind !== "bundled" || (!options.allowSourceConversion && previous.kind !== "bundled")) {
 			throw new Error(`Granular sync update is not a known bundled skill: ${skill.id}`);
 		}
 	}
@@ -75,8 +94,24 @@ export function createSyncPublishPlan(
 	agentPolicy?: SyncManifest["agent_policy"],
 ): SyncPublishPlan {
 	const bundledSkills = candidates
-		.filter((candidate): candidate is BundledSkillCandidate => candidate.kind === undefined || candidate.kind === "bundled")
+		.filter(
+			(candidate): candidate is BundledSkillCandidate | VendoredSkillCandidate =>
+				candidate.kind === undefined || candidate.kind === "bundled" || candidate.kind === "vendored",
+		)
 		.map((candidate) => planBundledSkillExport(candidate.id, candidate.sourcePath));
+	const vendoredOrigins = Object.fromEntries(
+		candidates
+			.filter((candidate): candidate is VendoredSkillCandidate => candidate.kind === "vendored")
+			.map((candidate) => [candidate.id, candidate.origin]),
+	);
+	const bundledDistributions = Object.fromEntries(
+		candidates
+			.filter(
+				(candidate): candidate is BundledSkillCandidate | VendoredSkillCandidate =>
+					candidate.kind === undefined || candidate.kind === "bundled" || candidate.kind === "vendored",
+			)
+			.map((candidate) => [candidate.id, candidate.kind === "vendored" ? ("vendored" as const) : ("owned" as const)]),
+	);
 	const manifest = createSyncManifest(profileId, mode, agentPolicy);
 	manifest.skills = candidates.map((candidate) => {
 		if (candidate.kind === "reference") {
@@ -120,6 +155,8 @@ export function createSyncPublishPlan(
 	return {
 		manifest: validateSyncManifest(manifest),
 		bundledSkills,
+		bundledDistributions,
+		vendoredOrigins,
 		secretFindings: bundledSkills.flatMap((skill) => skill.secretFindings),
 	};
 }

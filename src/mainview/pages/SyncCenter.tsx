@@ -3,14 +3,15 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Cloud, FolderOpen, Github, Info, Loader2, Server, X } from 'lucide-react'
 import { invoke } from '@/mainview/lib/native'
-import type { AgentConfigJson, SyncInventoryJson, SyncProfileStatusJson, SyncPublishPreviewJson, SyncThreeWayReviewJson } from '@/shared/rpc-schema'
+import type { AgentConfigJson, SyncInventoryJson, SyncLibraryDecisionJson, SyncProfileStatusJson, SyncPublishPreviewJson, SyncThreeWayReviewJson } from '@/shared/rpc-schema'
 import { Button } from '@/mainview/components/ui/button'
 import { useToast } from '@/mainview/components/ToastProvider'
 import { AgentIcon } from '@/mainview/components/AgentIcon'
 import MarkdownContent from '@/mainview/components/MarkdownContent'
 
 function plural(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? '' : 's'}`
+	const pluralWord = word.endsWith('y') ? `${word.slice(0, -1)}ies` : `${word}s`
+	return `${count} ${count === 1 ? word : pluralWord}`
 }
 
 function secretRuleLabel(rule: SyncPublishPreviewJson['secret_findings'][number]['rule']): string {
@@ -37,6 +38,10 @@ function groupSecretFindings(findings: SyncPublishPreviewJson['secret_findings']
 
 type InventoryItem = SyncInventoryJson['items'][number]
 
+function defaultLibraryDecision(item: InventoryItem): SyncLibraryDecisionJson {
+	return { candidateKey: item.candidate_key, disposition: item.source.kind === 'local' ? 'owned' : 'dependency' }
+}
+
 const InventorySkillRow = memo(function InventorySkillRow({ item, selected, inspected, onToggle, onInspect }: { item: InventoryItem; selected: boolean; inspected: boolean; onToggle: (key: string) => void; onInspect: (key: string) => void }) {
 	const agentSlugs = useMemo(() => [...new Set(item.locations.flatMap((location) => location.agent_slug ? [location.agent_slug] : []))], [item.locations])
 	const isShared = item.locations.some((location) => location.kind === 'shared')
@@ -52,9 +57,19 @@ const InventorySkillRow = memo(function InventorySkillRow({ item, selected, insp
 	</div>
 })
 
-function ReviewSkillDetail({ item, onClose }: { item: InventoryItem; onClose: () => void }) {
+function ReviewSkillDetail({ item, decision, onDecision, onClose }: { item: InventoryItem; decision: SyncLibraryDecisionJson; onDecision: (decision: SyncLibraryDecisionJson) => void; onClose: () => void }) {
 	const agentSlugs = [...new Set(item.locations.flatMap((location) => location.agent_slug ? [location.agent_slug] : []))]
 	const isShared = item.locations.some((location) => location.kind === 'shared')
+	const external = item.source.kind !== 'local'
+	const choices = external ? [
+		{ disposition: 'dependency' as const, title: 'Pin its source', detail: 'Recommended. Save the exact Git commit without uploading another copy.' },
+		{ disposition: 'vendored' as const, title: 'Keep a reviewed copy', detail: 'Publish these files with their upstream commit, integrity, and license.' },
+		{ disposition: 'owned' as const, title: 'Make it mine', detail: 'Publish the current files as your own skill without an upstream update link.' },
+		{ disposition: 'local-only' as const, title: 'This computer only', detail: 'Leave it untouched and out of the repository.' },
+	] : [
+		{ disposition: 'owned' as const, title: 'Save in my library', detail: 'Publish the reviewed files under skills/ so they travel with your library.' },
+		{ disposition: 'local-only' as const, title: 'This computer only', detail: 'Leave it untouched and out of the repository.' },
+	]
 	const { data: preview, isLoading, error } = useQuery<{ skill_id: string; body: string }>({
 		queryKey: ['sync-skill-preview', item.candidate_key],
 		queryFn: () => invoke('get_sync_skill_preview', { skillId: item.candidate_key }),
@@ -67,7 +82,8 @@ function ReviewSkillDetail({ item, onClose }: { item: InventoryItem; onClose: ()
 			<h3 className="text-base font-semibold leading-tight">{item.display_name}</h3>
 			{item.description && <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{item.description}</p>}
 			{item.when_to_use && <p className="mt-3 text-xs leading-relaxed text-muted-foreground"><span className="font-medium text-foreground">Use it for:</span> {item.when_to_use}</p>}
-			<div className="mt-4 border-y border-border/60 py-3 text-[11px] text-muted-foreground">{item.source.kind === 'skills_sh' ? <><p className="font-medium text-foreground">Installed through skills.sh</p><p className="mt-1 leading-relaxed">Skiller will record this skill’s source and pin it to one Git commit before publishing. It will not upload a duplicate copy.</p></> : item.source.kind === 'git_reference' ? <><p className="font-medium text-foreground">Installed from a Git source</p><p className="mt-1 leading-relaxed">Skiller will save its pinned repository reference instead of flattening this skill into a duplicate folder.</p></> : <><p className="font-medium text-foreground">Local skill</p><p className="mt-1 leading-relaxed">This skill is not linked to a known external source, so its reviewed files can be stored in your personal library.</p></>}</div>
+			<div className="mt-4 border-y border-border/60 py-3 text-[11px] text-muted-foreground">{item.source.kind === 'skills_sh' ? <><p className="font-medium text-foreground">Installed through skills.sh</p><p className="mt-1 leading-relaxed">Skiller can pin its exact source, keep a licensed copy, or leave it only on this computer.</p></> : item.source.kind === 'git_reference' ? <><p className="font-medium text-foreground">Installed from a Git source</p><p className="mt-1 leading-relaxed">Skiller can pin its exact source, keep a licensed copy, or leave it only on this computer.</p></> : <><p className="font-medium text-foreground">Local skill</p><p className="mt-1 leading-relaxed">This skill has no verified upstream source. Save it as part of your library or keep it only here.</p></>}</div>
+			<fieldset className="border-b border-border/60 py-3"><legend className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Library outcome</legend><div className="grid gap-0.5">{choices.map((choice) => <label key={choice.disposition} className={`flex min-h-11 cursor-pointer items-start gap-2.5 rounded-md px-2 py-2 transition-colors ${decision.disposition === choice.disposition ? 'bg-primary/[0.08] text-foreground' : 'text-muted-foreground hover:bg-muted/45 hover:text-foreground'}`}><input type="radio" name={`library-outcome-${item.candidate_key}`} value={choice.disposition} checked={decision.disposition === choice.disposition} onChange={() => onDecision({ candidateKey: item.candidate_key, disposition: choice.disposition })} className="mt-0.5 cursor-pointer" /><span><span className="block text-xs font-medium">{choice.title}</span><span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">{choice.detail}</span></span></label>)}</div>{decision.disposition === 'vendored' && <label className="mt-2 grid gap-1 px-2 text-[10px] font-medium text-foreground">Upstream license<input value={decision.license ?? ''} onChange={(event) => onDecision({ candidateKey: item.candidate_key, disposition: 'vendored', license: event.target.value })} placeholder="SPDX ID, for example MIT" className="h-8 rounded-md border border-border bg-background px-2 text-xs font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring/60" aria-describedby={`vendored-license-${item.candidate_key}`} /><span id={`vendored-license-${item.candidate_key}`} className="font-normal leading-relaxed text-muted-foreground">Required because your public or private repository will redistribute these files.</span></label>}</fieldset>
 			<div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 py-3 text-[11px] text-muted-foreground"><span>{isShared ? 'Shared library' : 'Agent-specific'}</span>{agentSlugs.map((slug) => <span key={slug} className="inline-flex items-center gap-1"><AgentIcon slug={slug} className="size-3.5" />{slug}</span>)}</div>
 			<div className="mt-5"><p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">SKILL.md</p>{isLoading ? <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Loading local skill…</div> : error ? <p className="text-xs text-destructive">Could not load this local SKILL.md. Refresh the library review and try again.</p> : preview?.body.trim() ? <MarkdownContent content={preview.body} /> : <p className="text-xs italic text-muted-foreground">This SKILL.md does not contain instructions after its metadata.</p>}</div>
 		</div>
@@ -87,6 +103,7 @@ export default function SyncCenter() {
   const [connectSelectionReady, setConnectSelectionReady] = useState(false)
   const [inspectedSkillKey, setInspectedSkillKey] = useState<string | null>(null)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
+  const [libraryDecisions, setLibraryDecisions] = useState<Record<string, SyncLibraryDecisionJson>>({})
   const [selectionReady, setSelectionReady] = useState(false)
   const [setupMode, setSetupMode] = useState<'github' | 'custom' | null>(null)
   const [repositoryName, setRepositoryName] = useState('skiller-agent-library')
@@ -98,8 +115,6 @@ export default function SyncCenter() {
   const [remoteReview, setRemoteReview] = useState<SyncThreeWayReviewJson | null>(null)
 	const [remoteSelections, setRemoteSelections] = useState<string[]>([])
 	const [localSelections, setLocalSelections] = useState<string[]>([])
-	const [keepLocalSelections, setKeepLocalSelections] = useState<string[]>([])
-	const [keepExternalSelections, setKeepExternalSelections] = useState<string[]>([])
   const [busy, setBusy] = useState<'idle' | 'reviewing' | 'creating' | 'connecting' | 'publishing'>('idle')
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -128,9 +143,25 @@ export default function SyncCenter() {
 	})
 	const selectedKeySet = useMemo(() => new Set(selectedKeys), [selectedKeys])
 	const inspectedSkill = useMemo(() => inventoryItems.find((item) => item.candidate_key === inspectedSkillKey) ?? null, [inventoryItems, inspectedSkillKey])
+	const reviewedDecisions = useMemo(() => inventoryItems.map((item) => libraryDecisions[item.candidate_key] ?? defaultLibraryDecision(item)), [inventoryItems, libraryDecisions])
+	const missingVendoredLicenses = reviewedDecisions.filter((decision) => decision.disposition === 'vendored' && !decision.license?.trim())
+	const previewOwnedCount = preview?.decisions.filter((decision) => decision.disposition === 'owned').length ?? 0
+	const previewVendoredCount = preview?.decisions.filter((decision) => decision.disposition === 'vendored').length ?? 0
+	const previewLocalCount = preview?.decisions.filter((decision) => decision.disposition === 'local-only' || decision.disposition === 'excluded').length ?? 0
 	const externalConflicts = useMemo(() => remoteReview?.skills.filter((skill) => skill.kind !== 'bundled' && skill.action === 'conflict') ?? [], [remoteReview])
 	const toggleSelectedKey = useCallback((key: string) => {
-	  setSelectedKeys((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key])
+	  const selected = selectedKeySet.has(key)
+	  const item = inventoryItems.find((candidate) => candidate.candidate_key === key)
+	  if (!item) return
+	  setLibraryDecisions((decisions) => ({ ...decisions, [key]: selected ? { candidateKey: key, disposition: 'local-only' } : defaultLibraryDecision(item) }))
+	  setSelectedKeys((current) => selected ? current.filter((item) => item !== key) : [...current, key])
+	}, [inventoryItems, selectedKeySet])
+	const chooseLibraryOutcome = useCallback((decision: SyncLibraryDecisionJson) => {
+	  setLibraryDecisions((current) => ({ ...current, [decision.candidateKey]: decision }))
+	  setSelectedKeys((current) => {
+		const included = decision.disposition === 'owned' || decision.disposition === 'dependency' || decision.disposition === 'vendored' || decision.disposition === 'suggested'
+		return included ? current.includes(decision.candidateKey) ? current : [...current, decision.candidateKey] : current.filter((key) => key !== decision.candidateKey)
+	  })
 	}, [])
   const { data: recovery } = useQuery<{ pending: boolean }>({
     queryKey: ['sync-recovery', profile?.profile_id],
@@ -145,6 +176,7 @@ export default function SyncCenter() {
   useEffect(() => {
     if (!inventory || selectionReady) return
     setSelectedKeys(inventory.items.map((item) => item.candidate_key))
+	setLibraryDecisions(Object.fromEntries(inventory.items.map((item) => [item.candidate_key, defaultLibraryDecision(item)])))
     setSelectionReady(true)
   }, [inventory, selectionReady])
 
@@ -157,7 +189,7 @@ export default function SyncCenter() {
   async function prepareStorageChoice() {
     setBusy('reviewing')
     try {
-      const result = await invoke('sync_center_publish_preview', { selectedKeys })
+      const result = await invoke('sync_center_publish_preview', { selectedKeys, decisions: reviewedDecisions })
       setPreview(result)
       setShowDestination(false)
     } catch (error) {
@@ -193,8 +225,6 @@ export default function SyncCenter() {
     setRemoteReview(result)
     setRemoteSelections(result.skills.filter((skill) => skill.action === 'take-remote').map((skill) => skill.id))
     setLocalSelections(result.skills.filter((skill) => skill.action === 'publish-local').map((skill) => skill.id))
-    setKeepLocalSelections(result.skills.filter((skill) => skill.kind === 'bundled' && (skill.action === 'conflict' || skill.action === 'unmanaged')).map((skill) => skill.id))
-    setKeepExternalSelections(result.skills.filter((skill) => skill.kind !== 'bundled' && skill.action === 'conflict').map((skill) => skill.id))
   }
 
   async function connectExistingLibrary() {
@@ -238,6 +268,7 @@ export default function SyncCenter() {
       await invoke('sync_center_publish', {
         remoteUrl,
         selectedKeys,
+        decisions: reviewedDecisions,
         mode: libraryMode,
         license: libraryMode === 'public' ? libraryLicense || undefined : undefined,
       })
@@ -276,36 +307,6 @@ export default function SyncCenter() {
 		setRemoteReview(null)
 		setLocalSelections([])
 		await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
-	  } catch (error) {
-		toast(error instanceof Error ? error.message : String(error), 'destructive')
-	  } finally {
-		setBusy('idle')
-	  }
-	}
-
-	async function keepSelectedLocalChanges() {
-	  if (!profile || keepLocalSelections.length === 0) return
-	  setBusy('publishing')
-	  try {
-		const result = await invoke('sync_keep_local_changes', { profileId: profile.profile_id, skillIds: keepLocalSelections })
-		toast(`Kept ${result.kept.length} local change${result.kept.length === 1 ? '' : 's'} without modifying the remote.`)
-		setRemoteReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
-		setKeepLocalSelections([])
-	  } catch (error) {
-		toast(error instanceof Error ? error.message : String(error), 'destructive')
-	  } finally {
-		setBusy('idle')
-	  }
-	}
-
-	async function keepSelectedExternalChanges() {
-	  if (!profile || keepExternalSelections.length === 0) return
-	  setBusy('publishing')
-	  try {
-		const result = await invoke('sync_keep_external_local_changes', { profileId: profile.profile_id, skillIds: keepExternalSelections })
-		toast(`Kept ${result.kept.length} external local change${result.kept.length === 1 ? '' : 's'} on this computer.`)
-		setRemoteReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
-		setKeepExternalSelections([])
 	  } catch (error) {
 		toast(error instanceof Error ? error.message : String(error), 'destructive')
 	  } finally {
@@ -354,6 +355,35 @@ export default function SyncCenter() {
 		toast(`Replaced the local copy of ${result.restored[0]} with the reviewed remote version.`)
 		setRemoteReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
 		await queryClient.invalidateQueries({ queryKey: ['sync-center-inventory'] })
+	  } catch (error) {
+		toast(error instanceof Error ? error.message : String(error), 'destructive')
+	  } finally {
+		setBusy('idle')
+	  }
+	}
+
+	async function adoptLocalVersion(skillId: string) {
+	  if (!profile) return
+	  setBusy('publishing')
+	  try {
+		await invoke('sync_adopt_local_changes', { profileId: profile.profile_id, skillIds: [skillId] })
+		toast(`Published the local ${skillId} as the library version.`)
+		showThreeWayReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
+		await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
+	  } catch (error) {
+		toast(error instanceof Error ? error.message : String(error), 'destructive')
+	  } finally {
+		setBusy('idle')
+	  }
+	}
+
+	async function keepConflictLocal(skillId: string, external: boolean) {
+	  if (!profile) return
+	  setBusy('publishing')
+	  try {
+		await invoke(external ? 'sync_keep_external_local_changes' : 'sync_keep_local_changes', { profileId: profile.profile_id, skillIds: [skillId] })
+		toast(`Kept ${skillId} only on this computer.`)
+		showThreeWayReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
 	  } catch (error) {
 		toast(error instanceof Error ? error.message : String(error), 'destructive')
 	  } finally {
@@ -469,7 +499,7 @@ export default function SyncCenter() {
         <section className={`${!profile ? 'mt-0 flex min-h-0 flex-1 flex-col overflow-hidden' : 'mt-5'} px-1`}>
           {!preview && <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">{remoteReview ? 'Restore review' : 'Step 1 of 2'}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">{remoteReview ? 'Restore review' : 'Step 1 of 3'}</p>
               <h2 className="mt-1 text-lg font-semibold tracking-[-0.02em]">{remoteReview ? 'Choose what comes to this computer' : 'Review your library'}</h2>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 {remoteReview ? 'Nothing below has been installed yet. Remote-only skills are selected; existing local skills stay untouched unless you explicitly choose otherwise.' : 'Identical skills are grouped once. A skill in an individual agent folder is not automatically moved or overwritten.'}
@@ -478,9 +508,9 @@ export default function SyncCenter() {
           </div>}
 		  {!profile && !preview && (
 			<div className="order-4 mt-4 flex w-full shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 px-1 pt-3">
-			  <p className="text-xs font-semibold">{selectedKeys.length} skills selected <span className="ml-1 font-normal text-muted-foreground">{librarySkillCount > selectedKeys.length ? `${librarySkillCount - selectedKeys.length} stay only on this computer` : 'Ready for the next step'}</span></p>
+			  <p className="text-xs font-semibold">{selectedKeys.length} skills included <span className="ml-1 font-normal text-muted-foreground">{librarySkillCount > selectedKeys.length ? `${librarySkillCount - selectedKeys.length} stay only on this computer` : 'Ready for the next step'}</span>{missingVendoredLicenses.length > 0 && <span className="mt-1 block font-normal text-amber-700 dark:text-amber-300">Add an upstream license for {plural(missingVendoredLicenses.length, 'vendored skill')} in Skill details.</span>}</p>
 			  <div className="flex gap-2">
-				<Button size="lg" onClick={prepareStorageChoice} disabled={busy !== 'idle' || selectedKeys.length === 0}>{busy === 'reviewing' ? <><Loader2 className="size-3.5 animate-spin" />Preparing your library…</> : <>Choose a home <ChevronRight className="size-3.5" /></>}</Button>
+				<Button size="lg" onClick={prepareStorageChoice} disabled={busy !== 'idle' || selectedKeys.length === 0 || missingVendoredLicenses.length > 0}>{busy === 'reviewing' ? <><Loader2 className="size-3.5 animate-spin" />Preparing your library…</> : <>Choose a home <ChevronRight className="size-3.5" /></>}</Button>
 			</div>
 			</div>
 		  )}
@@ -496,7 +526,7 @@ export default function SyncCenter() {
 			})}
 			{!inventoryLoading && librarySkillCount === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No valid skills were found yet.</p>}
 			</div></div>
-			{inspectedSkill && <ReviewSkillDetail item={inspectedSkill} onClose={() => setInspectedSkillKey(null)} />}
+			{inspectedSkill && <ReviewSkillDetail item={inspectedSkill} decision={libraryDecisions[inspectedSkill.candidate_key] ?? defaultLibraryDecision(inspectedSkill)} onDecision={chooseLibraryOutcome} onClose={() => setInspectedSkillKey(null)} />}
 		  </div>}
 		  {!profile && !preview && (inventory?.invalid_paths || inventory?.collisions.length || inventory?.linked_aliases) ? <div className="order-3 mt-3 shrink-0 space-y-2 border-t border-border/60 px-1 pt-3 text-xs">
 		  {inventory?.invalid_paths ? <div className="flex items-start gap-2 text-amber-800 dark:text-amber-200"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" /><div><p><span className="font-semibold">{plural(inventory.invalid_paths, 'folder')} wasn’t included.</span> It stays unchanged on this computer.</p><details className="mt-1.5"><summary className="cursor-pointer font-medium text-amber-900 underline-offset-2 hover:underline dark:text-amber-100">Why?</summary><ul className="mt-1.5 space-y-1 border-l border-amber-500/30 pl-2.5">{(inventory.invalid_entries ?? []).map((entry) => <li key={`${entry.display_name}-${entry.reason}`}><span className="font-medium">{entry.display_name}</span><span className="text-amber-800/80 dark:text-amber-200/80"> has a linked file. Skiller leaves it local rather than following it outside this folder.</span></li>)}</ul><p className="mt-2 leading-relaxed text-amber-800/80 dark:text-amber-200/80">To include it later, replace the linked file with a regular file inside the skill folder.</p></details></div></div> : null}
@@ -510,29 +540,28 @@ export default function SyncCenter() {
 			  <div className="mt-2 space-y-1 text-muted-foreground">
 				{remoteReview.skills.map((skill) => {
 				  const isExternalConflict = skill.kind !== 'bundled' && skill.action === 'conflict'
-				  const selectable = skill.action === 'take-remote' || skill.action === 'publish-local' || ((skill.action === 'conflict' || skill.action === 'unmanaged') && skill.kind === 'bundled') || isExternalConflict
-				  const selected = skill.action === 'take-remote' ? remoteSelections : skill.action === 'publish-local' ? localSelections : isExternalConflict ? keepExternalSelections : keepLocalSelections
-				  const setSelected = skill.action === 'take-remote' ? setRemoteSelections : skill.action === 'publish-local' ? setLocalSelections : isExternalConflict ? setKeepExternalSelections : setKeepLocalSelections
+				  const isConflict = skill.action === 'conflict' || skill.action === 'unmanaged'
+				  if (isConflict) return <div key={skill.id} className="border-t border-border/60 px-1 py-2.5 first:border-t-0"><div className="flex items-start justify-between gap-3"><span className="min-w-0 flex-1"><span className="block font-medium text-foreground">{skill.id}</span>{skill.source && <span className="mt-0.5 block truncate text-[10px] text-muted-foreground" title={`${skill.source.repository} @ ${skill.source.ref}`}>{skill.kind === 'skills_sh' ? 'skills.sh' : 'Git'} · {skill.source.ref.slice(0, 8)}</span>}<span className="mt-1 block text-[10px] leading-relaxed text-muted-foreground">Both the library and this computer have a different version. Nothing changes until you choose below.</span></span><span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:text-amber-200">Decision needed</span></div><div className="mt-2 flex flex-wrap gap-1.5">{skill.kind === 'bundled' && <Button size="xs" className="h-7 px-2.5 text-[10px]" onClick={() => void useRemoteForConflict(skill.id)} disabled={busy !== 'idle'}>Use library version</Button>}<Button size="xs" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => void adoptLocalVersion(skill.id)} disabled={busy !== 'idle'}>{isExternalConflict ? 'Save local copy as owned' : 'Publish local version'}</Button><Button size="xs" variant="ghost" className="h-7 px-2.5 text-[10px]" onClick={() => void keepConflictLocal(skill.id, isExternalConflict)} disabled={busy !== 'idle'}>Keep only on this computer</Button></div></div>
+				  const selectable = skill.action === 'take-remote' || skill.action === 'publish-local'
+				  const selected = skill.action === 'take-remote' ? remoteSelections : localSelections
+				  const setSelected = skill.action === 'take-remote' ? setRemoteSelections : setLocalSelections
 				  return <label key={skill.id} className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-background/60">
 					<input type="checkbox" disabled={!selectable} checked={selectable && selected.includes(skill.id)} onChange={() => setSelected((current) => current.includes(skill.id) ? current.filter((id) => id !== skill.id) : [...current, skill.id])} />
 					<span className="min-w-0 flex-1"><span className="block truncate">{skill.id}</span>{skill.source && <span className="mt-0.5 block truncate text-[10px] text-muted-foreground/80" title={`${skill.source.repository} @ ${skill.source.ref}`}>{skill.kind === 'skills_sh' ? 'skills.sh' : 'Git'} · {skill.source.ref.slice(0, 8)}</span>}</span>
 					<span>{skill.action.replace('-', ' ')}</span>
-					{skill.action === 'conflict' && skill.kind === 'bundled' && <Button size="xs" variant="ghost" className="h-6 px-1.5 text-[10px]" onClick={(event) => { event.preventDefault(); void useRemoteForConflict(skill.id) }} disabled={busy !== 'idle'}>Use remote</Button>}
 				  </label>
 				})}
 			  </div>
-			  {externalConflicts.length > 0 && <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/8 px-3 py-2.5 text-amber-950 dark:text-amber-100"><p className="font-medium">{plural(externalConflicts.length, 'external skill')} need{externalConflicts.length === 1 ? 's' : ''} your decision</p><p className="mt-1 leading-relaxed text-amber-900/80 dark:text-amber-200/80">Their local folders differ from the pinned Git source above. Skiller has not changed them. Inspect the local copy, then either keep it as your own skill or move it aside before reviewing again to install the pinned source.</p></div>}
-			  <p className="mt-2 text-muted-foreground">Remote-only changes can be applied; local-only changes can be published. A bundled-skill conflict can use the reviewed remote copy. External-source conflicts stay untouched.</p>
+			  {externalConflicts.length > 0 && <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/8 px-3 py-2.5 text-amber-950 dark:text-amber-100"><p className="font-medium">{plural(externalConflicts.length, 'external skill')} need{externalConflicts.length === 1 ? 's' : ''} your decision</p><p className="mt-1 leading-relaxed text-amber-900/80 dark:text-amber-200/80">Their local files differ from the pinned source. You can publish the local copy as an owned skill, keep it only here, or leave this review without changing anything.</p></div>}
+			  <p className="mt-2 text-muted-foreground">Checked remote-only changes will come to this computer. Checked local-only changes will be published. Conflicts always require one explicit choice.</p>
               {remoteSelections.length > 0 && <Button size="sm" className="mt-3" onClick={applySelectedRemoteChanges} disabled={busy !== 'idle'}>Apply selected remote changes</Button>}
 			  {localSelections.length > 0 && <Button size="sm" variant="outline" className="mt-3 ml-2" onClick={publishSelectedLocalChanges} disabled={busy !== 'idle'}>Publish selected local changes</Button>}
-			  {keepLocalSelections.length > 0 && <Button size="sm" variant="outline" className="mt-3 ml-2" onClick={keepSelectedLocalChanges} disabled={busy !== 'idle'}>Keep selected local changes</Button>}
-			  {keepExternalSelections.length > 0 && <Button size="sm" variant="outline" className="mt-3 ml-2" onClick={keepSelectedExternalChanges} disabled={busy !== 'idle'}>Keep selected external local skills</Button>}
             </div>
           )}
           {preview && (
             <div className="mt-0 flex min-h-0 flex-1 flex-col text-xs">
 			  <div className="shrink-0"><Button variant="outline" size="sm" className="mb-3 h-8 px-2.5" onClick={() => showDestination ? setShowDestination(false) : (() => { setPreview(null); setSetupMode(null); setRemoteUrl('') })()}><ChevronLeft className="size-3.5" />{showDestination ? 'Back to plan' : 'Back to skills'}</Button><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Step {showDestination ? '3' : '2'} of 3</p><h2 className="mt-1 text-lg font-semibold tracking-[-0.02em]">{showDestination ? 'Choose a home for your library' : 'Review your library plan'}</h2><p className="mt-1 leading-relaxed text-muted-foreground">{showDestination ? 'Pick where Skiller should create your library. You will set its repository name before anything is created.' : 'See exactly what will be saved, linked, or left alone before choosing where it lives.'}</p></div>
-			  {!showDestination && <><div className="min-h-0 flex-1 overflow-y-auto pr-1"><section className="mt-5 overflow-hidden rounded-xl border border-border/70 bg-background/35"><div className="border-b border-border/60 bg-primary/[0.06] px-4 py-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">Your new repository will contain</p><p className="mt-1 text-muted-foreground">A standard dotagent library: <span className="font-medium text-foreground">skills.json, skills.lock, dotagent.yaml</span>, a README, and the owned skill folders below. Machine paths, tokens, and local decisions stay on this computer.</p></div><div className="divide-y divide-border/60"><div className="flex gap-3 px-4 py-3"><CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-500" /><div><p className="font-semibold text-foreground">{plural(preview.skills.length, 'local skill')} copied into the repository</p><p className="mt-0.5 text-muted-foreground">{preview.skills.reduce((total, skill) => total + skill.file_count, 0)} reviewed files will live under skills/. Nothing is changed on this computer until you confirm.</p></div></div><div className="flex gap-3 px-4 py-3"><Info className="mt-0.5 size-4 shrink-0 text-primary" /><div><p className="font-semibold text-foreground">{preview.skills_sh.length + preview.references.length} skills recorded as immutable dependencies</p><p className="mt-0.5 text-muted-foreground">{preview.skills_sh.length} from skills.sh · {preview.references.length} from Git. Their exact commits and integrity go into skills.lock; their files are not duplicated.</p></div></div><div className={`flex gap-3 px-4 py-3 ${preview.unresolved_sources?.length ? 'bg-amber-500/[0.05]' : ''}`}><AlertTriangle className={`mt-0.5 size-4 shrink-0 ${preview.unresolved_sources?.length ? 'text-amber-600 dark:text-amber-300' : 'text-muted-foreground'}`} /><div><p className="font-semibold text-foreground">{preview.unresolved_sources?.length ? `${plural(preview.unresolved_sources.length, 'external skill')} not included yet` : 'No skills are excluded'}</p><p className="mt-0.5 text-muted-foreground">{preview.unresolved_sources?.length ? 'They will not appear in this repository. They remain unchanged on this computer.' : 'Every selected skill can be included.'}</p></div></div></div></section>
+			  {!showDestination && <><div className="min-h-0 flex-1 overflow-y-auto pr-1"><section className="mt-5 overflow-hidden rounded-xl border border-border/70 bg-background/35"><div className="border-b border-border/60 bg-primary/[0.06] px-4 py-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">Your new repository will contain</p><p className="mt-1 text-muted-foreground">A standard dotagent library: <span className="font-medium text-foreground">skills.json, skills.lock, dotagent.yaml</span>, a README, and only the reviewed outcomes below. Machine paths, tokens, and local-only decisions stay on this computer.</p></div><div className="divide-y divide-border/60"><div className="flex gap-3 px-4 py-3"><CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-500" /><div><p className="font-semibold text-foreground">{plural(previewOwnedCount, 'owned skill')} saved with {plural(previewVendoredCount, 'licensed copy')}</p><p className="mt-0.5 text-muted-foreground">{preview.skills.reduce((total, skill) => total + skill.file_count, 0)} reviewed files will live under skills/. Vendored copies retain their upstream commit, integrity, and license in dotagent.yaml.</p></div></div><div className="flex gap-3 px-4 py-3"><Info className="mt-0.5 size-4 shrink-0 text-primary" /><div><p className="font-semibold text-foreground">{preview.skills_sh.length + preview.references.length} skills recorded as immutable dependencies</p><p className="mt-0.5 text-muted-foreground">{preview.skills_sh.length} from skills.sh · {preview.references.length} from Git. Their exact commits and integrity go into skills.lock; their files are not duplicated.</p></div></div><div className={`flex gap-3 px-4 py-3 ${preview.unresolved_sources?.length ? 'bg-amber-500/[0.05]' : ''}`}><AlertTriangle className={`mt-0.5 size-4 shrink-0 ${preview.unresolved_sources?.length ? 'text-amber-600 dark:text-amber-300' : 'text-muted-foreground'}`} /><div><p className="font-semibold text-foreground">{preview.unresolved_sources?.length ? `${plural(preview.unresolved_sources.length, 'external skill')} not included yet` : `${plural(previewLocalCount, 'skill')} stay on this computer`}</p><p className="mt-0.5 text-muted-foreground">{preview.unresolved_sources?.length ? 'Their source could not be pinned, so they will not appear in this repository and remain unchanged locally.' : previewLocalCount ? 'They remain unchanged and are not written to the repository.' : 'Every reviewed skill can be included.'}</p></div></div></div></section>
 			  {preview.unresolved_sources && preview.unresolved_sources.length > 0 && <section className="mt-4 rounded-xl border border-amber-400/35 bg-amber-500/[0.07] px-4 py-3.5 text-amber-950 dark:text-amber-100"><div className="flex gap-3"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-300" /><div className="min-w-0"><p className="font-semibold">{plural(preview.unresolved_sources.length, 'external skill')} will stay on this computer</p><p className="mt-1 leading-relaxed text-amber-900/80 dark:text-amber-200/80">Skiller could not verify the source, so it will neither upload nor change these skills. Reconnect or authenticate their Git source, then refresh this review when you want to include them.</p><details className="mt-3"><summary className="cursor-pointer font-medium text-amber-900 underline-offset-2 hover:underline dark:text-amber-100">View affected skills ({preview.unresolved_sources.length})</summary><div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-amber-900/80 dark:text-amber-200/80">{preview.unresolved_sources.map((source) => <span key={`${source.kind}-${source.id}`}>{source.id}</span>)}</div></details></div></div></section>}
 			  {preview.secret_findings.length > 0 ? <section className="mt-4 border-y border-destructive/25 py-3"><p className="font-medium text-destructive">Backup is paused: review {preview.secret_findings.length} possible secret{preview.secret_findings.length === 1 ? '' : 's'} in {groupSecretFindings(preview.secret_findings).length} file{groupSecretFindings(preview.secret_findings).length === 1 ? '' : 's'} first.</p><p className="mt-1 text-muted-foreground">Skiller never shows the matched value. Lines below identify what needs your decision.</p><div className="mt-2 max-h-40 divide-y divide-destructive/10 overflow-y-auto rounded-lg border border-destructive/15 bg-background/45">{groupSecretFindings(preview.secret_findings).map((group) => <div key={`${group.skillId}-${group.relativePath}`} className="px-2.5 py-2"><div className="flex items-center gap-2"><p className="min-w-0 flex-1 truncate font-medium text-foreground">{group.skillId} <span className="font-normal text-muted-foreground">· {group.relativePath}</span></p><Button size="xs" variant="ghost" className="h-6 shrink-0 px-1.5 text-[11px]" onClick={() => void revealSecretFinding(group.skillId, group.relativePath)}><FolderOpen className="size-3" />Show file</Button></div><div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">{group.findings.map((finding) => <p key={`${finding.line}-${finding.column}-${finding.rule}`}>Line {finding.line} · Possible {secretRuleLabel(finding.rule)}</p>)}</div></div>)}</div></section> : <p className="mt-3 flex items-center gap-1.5 text-muted-foreground"><CheckCircle2 className="size-3.5 text-emerald-500" />No secret patterns found. This review is rebuilt immediately before commit.</p>}</div><div className="mt-3 flex shrink-0 items-center justify-end border-t border-border/60 pt-3"><Button size="sm" className="h-9 px-4" onClick={() => setShowDestination(true)} disabled={preview.secret_findings.length > 0}>Choose a Git home <ChevronRight className="size-3.5" /></Button></div></>}
 			  {showDestination && <div className="min-h-0 flex-1 overflow-y-auto pr-1"><section className="mt-5 rounded-xl border border-border/70 p-3.5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">Who can use this repository?</p><p className="mt-0.5 text-muted-foreground">This controls the library policy; GitHub can also apply the repository visibility for you.</p></div><div className="flex rounded-lg border border-border bg-muted/25 p-0.5"><button type="button" className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${libraryMode === 'private' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => setLibraryMode('private')}>Private</button><button type="button" className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${libraryMode === 'public' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => setLibraryMode('public')}>Public</button></div></div>{libraryMode === 'public' && <label className="mt-3 grid max-w-xs gap-1 text-[11px] font-medium">License for your library<span className="relative"><select value={libraryLicense} onChange={(event) => setLibraryLicense(event.target.value as typeof libraryLicense)} className="h-9 w-full appearance-none rounded-lg border border-border bg-background px-2.5 pr-9 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/40"><option value="">Choose a license…</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache 2.0</option><option value="CC0-1.0">CC0 1.0</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" /></span><span className="font-normal leading-relaxed text-muted-foreground">Public libraries require an explicit license; Skiller never chooses one for your work.</span></label>}</section><section className="mt-3 grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => { setSetupMode('github'); setRemoteUrl('') }} className={`rounded-xl border p-4 text-left transition-colors ${setupMode === 'github' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 hover:border-primary/45 hover:bg-muted/30'}`}><div className="flex items-center justify-between"><span className="flex items-center gap-2 font-semibold"><Github className="size-4" />GitHub</span><span className="text-[10px] font-medium text-primary">{libraryMode === 'private' ? 'Private by default' : 'Public repository'}</span></div><p className="mt-1.5 leading-relaxed text-muted-foreground">Create a new {libraryMode} repository with your existing GitHub sign-in.</p></button><button type="button" onClick={() => setSetupMode('custom')} className={`rounded-xl border p-4 text-left transition-colors ${setupMode === 'custom' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 hover:border-primary/45 hover:bg-muted/30'}`}><span className="flex items-center gap-2 font-semibold"><Server className="size-4" />Another Git server</span><p className="mt-1.5 leading-relaxed text-muted-foreground">Use GitLab, a self-hosted server, or another remote you control.</p></button></section>

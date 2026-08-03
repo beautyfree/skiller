@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
-    "@beautyfree/dotagent": "file:../dotagent",
+    "@beautyfree/dotagent": "git+https://github.com/beautyfree/dotagent.git#2b552e88c72b3518f4aa42d08358dd52398c0f8b",
     "@fontsource/bricolage-grotesque": "^5.3.0",
     "@iarna/toml": "^2.2.5",
     "@lobehub/icons": "^5.0.1",

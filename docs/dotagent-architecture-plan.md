@@ -431,7 +431,7 @@ Exit: clean-machine fixtures materialize to representative agents on all three O
 
 ### Phase 4 — Skiller extraction and integration
 
-- [x] Add `@beautyfree/dotagent` as an explicit dependency through a reviewed local/workspace source first.
+- [x] Add `@beautyfree/dotagent` as an explicit dependency, first locally and then as an immutable Git commit with committed build artifacts until npm publication.
 - [x] Replace Skiller manifest parsing with adapter-backed dotagent parsing while preserving v1/v2/v3 behavior.
 - [ ] Replace secret/source/integrity logic in vertical slices, one subsystem at a time. (Secret scanning and three-way classification are shared; source resolution and export policy remain.)
 - [ ] Map dotagent plans/issues to existing tRPC JSON without exposing internal classes.

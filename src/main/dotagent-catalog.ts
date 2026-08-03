@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import {
 	skillerAgentCatalogToDescriptors,
 } from "@beautyfree/dotagent/adapters/skiller-agents";
+import { builtinAgentDescriptors } from "@beautyfree/dotagent/catalog";
 import type { AgentDescriptor, Platform } from "@beautyfree/dotagent/agents";
 import {
 	scanMachineAgents,
@@ -15,9 +16,10 @@ function desktopPlatform(): Platform {
 	throw new Error(`Unsupported desktop platform: ${process.platform}`);
 }
 
-/** Transitional catalog projection: Skiller TOML stays authoritative until parity is proven for every slug. */
+/** Built-ins come from dotagent; only explicit custom TOML entries use the compatibility projection. */
 export function dotagentDescriptorsFromSkiller(configs: AgentConfig[]): AgentDescriptor[] {
-	return skillerAgentCatalogToDescriptors(configs.map((config) => ({
+	const builtins = new Map(builtinAgentDescriptors().map((descriptor) => [descriptor.slug, descriptor]));
+	const custom = skillerAgentCatalogToDescriptors(configs.filter((config) => !builtins.has(config.slug)).map((config) => ({
 		slug: config.slug,
 		name: config.name,
 		global_paths: config.global_paths,
@@ -25,6 +27,11 @@ export function dotagentDescriptorsFromSkiller(configs: AgentConfig[]): AgentDes
 		detect_paths: config.detect_paths,
 		additional_readable_paths: config.additional_readable_paths,
 	})));
+	return configs
+		.map((config) => builtins.get(config.slug))
+		.filter((descriptor): descriptor is AgentDescriptor => Boolean(descriptor))
+		.concat(custom)
+		.sort((left, right) => left.slug.localeCompare(right.slug, "en"));
 }
 
 export async function scanDotagentMachine(

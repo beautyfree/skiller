@@ -8,6 +8,8 @@ import type {
   DotagentMachineInventoryJson,
   DotagentDoctorJson,
   DotagentMaterializationStatusJson,
+  DotagentSkillDiscoveryJson,
+  DotagentAuditJson,
   RepoProgressJson,
   SkillJson,
   SkillRepoJson,
@@ -25,8 +27,10 @@ import { detectAgents, loadAgentConfigs } from './registry'
 import { detectRuntimeAgent } from './runtime-agent'
 import { scanDotagentMachine } from './dotagent-catalog'
 import { dotagentDescriptorsFromSkiller } from './dotagent-catalog'
-import { dotagentDoctorToJson, dotagentMachineToJson, dotagentStatusToJson } from './dotagent-json'
+import { scanDotagentSkillDiscovery } from './dotagent-discovery'
+import { dotagentAuditToJson, dotagentDiscoveryToJson, dotagentDoctorToJson, dotagentMachineToJson, dotagentStatusToJson } from './dotagent-json'
 import { doctorLibrary } from '@beautyfree/dotagent/doctor'
+import { auditLibrary } from '@beautyfree/dotagent/audit'
 import { getMaterializationStatus } from '@beautyfree/dotagent/status'
 import { homedir } from 'node:os'
 import { readSkillsCliLock, type SkillsCliLockEntry } from './skills-cli-lock'
@@ -802,6 +806,12 @@ export function createRequestHandlers(ctx: {
     },
     dotagent_materialization_status: async (params: { libraryRoot: string }): Promise<DotagentMaterializationStatusJson> =>
       dotagentStatusToJson(await getMaterializationStatus(params.libraryRoot)),
+    dotagent_skill_discovery: async (): Promise<DotagentSkillDiscoveryJson> => {
+      const discovery = await scanDotagentSkillDiscovery(loadDetectedAgents('dotagent_skill_discovery'))
+      return dotagentDiscoveryToJson(discovery.report, discovery.suggestions)
+    },
+    dotagent_audit: async (params: { libraryRoot: string; visibility: 'private' | 'team' | 'public' }): Promise<DotagentAuditJson> =>
+      dotagentAuditToJson(await auditLibrary({ root: params.libraryRoot, visibility: params.visibility })),
     read_skills_cli_lock: async () => readSkillsCliLock(),
     scan_all_skills: async () => {
       const agents = loadDetectedAgents('scan_all_skills')

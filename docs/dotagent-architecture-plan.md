@@ -110,6 +110,7 @@ An external skill never becomes `owned` silently. Vendoring is explicit because 
 └── .dotagent/                 # local state/cache; gitignored
     ├── state.json
     ├── journal.json
+    ├── import-journal.json
     └── cache/
 ```
 
@@ -399,7 +400,7 @@ Exit: fixtures explain every current Skiller source kind and expected no-write p
 
 ### Phase 1 — TypeScript foundation
 
-- [x] Create local `beautyfree/dotagent` repository and scoped package metadata (`@beautyfree/dotagent`); remote publication remains intentionally deferred.
+- [x] Create local and public `beautyfree/dotagent` source repository with scoped package metadata (`@beautyfree/dotagent`); npm publication remains intentionally deferred.
 - [ ] Establish Node 20+ ESM TypeScript build, Bun tests, lint/format, and release workflow.
 - [ ] Implement branded paths/IDs, typed issues, `Result`, filesystem/Git ports, and schema version helpers.
 - [x] Implement `skills.json`, `skills.lock`, `dotagent.yaml`, and local-overlay parsing/validation.
@@ -407,16 +408,16 @@ Exit: fixtures explain every current Skiller source kind and expected no-write p
 
 Exit: package builds on macOS/Linux/Windows CI and validates fixtures without touching user files.
 
-Current foundation evidence (2026-08-03): the public repository is `https://github.com/beautyfree/dotagent`; CI run `30799140948` passed typecheck, 29 tests, build, and a CLI smoke test on macOS, Linux, and Windows using a frozen install with lifecycle scripts disabled. npm publication, lint/format enforcement, and release automation remain deliberately open.
+Current foundation evidence (2026-08-03): the public repository is `https://github.com/beautyfree/dotagent`; CI run `30802203494` passed typecheck, 64 tests, build, inspect/audit smoke checks, and import/materialization coverage on macOS, Linux, and Windows using a frozen install with lifecycle scripts disabled. npm publication, lint/format enforcement, and release automation remain deliberately open.
 
 ### Phase 2 — inventory, source resolution, and audit
 
 - [x] Implement bounded canonical library scan and deterministic hashes without following symlinks.
-- [ ] Implement Git source normalization, clone/fetch cache, immutable resolution, and integrity. (Isolated clone/fetch, commit pinning, bounded scan, integrity, concurrent deterministic resolution, and stale-plan-safe lock writes are implemented; persistent cache remains.)
+- [x] Implement Git source normalization, persistent clone/fetch cache, immutable resolution, and integrity.
 - [x] Implement read-only Skills CLI v3 lock adapter with explicit unknown-version refusal.
 - [ ] Port value-free secret scanning and safe export rules. (Scanner is shared; complete export-policy extraction remains.)
-- [ ] Implement external skill audit without executing content. (Structural/path/size/link audit is implemented; provenance/license reporting remains.)
-- [ ] Implement `inspect`, `resolve`, and `doctor` JSON/CLI surfaces. (`inspect` and preview-by-default `resolve` are implemented; `doctor` remains.)
+- [x] Implement external structural and license audit without executing content.
+- [x] Implement `inspect`, `resolve`, `audit`, and `doctor` JSON/CLI surfaces.
 
 Exit: a public fixture repository resolves reproducibly; tampered content, moving pins, unsafe links, and unsupported schemas fail safely.
 
@@ -425,7 +426,7 @@ Exit: a public fixture repository resolves reproducibly; tampered content, movin
 - [ ] Define capability descriptors and migrate agent definitions incrementally. (All current Skiller TOML agents project into shared descriptors with unique-slug and shared-reader parity tests; making dotagent data authoritative remains.)
 - [ ] Implement native-shared, per-skill symlink, Windows junction, config-path, and reviewed copy strategies. (Native/link/junction/copy plan and apply exist; managed config patching remains.)
 - [x] Implement machine scan without treating `.agents/skills` or a skills-only marker as installation evidence.
-- [ ] Implement import/materialization plans and managed ownership markers. (Deterministic materialization planning, ownership ledger, copy markers, and unmanaged-target conflicts exist; canonical import planning remains.)
+- [x] Implement import/materialization plans and managed ownership markers. Canonical import distinguishes owned, dependency, local-only, and excluded candidates; apply rechecks secrets, hashes, and unmanaged targets through a durable journal.
 - [x] Implement journaled apply, rollback, stale-source/target validation, and interrupted-run recovery.
 - [ ] Implement `plan`, `apply`, `status`, and first `sync` command. (`plan`, confirmed `apply`, `status`, and `recover` are implemented and exercised end-to-end; composite `sync` remains.)
 
@@ -436,7 +437,7 @@ Exit: clean-machine fixtures materialize to representative agents on all three O
 - [x] Add `@beautyfree/dotagent` as an explicit dependency, first locally and then as an immutable Git commit with committed build artifacts until npm publication.
 - [x] Replace Skiller manifest parsing with adapter-backed dotagent parsing while preserving v1/v2/v3 behavior.
 - [ ] Replace secret/source/integrity logic in vertical slices, one subsystem at a time. (Secret scanning and three-way classification are shared; source resolution and export policy remain.)
-- [ ] Map dotagent plans/issues to existing tRPC JSON without exposing internal classes. (Machine inventory, doctor issues, and managed status have path-redacting query contracts; materialization/reconcile plan mapping remains.)
+- [ ] Map dotagent plans/issues to existing tRPC JSON without exposing internal classes. (Machine inventory, doctor, audit, shared discovery suggestions, and managed status now have path-redacting query contracts and reachable tRPC routes; import/materialization/reconcile plan mapping remains.)
 - [ ] Compare old/new outputs on golden fixtures and retain a kill switch during migration. (All configured slugs project uniquely and the skills-only detector invariant has parity coverage; full source/conflict fixture matrix remains.)
 - [ ] Remove duplicated Skiller implementations only after parity and live UX checks.
 
@@ -444,7 +445,7 @@ Exit: CLI and Skiller produce the same plan hash for the same library/machine fi
 
 Current integration evidence (2026-08-03): dotagent owns the legacy Skiller schemas, migrations, portable-path checks, duplicate detection, and credential-free remote validation. Skiller retains a compatibility facade so existing imports and repositories do not change. The focused Skiller sync suite passes through the package adapter; full release/platform gates remain open.
 
-Latest runtime evidence (2026-08-03): dotagent commit `29a08a1` has 48 passing tests including CLI plan/apply/status, locally modified managed-copy conflicts, rollback, and journal recovery; CI run `30800503691` passes on macOS, Linux, and Windows. Skiller has read-only `dotagent_machine_inventory`, `dotagent_doctor`, and `dotagent_materialization_status` tRPC queries with absolute-path redaction; its full 92-test suite and production Electron/Vite build pass. The legacy Skiller detector remains the install authority until full golden parity is complete.
+Latest runtime evidence (2026-08-03): dotagent commit `5512407` has 64 passing tests including cross-agent discovery, mixed canonical import, root-level dependency skills, stale-source refusal, rollback, and real process-interruption recovery; CI run `30802203494` passes on macOS, Linux, and Windows. Skiller pins that immutable commit and has path-redacting, reachable tRPC queries for machine inventory, doctor, materialization status, shared discovery, and audit; its full 95-test suite, typecheck, and production Electron/Vite build pass. The legacy Skiller detector and publish format remain authoritative until full golden parity and live Sync Center review are complete.
 
 ### Phase 5 — public/private library UX
 
@@ -581,16 +582,17 @@ The schemas reserve no fake fields for deferred surfaces. Add them through expli
 | 2026-08-03 | Portable manifest, local overlay, and local ledger are separate | prevents machine paths, secrets, and personal decisions from leaking publicly |
 | 2026-08-03 | References are default; vendoring is explicit | preserves provenance and avoids accidental redistribution/license problems |
 | 2026-08-03 | Build from behavior and tests; attribute any literal upstream code | uses dotagents as prior art while keeping a maintainable TypeScript architecture |
+| 2026-08-03 | Canonical import is a reviewed journaled plan, not folder copying | preserves source provenance, keeps local-only content local, and makes crashes and stale previews recoverable |
 
 ## 18. Immediate implementation checklist
 
-- [ ] Create the local `beautyfree/dotagent` repository workspace.
-- [ ] Add package metadata, TypeScript build, Bun tests, and collision-free CLI binary.
-- [ ] Add schema/types for manifest, lock, portable config, local overlay, issues, and plans.
-- [ ] Add parsers with fixtures for valid, future-version, unsafe-path, and duplicate-name cases.
-- [ ] Add deterministic integrity hashing for an in-memory fixture tree.
-- [ ] Add README explaining library versus local state and public/private use.
-- [ ] Add an attribution/prior-art section referencing dotagents and Agent Skills RFC #210.
-- [ ] Add a Skiller local dependency only after the first package tests pass.
-- [ ] Migrate one low-risk vertical slice first: manifest/source schemas and parsing.
-- [ ] Verify Skiller tests and typecheck before moving further logic.
+- [x] Create the local and public `beautyfree/dotagent` repository workspace.
+- [x] Add package metadata, TypeScript build, Bun tests, and collision-free CLI binary.
+- [x] Add schema/types for manifest, lock, portable config, local overlay, issues, and current plans.
+- [x] Add parsers with coverage for valid, future-version, unsafe-path, duplicate-name, and root-skill cases.
+- [x] Add deterministic integrity hashing for bounded skill trees.
+- [x] Add README explaining library versus local state and public/private use.
+- [x] Add an attribution/prior-art section referencing dotagents and Agent Skills RFC #210.
+- [x] Add a Skiller immutable Git dependency only after the first package tests pass.
+- [x] Migrate the first vertical slices: manifest/source schemas, secret scanning, reconciliation, diagnostics, and discovery.
+- [x] Verify full Skiller tests, typecheck, and production build after each pinned runtime slice.

@@ -122,6 +122,37 @@ export type DotagentMaterializationStatusJson = {
   }[];
 };
 
+/** Shared dotagent discovery output with every machine path removed. */
+export type DotagentSkillDiscoveryJson = {
+  skills: {
+    candidate_key: string;
+    name: string;
+    description: string | null;
+    when_to_use: string | null;
+    integrity: string;
+    file_count: number;
+    total_bytes: number;
+    metadata_valid: boolean;
+    locations: { agent_slug?: string; kind: "shared" | "agent-local" | "inherited" }[];
+    suggested: {
+      kind: "owned" | "dependency" | "local-only" | "excluded";
+      source?: "git" | "skills-cli";
+      package?: string;
+      reason?: string;
+    };
+  }[];
+  collisions: { name: string; candidate_keys: string[] }[];
+  issues: { code: string; severity: "error" | "warning" | "info"; message: string; remediation: string }[];
+  linked_aliases: number;
+};
+
+export type DotagentAuditJson = {
+  ok: boolean;
+  public_ready: boolean;
+  library: { name: string; version: string; owned_skill_count: number; dependency_count: number } | null;
+  issues: { code: string; severity: "error" | "warning" | "info"; message: string; remediation: string; field?: string }[];
+};
+
 export type RepoEntryJson = {
   repo_url?: string | null;
   local_path?: string | null;
@@ -356,6 +387,8 @@ export type AppRPCSchema = {
       dotagent_machine_inventory: { params?: void; response: DotagentMachineInventoryJson };
       dotagent_doctor: { params: { libraryRoot: string }; response: DotagentDoctorJson };
       dotagent_materialization_status: { params: { libraryRoot: string }; response: DotagentMaterializationStatusJson };
+      dotagent_skill_discovery: { params?: void; response: DotagentSkillDiscoveryJson };
+      dotagent_audit: { params: { libraryRoot: string; visibility: "private" | "team" | "public" }; response: DotagentAuditJson };
       read_skills_cli_lock: { params?: void; response: SkillsCliLockJson };
       scan_all_skills: { params?: void; response: SkillJson[] };
       scan_agent_skills: { params: { agentSlug: string }; response: SkillJson[] };

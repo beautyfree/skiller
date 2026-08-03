@@ -4,6 +4,11 @@ import { isTrpcQueryProcedure } from "./trpc-query-procedures";
 describe("tRPC query procedure registry", () => {
 	test("keeps Sync Center read operations on GET", () => {
 		for (const name of [
+			"dotagent_machine_inventory",
+			"dotagent_doctor",
+			"dotagent_materialization_status",
+			"dotagent_skill_discovery",
+			"dotagent_audit",
 			"scan_sync_inventory",
 			"get_sync_skill_preview",
 			"sync_center_publish_preview",

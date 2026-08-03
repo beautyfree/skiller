@@ -418,6 +418,7 @@ Current foundation evidence (2026-08-03): the public repository is `https://gith
 - [ ] Port value-free secret scanning and safe export rules. (Scanner is shared; complete export-policy extraction remains.)
 - [x] Implement external structural and license audit without executing content.
 - [x] Implement `inspect`, `resolve`, `audit`, and `doctor` JSON/CLI surfaces.
+- [x] Prepare immutable dependency checkouts from the lock/mirror cache and feed them into the same materialization inventory as owned skills.
 
 Exit: a public fixture repository resolves reproducibly; tampered content, moving pins, unsafe links, and unsupported schemas fail safely.
 
@@ -445,7 +446,7 @@ Exit: CLI and Skiller produce the same plan hash for the same library/machine fi
 
 Current integration evidence (2026-08-03): dotagent owns the legacy Skiller schemas, migrations, portable-path checks, duplicate detection, and credential-free remote validation. Skiller retains a compatibility facade so existing imports and repositories do not change. The focused Skiller sync suite passes through the package adapter; full release/platform gates remain open.
 
-Latest runtime evidence (2026-08-03): dotagent commit `5512407` has 64 passing tests including cross-agent discovery, mixed canonical import, root-level dependency skills, stale-source refusal, rollback, and real process-interruption recovery; CI run `30802203494` passes on macOS, Linux, and Windows. Skiller pins that immutable commit and has path-redacting, reachable tRPC queries for machine inventory, doctor, materialization status, shared discovery, and audit; its full 95-test suite, typecheck, and production Electron/Vite build pass. The legacy Skiller detector and publish format remain authoritative until full golden parity and live Sync Center review are complete.
+Latest runtime evidence (2026-08-03): dotagent commit `e5a2625` has 67 passing tests including cross-agent discovery, mixed canonical import, root-level dependency skills, locked dependency checkout/materialization, stale-source refusal, rollback, and real process-interruption recovery; CI run `30803100525` passes on macOS, Linux, and Windows. Skiller pins that immutable commit and has path-redacting, reachable tRPC queries for machine inventory, doctor, materialization status, shared discovery, audit, and exact canonical import previews; its full 96-test suite, typecheck, and production Electron/Vite build pass. The legacy Skiller detector and publish format remain authoritative until full golden parity and live Sync Center review are complete.
 
 ### Phase 5 — public/private library UX
 

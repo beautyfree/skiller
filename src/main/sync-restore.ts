@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
-import { parseSyncManifest, type SyncManifest } from "./sync-profile";
+import type { SyncManifest } from "./sync-profile";
+import { readSyncManifestFromWorkspace } from "./sync-dotagent";
 import { planBundledSkillExport, type SyncExportFinding } from "./sync-export";
 import { recoverRestoreJournalAt, syncJournalPath, writeRestoreJournalAt, type RestoreJournal } from "./sync-journal";
 
@@ -30,7 +31,7 @@ export type SyncRestorePlan = {
  */
 export function createSyncRestorePlan(workspacePath: string, canonicalSkillsPath: string): SyncRestorePlan {
 	const workspace = realpathSync(workspacePath);
-	const manifest = parseSyncManifest(readFileSync(join(workspace, "skiller-sync.yaml"), "utf8"));
+	const manifest = readSyncManifestFromWorkspace(workspace);
 	const entries: SyncRestoreEntry[] = [];
 	const secretFindings: SyncRestoreFinding[] = [];
 

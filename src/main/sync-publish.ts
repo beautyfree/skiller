@@ -129,6 +129,21 @@ export function createSyncPublishPlan(
  * stages, commits, or pushes; those remain explicit operations in SyncWorkspace.
  */
 export function applySyncPublishPlan(workspacePath: string, plan: SyncPublishPlan): void {
+	applySyncPublishFiles(workspacePath, plan, {
+		"skiller-sync.yaml": stringifySyncManifest(plan.manifest),
+	});
+}
+
+/**
+ * Applies reviewed skill bundles plus an explicit set of portable root files.
+ * Canonical dotagent publication uses this with skills.json/skills.lock/config;
+ * the legacy wrapper above remains read/write compatible for existing profiles.
+ */
+export function applySyncPublishFiles(
+	workspacePath: string,
+	plan: SyncPublishPlan,
+	portableFiles: Record<string, string>,
+): void {
 	if (plan.secretFindings.length > 0) {
 		throw new Error(`Sync publish is blocked by ${plan.secretFindings.length} secret finding(s)`);
 	}
@@ -136,7 +151,14 @@ export function applySyncPublishPlan(workspacePath: string, plan: SyncPublishPla
 	const stagedBundles = plan.bundledSkills.map((skill) => prepareStagedBundle(workspace, skill));
 	try {
 		for (const staged of stagedBundles) replaceWorkspacePath(workspace, staged.bundledPath, staged.stagingPath);
-		writeFileSync(workspaceChild(workspace, "skiller-sync.yaml"), stringifySyncManifest(plan.manifest), "utf8");
+		for (const [file, content] of Object.entries(portableFiles).sort(([left], [right]) => left.localeCompare(right, "en"))) {
+			assertPortableRelativePath(file);
+			const destination = workspaceChild(workspace, file);
+			mkdirSync(dirname(destination), { recursive: true });
+			const temporary = `${destination}.skiller-staging-${randomUUID()}`;
+			writeFileSync(temporary, content, "utf8");
+			replaceWorkspacePath(workspace, file, temporary);
+		}
 	} finally {
 		for (const staged of stagedBundles) {
 			if (existsSync(staged.stagingPath)) rmSync(staged.stagingPath, { recursive: true, force: true });

@@ -429,7 +429,7 @@ Exit: a public fixture repository resolves reproducibly; tampered content, movin
 - [x] Implement machine scan without treating `.agents/skills` or a skills-only marker as installation evidence.
 - [x] Implement import/materialization plans and managed ownership markers. Canonical import distinguishes owned, dependency, local-only, and excluded candidates; apply rechecks secrets, hashes, and unmanaged targets through a durable journal.
 - [x] Implement journaled apply, rollback, stale-source/target validation, and interrupted-run recovery.
-- [ ] Implement `plan`, `apply`, `status`, and first `sync` command. (`plan`, confirmed `apply`, `status`, and `recover` are implemented and exercised end-to-end; composite `sync` remains.)
+- [x] Implement `plan`, `apply`, `status`, and first `sync` command. Git init/clone/status plus reviewed commit/pull/push plans now share the same confirmed `apply` boundary.
 
 Exit: clean-machine fixtures materialize to representative agents on all three OSes; unmanaged targets survive every failure case.
 
@@ -437,22 +437,22 @@ Exit: clean-machine fixtures materialize to representative agents on all three O
 
 - [x] Add `@beautyfree/dotagent` as an explicit dependency, first locally and then as an immutable Git commit with committed build artifacts until npm publication.
 - [x] Replace Skiller manifest parsing with adapter-backed dotagent parsing while preserving v1/v2/v3 behavior.
-- [ ] Replace secret/source/integrity logic in vertical slices, one subsystem at a time. (Secret scanning and three-way classification are shared; source resolution and export policy remain.)
+- [ ] Replace secret/source/integrity logic in vertical slices, one subsystem at a time. (Secret scanning, three-way classification, immutable dependency resolution, and canonical Git workspace operations are shared; the remaining legacy export policy is isolated behind a compatibility adapter.)
 - [ ] Map dotagent plans/issues to existing tRPC JSON without exposing internal classes. (Machine inventory, doctor, audit, shared discovery suggestions, and managed status now have path-redacting query contracts and reachable tRPC routes; import/materialization/reconcile plan mapping remains.)
-- [ ] Compare old/new outputs on golden fixtures and retain a kill switch during migration. (All configured slugs project uniquely and the skills-only detector invariant has parity coverage; full source/conflict fixture matrix remains.)
+- [ ] Compare old/new outputs on golden fixtures and retain a kill switch during migration. (All configured slugs project uniquely, the skills-only detector invariant has parity coverage, and canonical owned/dependency publish-clone-restore fixtures pass; the full legacy source/conflict matrix remains.)
 - [ ] Remove duplicated Skiller implementations only after parity and live UX checks.
 
 Exit: CLI and Skiller produce the same plan hash for the same library/machine fixture.
 
 Current integration evidence (2026-08-03): dotagent owns the legacy Skiller schemas, migrations, portable-path checks, duplicate detection, and credential-free remote validation. Skiller retains a compatibility facade so existing imports and repositories do not change. The focused Skiller sync suite passes through the package adapter; full release/platform gates remain open.
 
-Latest runtime evidence (2026-08-03): dotagent commit `e5a2625` has 67 passing tests including cross-agent discovery, mixed canonical import, root-level dependency skills, locked dependency checkout/materialization, stale-source refusal, rollback, and real process-interruption recovery; CI run `30803100525` passes on macOS, Linux, and Windows. Skiller pins that immutable commit and has path-redacting, reachable tRPC queries for machine inventory, doctor, materialization status, shared discovery, audit, and exact canonical import previews; its full 96-test suite, typecheck, and production Electron/Vite build pass. The legacy Skiller detector and publish format remain authoritative until full golden parity and live Sync Center review are complete.
+Latest runtime evidence (2026-08-03): dotagent commit `0629bc2` has 71 passing tests including generic remote commit/clone/push/pull, secret-blocked remote updates, cross-agent discovery, mixed canonical import, locked dependency materialization, rollback, and recovery; CI run `30803984638` passes on macOS, Linux, and Windows. Skiller pins that immutable commit. Newly created Sync Center repositories now use canonical `skills.json`, `skills.lock`, `dotagent.yaml`, and `skills/` content and delegate canonical Git operations to dotagent; existing `skiller-sync.yaml` repositories remain readable and writable through the versioned adapter. Skiller's full 98-test suite, typecheck, and production Electron/Vite build pass, including owned and immutable external-dependency publish/clone/restore fixtures.
 
 ### Phase 5 — public/private library UX
 
-- [ ] Create/connect a public or private library repository.
-- [ ] Explain exact repository contents before creation.
-- [ ] Preview included files, dependency references, exclusions, visibility, and commit.
+- [x] Create/connect a private-by-default GitHub or custom Git library repository; custom remotes remain provider-neutral.
+- [x] Explain the repository model and exact owned/reference/excluded outcomes before creation.
+- [x] Preview included files, immutable dependency references, exclusions, secret blockers, and destination before commit/push.
 - [ ] Import an existing public library and choose local agents.
 - [ ] Show update/audit diffs for external dependencies.
 - [ ] Support explicit owned/dependency/vendored/local-only transitions.
@@ -584,6 +584,8 @@ The schemas reserve no fake fields for deferred surfaces. Add them through expli
 | 2026-08-03 | References are default; vendoring is explicit | preserves provenance and avoids accidental redistribution/license problems |
 | 2026-08-03 | Build from behavior and tests; attribute any literal upstream code | uses dotagents as prior art while keeping a maintainable TypeScript architecture |
 | 2026-08-03 | Canonical import is a reviewed journaled plan, not folder copying | preserves source provenance, keeps local-only content local, and makes crashes and stale previews recoverable |
+| 2026-08-03 | New Sync Center repositories are canonical dotagent; legacy Skiller repositories use a versioned compatibility path | stops producing a second portable format without silently rewriting existing user repositories |
+| 2026-08-03 | Git workspace/authentication are separate layers | dotagent owns provider-neutral reviewed Git plans; Skiller retains GitHub CLI sign-in and repository-creation UX without receiving tokens |
 
 ## 18. Immediate implementation checklist
 

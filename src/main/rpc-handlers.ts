@@ -100,10 +100,11 @@ import { parseSkillMdFile } from './parser'
 import { classifyThreeWaySkill, makeSyncLedger, readSyncLedger, writeSyncLedgerAt, syncLedgerPath } from './sync-ledger'
 import { readRestoreJournalAt, recoverRestoreJournalAt, syncJournalPath } from './sync-journal'
 import { createGitHubSyncRepository } from './github-sync'
-import { applySyncPublishPlan, createSyncPublishPlan, mergeBundledUpdateIntoManifest, type SyncPublishCandidate } from './sync-publish'
+import { applySyncPublishFiles, applySyncPublishPlan, createSyncPublishPlan, mergeBundledUpdateIntoManifest, type SyncPublishCandidate } from './sync-publish'
 import { applySyncRestorePlan, createSyncRestorePlan } from './sync-restore'
+import { isCanonicalSyncLibrary, planCanonicalSyncLibrary, readSyncManifestFromWorkspace } from './sync-dotagent'
 import { classifyExternalRestore, externalKeptSourceMatches, externalSkillDirectory, externalSkillRepository, type ManagedExternalSkill, type ExternalRestoreAction } from './sync-external'
-import { assertCredentialFreeGitRemote, assertPortableRelativePath, assertSyncStableId, parseSyncManifest, type SyncManifest } from './sync-profile'
+import { assertCredentialFreeGitRemote, assertPortableRelativePath, assertSyncStableId, type SyncManifest } from './sync-profile'
 import {
   commitSyncWorkspace,
   cloneSyncWorkspace,
@@ -254,7 +255,7 @@ async function listSyncProfiles(refreshRemote = false): Promise<SyncProfileStatu
       assertSyncStableId(profileId)
       if (!hasSyncWorkspace(profileId)) continue
       const workspace = syncWorkspacePath(profileId)
-      const manifest = parseSyncManifest(readFileSync(join(workspace, 'skiller-sync.yaml'), 'utf8'))
+      const manifest = readSyncManifestFromWorkspace(workspace)
 	  let status = await getSyncWorkspaceStatus(workspace)
 	  let checkError: string | null = null
 	  let checkedAt: string | null = null
@@ -637,7 +638,12 @@ async function publishReviewedLocalChanges(profileId: string, ids: string[]): Pr
   const update = createSyncPublishPlan(profileId, existing.profile.mode, candidates, existing.agent_policy)
 	const publishedBundles = new Map(update.manifest.skills.filter((skill) => skill.kind === 'bundled').map((skill) => [skill.id, skill]))
 	const merged = mergeBundledUpdateIntoManifest(existing, update)
-  applySyncPublishPlan(workspace, merged)
+	if (isCanonicalSyncLibrary(workspace)) {
+		const canonical = await planCanonicalSyncLibrary(workspace, merged)
+		applySyncPublishFiles(workspace, merged, canonical.portableFiles)
+	} else {
+		applySyncPublishPlan(workspace, merged)
+	}
   const commit = await commitSyncWorkspace(workspace, 'Skiller sync: publish reviewed local changes')
   await pushSyncWorkspace(workspace)
 	const nextSkills = new Map(Object.entries(ledger?.skills ?? {}).map(([id, entry]) => [id, { sha256: entry.sha256, keptRemoteSha256: entry.kept_remote_sha256 }]))
@@ -848,16 +854,23 @@ export function createRequestHandlers(ctx: {
       assertCredentialFreeGitRemote(remoteUrl)
       const profileId = 'agent-library'
       const workspace = syncWorkspacePath(profileId)
-      if (!hasSyncWorkspace(profileId)) {
-        await initializeSyncWorkspace(workspace, remoteUrl)
-      } else {
+      const existingWorkspace = hasSyncWorkspace(profileId)
+      if (existingWorkspace) {
         const status = await getSyncWorkspaceStatus(workspace)
         if (status.changed) throw new Error('Sync workspace has uncommitted changes; resolve them before publishing')
 			if (status.remoteUrl && status.remoteUrl !== remoteUrl) throw new Error('This library already uses a different remote')
         if (!status.remoteUrl) await setSyncWorkspaceRemote(workspace, remoteUrl)
       }
 		const publishPlan = await createSyncCenterPublishPlan(params.selectedKeys)
-      applySyncPublishPlan(workspace, publishPlan.plan)
+		if (existingWorkspace && !isCanonicalSyncLibrary(workspace)) {
+			// Existing libraries retain their versioned legacy format until the user
+			// explicitly migrates; newly created libraries are canonical dotagent.
+			applySyncPublishPlan(workspace, publishPlan.plan)
+		} else {
+			const canonical = await planCanonicalSyncLibrary(workspace, publishPlan.plan)
+			applySyncPublishFiles(workspace, publishPlan.plan, canonical.portableFiles)
+			if (!existingWorkspace) await initializeSyncWorkspace(workspace, remoteUrl)
+		}
 		  const commit = await commitSyncWorkspace(workspace, 'Skiller sync: update skill library')
       await pushSyncWorkspace(workspace)
       writeSyncLedgerAt(
@@ -945,9 +958,8 @@ export function createRequestHandlers(ctx: {
       const remoteUrl = params.remoteUrl?.trim() || null
       if (remoteUrl) assertCredentialFreeGitRemote(remoteUrl)
 
-      if (!hasSyncWorkspace(params.profileId)) {
-        await initializeSyncWorkspace(workspace, remoteUrl)
-      } else {
+      const existingWorkspace = hasSyncWorkspace(params.profileId)
+      if (existingWorkspace) {
         const status = await getSyncWorkspaceStatus(workspace)
         if (status.changed) throw new Error('Sync workspace has uncommitted changes; resolve them before publishing')
         if (remoteUrl && status.remoteUrl && status.remoteUrl !== remoteUrl) {
@@ -957,7 +969,13 @@ export function createRequestHandlers(ctx: {
       }
 
       const { plan } = buildSyncPublishPreview(params.profileId, params.mode, skillIds, params.skillKinds, params.agentSlugs)
-      applySyncPublishPlan(workspace, plan)
+      if (existingWorkspace && !isCanonicalSyncLibrary(workspace)) {
+		  applySyncPublishPlan(workspace, plan)
+	  } else {
+		  const canonical = await planCanonicalSyncLibrary(workspace, plan)
+		  applySyncPublishFiles(workspace, plan, canonical.portableFiles)
+		  if (!existingWorkspace) await initializeSyncWorkspace(workspace, remoteUrl)
+	  }
       const commit = await commitSyncWorkspace(workspace, `Skiller sync: update ${params.profileId}`)
       let pushed = false
       if (params.push) {
@@ -978,7 +996,7 @@ export function createRequestHandlers(ctx: {
       }
       await cloneSyncWorkspace(remoteUrl, syncWorkspacePath(params.profileId))
       const workspace = syncWorkspacePath(params.profileId)
-      const manifest = parseSyncManifest(readFileSync(join(workspace, 'skiller-sync.yaml'), 'utf8'))
+      const manifest = readSyncManifestFromWorkspace(workspace)
       if (manifest.profile.id !== params.profileId) throw new Error('The remote profile id does not match the requested profile')
       const status = await getSyncWorkspaceStatus(workspace)
       return {

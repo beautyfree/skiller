@@ -2,6 +2,9 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { appDataRootPath } from "./settings";
 
+export { classifyThreeWaySkill } from "@beautyfree/dotagent/reconcile";
+export type { ThreeWayAction, ThreeWaySkill } from "@beautyfree/dotagent/reconcile";
+
 export const SYNC_LEDGER_VERSION = 1;
 
 export type SyncLedger = {
@@ -11,16 +14,6 @@ export type SyncLedger = {
 	skills: Record<string, { sha256: string; kept_remote_sha256?: string }>;
 	/** Local-only decision to keep a conflicting external skill at this pin. */
 	external_kept_sources?: Record<string, { repository: string; ref: string }>;
-};
-
-export type ThreeWayAction = "take-remote" | "publish-local" | "unchanged" | "kept-local" | "conflict" | "unmanaged";
-
-export type ThreeWaySkill = {
-	id: string;
-	baseSha256: string | null;
-	localSha256: string | null;
-	remoteSha256: string;
-	action: ThreeWayAction;
 };
 
 export function syncLedgerPath(profileId: string): string {
@@ -66,42 +59,4 @@ export function makeSyncLedger(
 			? { external_kept_sources: externalKeptSources }
 			: {}),
 	};
-}
-
-/**
- * Classifies without writing. A missing base is deliberately `unmanaged` when
- * local and remote differ: old profiles and hand-edited installations deserve
- * a human decision, not a default overwrite.
- */
-export function classifyThreeWaySkill(
-	id: string,
-	baseSha256: string | null,
-	localSha256: string | null,
-	remoteSha256: string,
-	keptRemoteSha256?: string | null,
-): ThreeWaySkill {
-	if (keptRemoteSha256 && localSha256 !== null && localSha256 !== remoteSha256) {
-		// A person deliberately kept this local variant after reviewing this
-		// exact remote revision. Do not nag or downgrade it to an auto-apply
-		// candidate until the remote actually changes again.
-		const action: ThreeWayAction = keptRemoteSha256 === remoteSha256 ? "kept-local" : "conflict";
-		return { id, baseSha256, localSha256, remoteSha256, action };
-	}
-	if (baseSha256 === null) {
-		const action: ThreeWayAction = localSha256 === null
-			? "take-remote"
-			: localSha256 === remoteSha256
-				? "unchanged"
-				: "unmanaged";
-		return { id, baseSha256, localSha256, remoteSha256, action };
-	}
-	const localChanged = localSha256 !== baseSha256;
-	const remoteChanged = remoteSha256 !== baseSha256;
-	let action: ThreeWayAction;
-	if (!localChanged && !remoteChanged) action = "unchanged";
-	else if (!localChanged && remoteChanged) action = "take-remote";
-	else if (localChanged && !remoteChanged) action = "publish-local";
-	else if (localSha256 === remoteSha256) action = "unchanged";
-	else action = "conflict";
-	return { id, baseSha256, localSha256, remoteSha256, action };
 }

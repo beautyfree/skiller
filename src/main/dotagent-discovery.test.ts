@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { applyInitializeLibraryPlan, planInitializeLibrary } from "@beautyfree/dotagent/init";
+import { planImport } from "@beautyfree/dotagent/import";
 import { planDotagentImportFromDiscovery, scanDotagentSkillDiscovery } from "./dotagent-discovery";
 import { defaultAgentConfig } from "./types";
 
@@ -41,6 +42,9 @@ describe("Skiller shared discovery adapter", () => {
 			skills: [{ name: "writing", source: "owner/repo", source_type: "github", source_url: "https://github.com/owner/repo", ref: "main", skill_path: "skills/writing", updated_at: "" }],
 		} };
 		const plan = await planDotagentImportFromDiscovery(library, [agent], [{ candidateKey: "writing", disposition: "suggested" }], options);
+		const cliCorePlan = await planImport(library, result.suggestions);
+		expect(JSON.stringify(plan)).toBe(JSON.stringify(cliCorePlan));
+		expect(plan.planId).toBe(cliCorePlan.planId);
 		expect(plan.operations).toEqual([expect.objectContaining({ skill: "writing", action: "record-dependency", sourceKind: "dependency" })]);
 		expect(JSON.stringify(plan.nextManifest)).not.toContain(shared);
 		await expect(planDotagentImportFromDiscovery(library, [agent], [{ candidateKey: "missing", disposition: "owned" }], options)).rejects.toThrow("changed or disappeared");

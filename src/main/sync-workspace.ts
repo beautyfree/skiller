@@ -8,14 +8,14 @@ import {
 	applyLibraryClone,
 	applyLibraryPull,
 	applyLibraryPush,
+	applyLibraryGitInitialization,
 	fetchLibrary,
 	getLibraryGitStatus,
-	initializeLibraryGit,
 	planLibraryClone,
+	planLibraryGitInitialization,
 	planLibraryCommit,
 	planLibraryPull,
 	planLibraryPush,
-	setLibraryRemote,
 } from "@beautyfree/dotagent/git-workspace";
 import { appDataRootPath } from "./settings";
 import { assertCredentialFreeGitRemote, assertSyncStableId } from "./sync-profile";
@@ -60,7 +60,9 @@ export function hasSyncWorkspace(profileId: string): boolean {
 export async function initializeSyncWorkspace(workspacePath: string, remoteUrl?: string | null): Promise<void> {
 	if (remoteUrl) assertCredentialFreeGitRemote(remoteUrl);
 	if (isCanonicalSyncLibrary(workspacePath)) {
-		await initializeLibraryGit(workspacePath, remoteUrl ?? undefined);
+		await applyLibraryGitInitialization(
+			await planLibraryGitInitialization(workspacePath, remoteUrl ?? undefined),
+		);
 		return;
 	}
 	mkdirSync(workspacePath, { recursive: true });
@@ -104,7 +106,7 @@ export async function cloneSyncWorkspace(remoteUrl: string, workspacePath: strin
 export async function setSyncWorkspaceRemote(workspacePath: string, remoteUrl: string): Promise<void> {
 	assertCredentialFreeGitRemote(remoteUrl);
 	if (isCanonicalSyncLibrary(workspacePath)) {
-		await setLibraryRemote(workspacePath, remoteUrl);
+		await applyLibraryGitInitialization(await planLibraryGitInitialization(workspacePath, remoteUrl));
 		return;
 	}
 	const git = gitAt(workspacePath);

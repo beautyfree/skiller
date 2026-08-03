@@ -216,7 +216,6 @@ Do not encode support as only a directory path. Each stable agent slug exposes c
 type SkillDelivery =
   | { kind: 'native-shared'; root: PathTemplate }
   | { kind: 'per-skill-link'; roots: PathTemplate[] }
-  | { kind: 'config-path'; config: ConfigPatchDescriptor }
   | { kind: 'copy-only'; roots: PathTemplate[] }
 
 interface AgentDescriptor {
@@ -239,6 +238,11 @@ Rules:
 - Windows uses directory junctions or copies where symlink privilege is unavailable;
 - unsupported capability surfaces remain unsupported instead of receiving invented compatibility files;
 - agent descriptors and aliases are data shipped by dotagent and reused by Skiller.
+
+`config-path` is deliberately not part of the shipped v1 union. It can be added
+only with a concrete data-only patch schema, a validated agent that requires it,
+minimal-write semantics, and round-trip fixtures proving unrelated user config
+survives. A placeholder would falsely advertise support that cannot be applied safely.
 
 ## 7. Reconciliation and safety
 
@@ -282,20 +286,23 @@ Initial commands:
 ```text
 beautyfree-dotagent init [path]
 beautyfree-dotagent inspect [--json]
-beautyfree-dotagent import [--from agents] [--dry-run] [--json]
-beautyfree-dotagent resolve [--frozen-lockfile]
+beautyfree-dotagent import [path] --owned skill=path [--candidate-file candidates.json] --out plan.json
+beautyfree-dotagent resolve [path] --out plan.json
 beautyfree-dotagent plan [--agents ...] [--json]
-beautyfree-dotagent apply <plan-file>
-beautyfree-dotagent sync [--pull] [--dry-run]
+beautyfree-dotagent apply <plan-file> --yes
+beautyfree-dotagent git-init [path] [--remote url] --out plan.json
+beautyfree-dotagent clone <url> <path> --out plan.json
+beautyfree-dotagent commit [path] --message text --out plan.json
+beautyfree-dotagent sync [path] --pull|--push --out plan.json
 beautyfree-dotagent status [--json]
 beautyfree-dotagent doctor [--json]
-beautyfree-dotagent dependency add|update|remove
+beautyfree-dotagent recover [path] --yes
 ```
 
 DX requirements:
 
 - zero-write discovery and JSON output work without prompts;
-- `--dry-run` and `--json` are composable;
+- preview commands and `--json` are composable; every write is a separate `apply --yes` operation;
 - non-interactive mode never falls back to a destructive default;
 - error output always says what failed, why it matters, and the next safe action;
 - first useful local-library setup is under five minutes;
@@ -402,13 +409,14 @@ Exit: fixtures explain every current Skiller source kind and expected no-write p
 
 - [x] Create local and public `beautyfree/dotagent` source repository with scoped package metadata (`@beautyfree/dotagent`); npm publication remains intentionally deferred.
 - [x] Establish Node 20+ ESM TypeScript build, Bun tests, lint/format, package-content verification, and a guarded release workflow.
-- [ ] Implement branded paths/IDs, typed issues, `Result`, filesystem/Git ports, and schema version helpers.
+- [x] Implement normalized portable paths, stable plan IDs, typed issues, `Result`, schema constants, and injectable machine/Git ports.
+- [ ] Generalize remaining Node filesystem boundaries only where a real test seam needs substitution; do not add a ceremonial all-purpose filesystem interface to pure planners.
 - [x] Implement `skills.json`, `skills.lock`, `dotagent.yaml`, and local-overlay parsing/validation.
 - [x] Review naming, then create the public `beautyfree/dotagent` source repository without publishing an npm package or stable release.
 
 Exit: package builds on macOS/Linux/Windows CI and validates fixtures without touching user files.
 
-Current foundation evidence (2026-08-03): the public repository is `https://github.com/beautyfree/dotagent`; commit `2ca933a` and CI run `30808776721` passed lint, format, typecheck, 81 tests, build, three generated-schema drift checks, inspect/audit smoke checks, and import/materialization/clone-plan coverage on macOS, Linux, and Windows using a frozen install with lifecycle scripts disabled. The subsequent shared export-policy commit `03469d9` passes 83 tests and package inspection locally while its cross-platform run is pending evidence. `release:check` inspects the dry-run npm tarball and all exported package targets; the release-artifact builder produces the exact tarball, SHA-256 checksum, CycloneDX SBOM, and release manifest. A manual OIDC publish workflow exists, but npm publication remains intentionally blocked by `private: true` and the placeholder version until the stable-release gates are complete.
+Current foundation evidence (2026-08-03): the public repository is `https://github.com/beautyfree/dotagent`; commit `2ca933a` and CI run `30808776721` passed lint, format, typecheck, 81 tests, build, three generated-schema drift checks, inspect/audit smoke checks, and import/materialization/clone-plan coverage on macOS, Linux, and Windows using a frozen install with lifecycle scripts disabled. Current commit `8aa45ac` passes 89 tests, generated-schema drift checks, a committed API-declaration snapshot for 27 typed exports, and package inspection for 148 files/30 export paths locally; its newer cross-platform run is still pending evidence. `release:check` inspects the dry-run npm tarball and all exported package targets; the release-artifact builder produces the exact tarball, SHA-256 checksum, CycloneDX SBOM, and release manifest. A manual OIDC publish workflow exists, but npm publication remains intentionally blocked by `private: true` and the placeholder version until the stable-release gates are complete.
 
 ### Phase 2 — inventory, source resolution, and audit
 
@@ -425,7 +433,8 @@ Exit: a public fixture repository resolves reproducibly; tampered content, movin
 ### Phase 3 — agent catalog and materialization
 
 - [x] Define capability descriptors and migrate bundled agent definitions. dotagent owns the provider-neutral catalog for all 49 bundled slugs; Skiller TOML retains install/docs/UI metadata and has exact capability parity coverage. Explicit custom TOML entries use the compatibility adapter.
-- [ ] Implement native-shared, per-skill symlink, Windows junction, config-path, and reviewed copy strategies. (Native/link/junction/copy plan and apply exist; managed config patching remains.)
+- [x] Implement native-shared, per-skill symlink, Windows junction, and reviewed copy strategies.
+- [x] Refuse to advertise `config-path` until a real agent integration supplies a validated minimal-patch contract and round-trip fixtures.
 - [x] Implement machine scan without treating `.agents/skills` or a skills-only marker as installation evidence.
 - [x] Implement import/materialization plans and managed ownership markers. Canonical import distinguishes owned, dependency, local-only, and excluded candidates; apply rechecks secrets, hashes, and unmanaged targets through a durable journal.
 - [x] Implement journaled apply, rollback, stale-source/target validation, and interrupted-run recovery.
@@ -446,7 +455,7 @@ Exit: CLI and Skiller produce the same plan hash for the same library/machine fi
 
 Current integration evidence (2026-08-03): dotagent owns the legacy Skiller schemas, migrations, portable-path checks, duplicate detection, and credential-free remote validation. Skiller retains a compatibility facade so existing imports and repositories do not change. The focused Skiller sync suite passes through the package adapter; full release/platform gates remain open.
 
-Latest runtime evidence (2026-08-03): Skiller pins dotagent commit `03469d9`, including the authoritative 49-agent catalog, versioned schemas/fixtures, dependency audit deltas, shared portable-plus-local agent routing, reviewed clone plans, and shared owned-skill export policy. Newly created Sync Center repositories use canonical `skills.json`, `skills.lock`, `dotagent.yaml`, and `skills/` content and delegate canonical Git operations to dotagent; existing `skiller-sync.yaml` repositories remain readable and writable through the versioned adapter. Skiller's full 101-test suite, typecheck, and production Electron/Vite build pass, including exact TOML/catalog parity, public licensed-library state, gitignored local agent choice, shared export-policy compatibility, and owned plus immutable external-dependency publish/clone/restore fixtures. Live dev review at 1440×900 verified both landing actions, the no-profile-id existing-library form, all-detected agent selection, review → plan → destination navigation, explicit private/public choice, mandatory public license selection, persistent back actions, and a visible non-floating CTA.
+Latest runtime evidence (2026-08-03): Skiller pins dotagent commit `8aa45ac`, including the authoritative 49-agent catalog, versioned schemas/fixtures, dependency audit deltas, shared portable-plus-local agent routing, reviewed clone/init/resolve plans, shared owned-skill export policy, third-party conformance fixtures, and the public API snapshot gate. Newly created Sync Center repositories use canonical `skills.json`, `skills.lock`, `dotagent.yaml`, and `skills/` content and delegate canonical Git operations to dotagent; existing `skiller-sync.yaml` repositories remain readable and writable through the versioned adapter. The Skiller adapter test proves its serialized import plan and plan ID are byte-identical to the direct dotagent planner for the same discovery fixture. The full 101-test suite, typecheck, and production Electron/Vite build pass after the final pin. The existing 1440×900 live-dev review remains valid for the unchanged renderer, while packaged-app verification remains a separate release gate.
 
 ### Phase 5 — public/private library UX
 
@@ -463,7 +472,7 @@ Exit: a user can publish a curated public library, install it on a clean machine
 ### Phase 6 — ecosystem and stable release
 
 - [x] Document RFC compatibility and deviations.
-- [ ] Add conformance fixtures for third-party skill packages.
+- [x] Add conformance fixtures for third-party repository-root and multi-skill package layouts.
 - [ ] Publish package provenance, checksums, SBOM, changelog, and migration guide. (All artifacts and docs are generated and release-gated; registry publication remains intentionally disabled.)
 - [x] Add public data-only extension points for new agent descriptors without arbitrary code execution.
 - [ ] Consider MCP/roles/hooks only after skills reach the stable acceptance bar.
@@ -505,7 +514,7 @@ Exit: v1 format and APIs have documented compatibility guarantees and release ev
 ### Release gates
 
 - clean dependency install with scripts disabled where possible;
-- test, typecheck, lint, build, package dry-run, and API extractor/diff;
+- test, typecheck, lint, build, package dry-run, and committed public-declaration snapshot/diff;
 - macOS, Linux, and Windows CI;
 - npm package contents inspection;
 - signed/provenance-aware publication;
@@ -557,7 +566,7 @@ The schemas reserve no fake fields for deferred surfaces. Add them through expli
 ## 16. Acceptance criteria
 
 - [x] `@beautyfree/dotagent` can be imported by Skiller without Electron or UI dependencies.
-- [ ] CLI and Skiller generate byte-equivalent serialized plans from the same fixtures.
+- [x] CLI core and Skiller generate byte-equivalent serialized import plans and plan IDs from the same discovery fixture.
 - [x] A repository with owned skills can be public and cloned without exposing local state.
 - [x] External dependencies are pinned to immutable commits and verified by content integrity.
 - [x] A clean machine restores selected skills to supported agents without manual path editing.
@@ -591,6 +600,9 @@ The schemas reserve no fake fields for deferred surfaces. Add them through expli
 | 2026-08-03 | Public library creation requires an explicit license | public audit remains enforceable and Skiller never silently licenses a user's work |
 | 2026-08-03 | Clone is a serialized preview/apply operation | connecting an existing library cannot mutate a managed destination before the reviewed plan is revalidated |
 | 2026-08-03 | Owned-skill export policy lives in dotagent | Skiller and future CLI/UI consumers cannot diverge on excluded files, content limits, links, hashes, or secret locations |
+| 2026-08-03 | Agent delivery descriptors expose only verified roots | an unimplemented `config-path` variant would advertise unsafe behavior; it remains absent until backed by a real minimal-patch contract and round-trip fixture |
+| 2026-08-03 | Git identity normalization is a dependency-free leaf module | config, resolution, and workspace plans share one credential-free identity without importing higher-level source logic |
+| 2026-08-03 | Third-party layouts and public declarations are committed release fixtures | root-skill/multi-skill compatibility and package API changes now fail CI unless deliberately reviewed |
 
 ## 18. Immediate implementation checklist
 

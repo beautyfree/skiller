@@ -135,7 +135,7 @@ export type DotagentSkillDiscoveryJson = {
     metadata_valid: boolean;
     locations: { agent_slug?: string; kind: "shared" | "agent-local" | "inherited" }[];
     suggested: {
-      kind: "owned" | "dependency" | "local-only" | "excluded";
+      kind: "owned" | "dependency" | "vendored" | "local-only" | "excluded";
       source?: "git" | "skills-cli";
       package?: string;
       reason?: string;
@@ -161,8 +161,15 @@ export type DotagentImportPlanJson = {
   dependency_count: number;
   operations: {
     skill_id: string;
-    action: "copy-owned" | "record-dependency" | "unchanged" | "leave-local" | "exclude" | "conflict";
-    source_kind: "owned" | "dependency" | "local-only" | "excluded";
+    action:
+      | "copy-owned"
+      | "copy-vendored"
+      | "record-dependency"
+      | "unchanged"
+      | "leave-local"
+      | "exclude"
+      | "conflict";
+    source_kind: "owned" | "dependency" | "vendored" | "local-only" | "excluded";
     package?: string;
     reason?: string;
   }[];

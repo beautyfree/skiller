@@ -283,6 +283,7 @@ export default function SettingsPage() {
     mutationFn: () => invoke('sync_restore_apply', {
       profileId: syncProfileId,
       skillIds: restoreSkillIds,
+      workspacePlanId: restorePreview!.workspace_plan_id,
       reconciliationPlanId: restorePreview!.reconciliation_plan_id,
     }),
     onSuccess: async (result) => {

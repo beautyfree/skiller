@@ -23,10 +23,11 @@ import { scanTextForSecrets } from "./sync-secret-scan";
 import {
 	cloneSyncWorkspace,
 	commitSyncWorkspace,
-	fastForwardSyncWorkspace,
-	fetchSyncWorkspace,
+	applyReviewedSyncWorkspaceFastForward,
 	getSyncWorkspaceStatus,
 	initializeSyncWorkspace,
+	inspectSyncWorkspaceFastForward,
+	planSyncWorkspaceFastForward,
 	pushSyncWorkspace,
 	refreshSyncWorkspaceStatus,
 	resolveGitReferenceToCommit,
@@ -240,8 +241,11 @@ describe("sync Git workspace", () => {
 		writeFileSync(join(publisher, "skiller-sync.yaml"), "second\n");
 		await commitSyncWorkspace(publisher, "second");
 		await pushSyncWorkspace(publisher);
-		await fetchSyncWorkspace(restore);
-		await fastForwardSyncWorkspace(restore);
+		const plan = await planSyncWorkspaceFastForward(restore);
+		expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe("first\n");
+		expect(await inspectSyncWorkspaceFastForward(plan, (checkout) => readFileSync(join(checkout, "skiller-sync.yaml"), "utf8"))).toBe("second\n");
+		expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe("first\n");
+		await applyReviewedSyncWorkspaceFastForward(restore, plan.planId);
 
 		expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe("second\n");
 	});
@@ -449,7 +453,8 @@ describe("sync restore preview", () => {
 		expect(repeated.engine).toBe("dotagent");
 		if (first.engine !== "dotagent" || repeated.engine !== "dotagent") throw new Error("dotagent reconciliation is required");
 		expect(first.corePlan.planId).toBe(repeated.corePlan.planId);
-		expect(syncRestorePlanId(first)).toBe(first.corePlan.planId);
+		expect(syncRestorePlanId(first)).toBe(syncRestorePlanId(repeated));
+		expect(syncRestorePlanId(first)).toMatch(/^[a-f0-9]{64}$/);
 		mkdirSync(join(canonical, "writing"));
 		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Local\n");
 		compareCurrent();

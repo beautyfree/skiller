@@ -17,6 +17,12 @@ import {
 	planLibraryPull,
 	planLibraryPush,
 } from "@beautyfree/dotagent/git-workspace";
+import {
+	applyGitFastForwardPlan,
+	inspectGitFastForwardPlan,
+	planGitFastForward,
+	type GitFastForwardPlan,
+} from "@beautyfree/dotagent/git-fast-forward";
 import { appDataRootPath } from "./settings";
 import { assertCredentialFreeGitRemote, assertSyncStableId } from "./sync-profile";
 import { isCanonicalSyncLibrary, readSyncManifestFromWorkspace } from "./sync-dotagent";
@@ -180,6 +186,40 @@ export async function refreshSyncWorkspaceStatus(workspacePath: string): Promise
 	}
 	const git = gitAt(workspacePath).env({ GIT_TERMINAL_PROMPT: "0" });
 	await git.raw(["-c", "credential.interactive=false", "fetch", "origin", "--prune", "--no-tags"]);
+}
+
+/** Build a remote review without changing the managed checkout's files. */
+export async function planSyncWorkspaceFastForward(workspacePath: string): Promise<GitFastForwardPlan> {
+	return planGitFastForward(workspacePath);
+}
+
+/** Inspect the exact reviewed remote commit in a disposable detached worktree. */
+export async function inspectSyncWorkspaceFastForward<T>(
+	plan: GitFastForwardPlan,
+	inspect: (checkout: string) => T | Promise<T>,
+): Promise<T> {
+	return inspectGitFastForwardPlan(plan, inspect);
+}
+
+/** Apply only the exact Git state shown by the previous remote review. */
+export async function applyReviewedSyncWorkspaceFastForward(
+	workspacePath: string,
+	expectedPlanId: string,
+): Promise<string> {
+	const plan = await planGitFastForward(workspacePath);
+	if (!expectedPlanId || plan.planId !== expectedPlanId) {
+		throw new Error("Remote or local Git state changed after review. Review it again before applying changes.");
+	}
+	if (isCanonicalSyncLibrary(workspacePath)) {
+		const visibility = readSyncManifestFromWorkspace(workspacePath).profile.mode;
+		const canonical = await planLibraryPull(workspacePath, visibility);
+		if (canonical.baseHead !== plan.baseHead || canonical.remoteHead !== plan.remoteHead) {
+			throw new Error("Remote or local Git state changed after review. Review it again before applying changes.");
+		}
+		if (canonical.hasBlockers) throw new Error("Remote canonical library did not pass its safety review");
+		return applyLibraryPull(canonical);
+	}
+	return applyGitFastForwardPlan(plan);
 }
 
 /**

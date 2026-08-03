@@ -342,6 +342,8 @@ export type SyncSkillPreviewJson = {
 
 export type SyncRestorePreviewJson = {
   profile_id: string;
+  /** Stable identifier of the exact remote Git fast-forward reviewed in a disposable checkout. */
+  workspace_plan_id: string;
   /** Stable identifier of the exact no-write reconciliation preview. */
   reconciliation_plan_id: string;
   reconciliation_engine: "dotagent" | "legacy";
@@ -393,6 +395,8 @@ export type SyncInventoryJson = {
 
 export type SyncThreeWayReviewJson = {
   profile_id: string;
+  /** Stable identifier of the exact remote Git fast-forward reviewed in a disposable checkout. */
+  workspace_plan_id: string;
   /** Stable identifier of the exact no-write reconciliation preview. */
   reconciliation_plan_id: string;
   reconciliation_engine: "dotagent" | "legacy";
@@ -470,12 +474,12 @@ export type AppRPCSchema = {
         response: { commit: string | null; pushed: boolean };
       };
       sync_three_way_review: { params: { profileId: string }; response: SyncThreeWayReviewJson };
-      sync_apply_remote_changes: { params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }; response: { restored: string[] } };
-	  sync_apply_conflicting_remote_changes: { params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }; response: { restored: string[] } };
-      sync_publish_local_changes: { params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }; response: { commit: string | null; pushed: boolean } };
-	  sync_adopt_local_changes: { params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }; response: { commit: string | null; pushed: boolean } };
-	  sync_keep_local_changes: { params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }; response: { kept: string[] } };
-	  sync_keep_external_local_changes: { params: { profileId: string; skillIds: string[]; reconciliationPlanId: string }; response: { kept: string[] } };
+      sync_apply_remote_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { restored: string[] } };
+	  sync_apply_conflicting_remote_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { restored: string[] } };
+      sync_publish_local_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { commit: string | null; pushed: boolean } };
+	  sync_adopt_local_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { commit: string | null; pushed: boolean } };
+	  sync_keep_local_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { kept: string[] } };
+	  sync_keep_external_local_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { kept: string[] } };
       sync_recovery_status: { params: { profileId: string }; response: { pending: boolean } };
       sync_recovery_rollback: { params: { profileId: string }; response: { recovered: boolean } };
       sync_publish_preview: {
@@ -515,7 +519,7 @@ export type AppRPCSchema = {
       };
       sync_pull_preview: { params: { profileId: string }; response: SyncRestorePreviewJson };
       sync_restore_apply: {
-        params: { profileId: string; skillIds: string[]; reconciliationPlanId: string };
+        params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string };
         response: { restored: string[]; installed_to_detected_agents: string[] };
       };
       install_skill: { params: { source: SkillSourceParam; targetAgents: string[] }; response: void };

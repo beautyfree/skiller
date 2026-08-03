@@ -318,7 +318,7 @@ export default function SyncCenter() {
 	  if (!profile || !remoteReview || localSelections.length === 0) return
 	  setBusy('publishing')
 	  try {
-		await invoke('sync_publish_local_changes', { profileId: profile.profile_id, skillIds: localSelections, reconciliationPlanId: remoteReview.reconciliation_plan_id })
+		await invoke('sync_publish_local_changes', { profileId: profile.profile_id, skillIds: localSelections, workspacePlanId: remoteReview.workspace_plan_id, reconciliationPlanId: remoteReview.reconciliation_plan_id })
 		toast(`Published ${localSelections.length} reviewed local change${localSelections.length === 1 ? '' : 's'}.`)
 		setRemoteReview(null)
 		setLocalSelections([])
@@ -349,7 +349,7 @@ export default function SyncCenter() {
     if (!profile || !remoteReview || remoteSelections.length === 0) return
     setBusy('publishing')
     try {
-      const result = await invoke('sync_apply_remote_changes', { profileId: profile.profile_id, skillIds: remoteSelections, reconciliationPlanId: remoteReview.reconciliation_plan_id })
+      const result = await invoke('sync_apply_remote_changes', { profileId: profile.profile_id, skillIds: remoteSelections, workspacePlanId: remoteReview.workspace_plan_id, reconciliationPlanId: remoteReview.reconciliation_plan_id })
       toast(`Restored ${result.restored.length} remote change${result.restored.length === 1 ? '' : 's'}.`)
       setRemoteReview(null)
       setRemoteSelections([])
@@ -367,7 +367,7 @@ export default function SyncCenter() {
 	  if (!profile || !remoteReview) return
 	  setBusy('publishing')
 	  try {
-		const result = await invoke('sync_apply_conflicting_remote_changes', { profileId: profile.profile_id, skillIds: [skillId], reconciliationPlanId: remoteReview.reconciliation_plan_id })
+		const result = await invoke('sync_apply_conflicting_remote_changes', { profileId: profile.profile_id, skillIds: [skillId], workspacePlanId: remoteReview.workspace_plan_id, reconciliationPlanId: remoteReview.reconciliation_plan_id })
 		toast(`Replaced the local copy of ${result.restored[0]} with the reviewed remote version.`)
 		setRemoteReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
 		await queryClient.invalidateQueries({ queryKey: ['sync-center-inventory'] })
@@ -382,7 +382,7 @@ export default function SyncCenter() {
 	  if (!profile || !remoteReview) return
 	  setBusy('publishing')
 	  try {
-		await invoke('sync_adopt_local_changes', { profileId: profile.profile_id, skillIds: [skillId], reconciliationPlanId: remoteReview.reconciliation_plan_id })
+		await invoke('sync_adopt_local_changes', { profileId: profile.profile_id, skillIds: [skillId], workspacePlanId: remoteReview.workspace_plan_id, reconciliationPlanId: remoteReview.reconciliation_plan_id })
 		toast(`Published the local ${skillId} as the library version.`)
 		showThreeWayReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
 		await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
@@ -397,7 +397,7 @@ export default function SyncCenter() {
 	  if (!profile || !remoteReview) return
 	  setBusy('publishing')
 	  try {
-		await invoke(external ? 'sync_keep_external_local_changes' : 'sync_keep_local_changes', { profileId: profile.profile_id, skillIds: [skillId], reconciliationPlanId: remoteReview.reconciliation_plan_id })
+		await invoke(external ? 'sync_keep_external_local_changes' : 'sync_keep_local_changes', { profileId: profile.profile_id, skillIds: [skillId], workspacePlanId: remoteReview.workspace_plan_id, reconciliationPlanId: remoteReview.reconciliation_plan_id })
 		toast(`Kept ${skillId} only on this computer.`)
 		showThreeWayReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
 	  } catch (error) {

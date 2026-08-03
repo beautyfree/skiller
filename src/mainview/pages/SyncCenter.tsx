@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Cloud, FolderOpen, Github, Info, Loader2, Server, X } from 'lucide-react'
 import { invoke } from '@/mainview/lib/native'
-import type { AgentConfigJson, SyncInventoryJson, SyncLibraryDecisionJson, SyncProfileStatusJson, SyncPublishPreviewJson, SyncThreeWayReviewJson } from '@/shared/rpc-schema'
+import type { AgentConfigJson, SyncConnectPreviewJson, SyncGitHubRepositoryPreviewJson, SyncInventoryJson, SyncLibraryDecisionJson, SyncProfileStatusJson, SyncPublishPreviewJson, SyncThreeWayReviewJson } from '@/shared/rpc-schema'
 import { Button } from '@/mainview/components/ui/button'
 import { useToast } from '@/mainview/components/ToastProvider'
 import { AgentIcon } from '@/mainview/components/AgentIcon'
@@ -101,12 +101,14 @@ export default function SyncCenter() {
   const [connectRemoteUrl, setConnectRemoteUrl] = useState('')
   const [connectAgentSlugs, setConnectAgentSlugs] = useState<string[]>([])
   const [connectSelectionReady, setConnectSelectionReady] = useState(false)
+  const [connectPreview, setConnectPreview] = useState<SyncConnectPreviewJson | null>(null)
   const [inspectedSkillKey, setInspectedSkillKey] = useState<string | null>(null)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [libraryDecisions, setLibraryDecisions] = useState<Record<string, SyncLibraryDecisionJson>>({})
   const [selectionReady, setSelectionReady] = useState(false)
   const [setupMode, setSetupMode] = useState<'github' | 'custom' | null>(null)
   const [repositoryName, setRepositoryName] = useState('skiller-agent-library')
+  const [githubRepositoryPreview, setGitHubRepositoryPreview] = useState<SyncGitHubRepositoryPreviewJson | null>(null)
   const [libraryMode, setLibraryMode] = useState<'private' | 'public'>('private')
   const [libraryLicense, setLibraryLicense] = useState<'' | 'MIT' | 'Apache-2.0' | 'CC0-1.0'>('')
   const [remoteUrl, setRemoteUrl] = useState('')
@@ -202,6 +204,7 @@ export default function SyncCenter() {
   async function changeLibraryMode(mode: 'private' | 'public') {
     if (mode === libraryMode) return
     setLibraryMode(mode)
+    setGitHubRepositoryPreview(null)
     if (!preview) return
     setBusy('reviewing')
     try {
@@ -226,10 +229,12 @@ export default function SyncCenter() {
 	  const returnHome = () => {
 		setShowInventory(false)
 		setShowConnect(false)
+		setConnectPreview(null)
 		setInspectedSkillKey(null)
 		setPreview(null)
 		setShowDestination(false)
 		setSetupMode(null)
+		setGitHubRepositoryPreview(null)
 		setRemoteUrl('')
 	  }
 	  window.addEventListener('skiller:sync-home', returnHome)
@@ -243,17 +248,20 @@ export default function SyncCenter() {
   }
 
   async function connectExistingLibrary() {
-    if (!connectRemoteUrl.trim()) return
+    if (!connectRemoteUrl.trim() || !connectPreview) return
     setBusy('connecting')
     try {
       const connected = await invoke('sync_center_connect', {
+        profileId: connectPreview.profile_id,
         remoteUrl: connectRemoteUrl,
         agentSlugs: connectAgentSlugs,
+        planId: connectPreview.plan_id,
       })
       await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
       const review = await invoke('sync_three_way_review', { profileId: connected.profile_id })
       showThreeWayReview(review)
       setShowConnect(false)
+      setConnectPreview(null)
       setShowInventory(true)
       toast('Library connected locally. Review the skills before restoring anything.')
     } catch (error) {
@@ -263,11 +271,48 @@ export default function SyncCenter() {
     }
   }
 
+  async function reviewExistingLibraryConnection() {
+    if (!connectRemoteUrl.trim()) return
+    setBusy('reviewing')
+    try {
+      setConnectPreview(await invoke('sync_center_connect_preview', {
+        remoteUrl: connectRemoteUrl,
+        agentSlugs: connectAgentSlugs,
+      }))
+    } catch (error) {
+      setConnectPreview(null)
+      toast(error instanceof Error ? error.message : String(error), 'destructive')
+    } finally {
+      setBusy('idle')
+    }
+  }
+
+  async function reviewGitHubRepository() {
+    setBusy('reviewing')
+    try {
+      setGitHubRepositoryPreview(await invoke('sync_github_create_repo_preview', {
+        repository: repositoryName,
+        visibility: libraryMode,
+      }))
+    } catch (error) {
+      setGitHubRepositoryPreview(null)
+      toast(error instanceof Error ? error.message : String(error), 'destructive')
+    } finally {
+      setBusy('idle')
+    }
+  }
+
   async function createGitHubRepository() {
+    if (!githubRepositoryPreview) return
     setBusy('creating')
     try {
-      const result = await invoke('sync_github_create_repo', { repository: repositoryName, visibility: libraryMode })
+      const result = await invoke('sync_github_create_repo', {
+        repository: repositoryName,
+        visibility: libraryMode,
+        planId: githubRepositoryPreview.plan_id,
+      })
       setRemoteUrl(result.remoteUrl)
+		setGitHubRepositoryPreview(null)
 		toast(`${libraryMode === 'private' ? 'Private' : 'Public'} GitHub repository created. Your library is ready to create.`)
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), 'destructive')
@@ -449,22 +494,23 @@ export default function SyncCenter() {
 			  <span>Private by default · share when ready</span>
             </div>
           </div> : <div className="relative w-full max-w-2xl rounded-2xl border border-white/20 bg-background/95 p-5 text-left text-foreground shadow-2xl backdrop-blur-xl sm:p-6">
-            <button type="button" className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => setShowConnect(false)}><ChevronLeft className="size-3.5" />Back</button>
+            <button type="button" className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => { setShowConnect(false); setConnectPreview(null) }}><ChevronLeft className="size-3.5" />Back</button>
             <div className="mt-4 flex items-start gap-3">
               <div className="rounded-xl bg-primary/10 p-2.5 text-primary"><Cloud className="size-5" /></div>
               <div><h1 className="text-xl font-semibold tracking-[-0.025em]">Use an existing library</h1><p className="mt-1 text-xs leading-relaxed text-muted-foreground">Connect a public or private dotagent Git repository. Skiller downloads a managed local workspace first; it does not touch any agent folder until the next review is confirmed.</p></div>
             </div>
             <label className="mt-5 grid gap-1.5 text-xs font-medium">Git repository
-              <input value={connectRemoteUrl} onChange={(event) => setConnectRemoteUrl(event.target.value)} placeholder="https://github.com/you/agent-library.git" spellCheck={false} className="h-10 rounded-lg border border-border bg-background px-3 text-xs font-normal text-foreground outline-none focus:ring-2 focus:ring-ring/40" />
+              <input value={connectRemoteUrl} onChange={(event) => { setConnectRemoteUrl(event.target.value); setConnectPreview(null) }} placeholder="https://github.com/you/agent-library.git" spellCheck={false} className="h-10 rounded-lg border border-border bg-background px-3 text-xs font-normal text-foreground outline-none focus:ring-2 focus:ring-ring/40" />
             </label>
             <div className="mt-5 border-t border-border/60 pt-4">
-              <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-semibold">Use this library with</p><p className="mt-0.5 text-[11px] text-muted-foreground">This choice stays private in dotagent.local.yaml on this computer.</p></div>{detectedAgents.length > 0 && <button type="button" className="text-[11px] font-medium text-primary hover:underline" onClick={() => setConnectAgentSlugs(detectedAgents.map((agent) => agent.slug))}>All detected</button>}</div>
+              <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-semibold">Use this library with</p><p className="mt-0.5 text-[11px] text-muted-foreground">This choice stays private in dotagent.local.yaml on this computer.</p></div>{detectedAgents.length > 0 && <button type="button" className="text-[11px] font-medium text-primary hover:underline" onClick={() => { setConnectAgentSlugs(detectedAgents.map((agent) => agent.slug)); setConnectPreview(null) }}>All detected</button>}</div>
               <div className="mt-3 flex flex-wrap gap-2">
-                {detectedAgents.map((agent) => { const checked = connectAgentSlugs.includes(agent.slug); return <label key={agent.slug} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-xs transition-colors ${checked ? 'border-primary/45 bg-primary/[0.07]' : 'border-border hover:bg-muted/40'}`}><input type="checkbox" className="cursor-pointer" checked={checked} onChange={() => setConnectAgentSlugs((current) => checked ? current.filter((slug) => slug !== agent.slug) : [...current, agent.slug])} /><AgentIcon slug={agent.slug} className="size-4" /><span>{agent.name}</span></label> })}
+                {detectedAgents.map((agent) => { const checked = connectAgentSlugs.includes(agent.slug); return <label key={agent.slug} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-xs transition-colors ${checked ? 'border-primary/45 bg-primary/[0.07]' : 'border-border hover:bg-muted/40'}`}><input type="checkbox" className="cursor-pointer" checked={checked} onChange={() => { setConnectAgentSlugs((current) => checked ? current.filter((slug) => slug !== agent.slug) : [...current, agent.slug]); setConnectPreview(null) }} /><AgentIcon slug={agent.slug} className="size-4" /><span>{agent.name}</span></label> })}
                 {agents && detectedAgents.length === 0 && <p className="text-xs text-muted-foreground">No agents are detected yet. You can still review the library and connect agents later.</p>}
               </div>
             </div>
-            <div className="mt-5 flex items-center justify-between gap-4 border-t border-border/60 pt-4"><p className="max-w-sm text-[11px] leading-relaxed text-muted-foreground">Private repositories use your existing Git or SSH credentials. Skiller does not receive or store them.</p><Button size="sm" className="h-9 shrink-0 px-4" onClick={connectExistingLibrary} disabled={busy !== 'idle' || !connectRemoteUrl.trim() || (detectedAgents.length > 0 && connectAgentSlugs.length === 0)}>{busy === 'connecting' ? <><Loader2 className="size-3.5 animate-spin" />Connecting…</> : <>Connect & review <ChevronRight className="size-3.5" /></>}</Button></div>
+            {connectPreview && <div className="mt-4 rounded-xl border border-primary/25 bg-primary/[0.06] px-3.5 py-3 text-xs"><p className="font-semibold">Ready to connect {connectPreview.remote_identity}</p><p className="mt-1 leading-relaxed text-muted-foreground">Skiller will create one managed local copy named <span className="font-medium text-foreground">{connectPreview.profile_id}</span>. It will not install or replace any agent skill until the following library review is confirmed.</p></div>}
+            <div className="mt-5 flex items-center justify-between gap-4 border-t border-border/60 pt-4"><p className="max-w-sm text-[11px] leading-relaxed text-muted-foreground">Private repositories use your existing Git or SSH credentials. Skiller does not receive or store them.</p><Button size="sm" className="h-9 shrink-0 px-4" onClick={connectPreview ? connectExistingLibrary : reviewExistingLibraryConnection} disabled={busy !== 'idle' || !connectRemoteUrl.trim() || (detectedAgents.length > 0 && connectAgentSlugs.length === 0)}>{busy === 'connecting' ? <><Loader2 className="size-3.5 animate-spin" />Connecting…</> : busy === 'reviewing' ? <><Loader2 className="size-3.5 animate-spin" />Reviewing…</> : connectPreview ? <>Connect library <ChevronRight className="size-3.5" /></> : <>Review connection <ChevronRight className="size-3.5" /></>}</Button></div>
           </div>}
         </section>
       )}
@@ -580,14 +626,15 @@ export default function SyncCenter() {
 			  {!showDestination && <><div className="min-h-0 flex-1 overflow-y-auto pr-1"><section className="mt-5 overflow-hidden rounded-xl border border-border/70 bg-background/35"><div className="border-b border-border/60 bg-primary/[0.06] px-4 py-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">Your new repository will contain</p><p className="mt-1 text-muted-foreground">A standard dotagent library: <span className="font-medium text-foreground">skills.json, skills.lock, dotagent.yaml</span>, a README, and only the reviewed outcomes below. Machine paths, tokens, and local-only decisions stay on this computer.</p></div><div className="divide-y divide-border/60"><div className="flex gap-3 px-4 py-3"><CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-500" /><div><p className="font-semibold text-foreground">{plural(previewOwnedCount, 'owned skill')} saved with {plural(previewVendoredCount, 'licensed copy')}</p><p className="mt-0.5 text-muted-foreground">{preview.skills.reduce((total, skill) => total + skill.file_count, 0)} reviewed files will live under skills/. Vendored copies retain their upstream commit, integrity, and license in dotagent.yaml.</p></div></div><div className="flex gap-3 px-4 py-3"><Info className="mt-0.5 size-4 shrink-0 text-primary" /><div><p className="font-semibold text-foreground">{preview.skills_sh.length + preview.references.length} skills recorded as immutable dependencies</p><p className="mt-0.5 text-muted-foreground">{preview.skills_sh.length} from skills.sh · {preview.references.length} from Git. Their exact commits and integrity go into skills.lock; their files are not duplicated.</p></div></div><div className={`flex gap-3 px-4 py-3 ${preview.unresolved_sources?.length ? 'bg-amber-500/[0.05]' : ''}`}><AlertTriangle className={`mt-0.5 size-4 shrink-0 ${preview.unresolved_sources?.length ? 'text-amber-600 dark:text-amber-300' : 'text-muted-foreground'}`} /><div><p className="font-semibold text-foreground">{preview.unresolved_sources?.length ? `${plural(preview.unresolved_sources.length, 'external skill')} not included yet` : `${plural(previewLocalCount, 'skill')} stay on this computer`}</p><p className="mt-0.5 text-muted-foreground">{preview.unresolved_sources?.length ? 'Their source could not be pinned, so they will not appear in this repository and remain unchanged locally.' : previewLocalCount ? 'They remain unchanged and are not written to the repository.' : 'Every reviewed skill can be included.'}</p></div></div></div></section>
 			  {preview.unresolved_sources && preview.unresolved_sources.length > 0 && <section className="mt-4 rounded-xl border border-amber-400/35 bg-amber-500/[0.07] px-4 py-3.5 text-amber-950 dark:text-amber-100"><div className="flex gap-3"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-300" /><div className="min-w-0"><p className="font-semibold">{plural(preview.unresolved_sources.length, 'external skill')} will stay on this computer</p><p className="mt-1 leading-relaxed text-amber-900/80 dark:text-amber-200/80">Skiller could not verify the source, so it will neither upload nor change these skills. Reconnect or authenticate their Git source, then refresh this review when you want to include them.</p><details className="mt-3"><summary className="cursor-pointer font-medium text-amber-900 underline-offset-2 hover:underline dark:text-amber-100">View affected skills ({preview.unresolved_sources.length})</summary><div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-amber-900/80 dark:text-amber-200/80">{preview.unresolved_sources.map((source) => <span key={`${source.kind}-${source.id}`}>{source.id}</span>)}</div></details></div></div></section>}
 			  {preview.secret_findings.length > 0 ? <section className="mt-4 border-y border-destructive/25 py-3"><p className="font-medium text-destructive">Backup is paused: review {preview.secret_findings.length} possible secret{preview.secret_findings.length === 1 ? '' : 's'} in {groupSecretFindings(preview.secret_findings).length} file{groupSecretFindings(preview.secret_findings).length === 1 ? '' : 's'} first.</p><p className="mt-1 text-muted-foreground">Skiller never shows the matched value. Lines below identify what needs your decision.</p><div className="mt-2 max-h-40 divide-y divide-destructive/10 overflow-y-auto rounded-lg border border-destructive/15 bg-background/45">{groupSecretFindings(preview.secret_findings).map((group) => <div key={`${group.skillId}-${group.relativePath}`} className="px-2.5 py-2"><div className="flex items-center gap-2"><p className="min-w-0 flex-1 truncate font-medium text-foreground">{group.skillId} <span className="font-normal text-muted-foreground">· {group.relativePath}</span></p><Button size="xs" variant="ghost" className="h-6 shrink-0 px-1.5 text-[11px]" onClick={() => void revealSecretFinding(group.skillId, group.relativePath)}><FolderOpen className="size-3" />Show file</Button></div><div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">{group.findings.map((finding) => <p key={`${finding.line}-${finding.column}-${finding.rule}`}>Line {finding.line} · Possible {secretRuleLabel(finding.rule)}</p>)}</div></div>)}</div></section> : <p className="mt-3 flex items-center gap-1.5 text-muted-foreground"><CheckCircle2 className="size-3.5 text-emerald-500" />No secret patterns found. This review is rebuilt immediately before commit.</p>}</div><div className="mt-3 flex shrink-0 items-center justify-end border-t border-border/60 pt-3"><Button size="sm" className="h-9 px-4" onClick={() => setShowDestination(true)} disabled={preview.secret_findings.length > 0}>Choose a Git home <ChevronRight className="size-3.5" /></Button></div></>}
-			  {showDestination && <div className="min-h-0 flex-1 overflow-y-auto pr-1"><section className="mt-5 rounded-xl border border-border/70 p-3.5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">Who can use this repository?</p><p className="mt-0.5 text-muted-foreground">This controls the library policy; GitHub can also apply the repository visibility for you.</p></div><div className="flex rounded-lg border border-border bg-muted/25 p-0.5"><button type="button" className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${libraryMode === 'private' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => void changeLibraryMode('private')}>Private</button><button type="button" className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${libraryMode === 'public' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => void changeLibraryMode('public')}>Public</button></div></div>{libraryMode === 'public' && <label className="mt-3 grid max-w-xs gap-1 text-[11px] font-medium">License for your library<span className="relative"><select value={libraryLicense} onChange={(event) => setLibraryLicense(event.target.value as typeof libraryLicense)} className="h-9 w-full appearance-none rounded-lg border border-border bg-background px-2.5 pr-9 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/40"><option value="">Choose a license…</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache 2.0</option><option value="CC0-1.0">CC0 1.0</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" /></span><span className="font-normal leading-relaxed text-muted-foreground">Public libraries require an explicit license; Skiller never chooses one for your work.</span></label>}</section><section className="mt-3 grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => { setSetupMode('github'); setRemoteUrl('') }} className={`rounded-xl border p-4 text-left transition-colors ${setupMode === 'github' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 hover:border-primary/45 hover:bg-muted/30'}`}><div className="flex items-center justify-between"><span className="flex items-center gap-2 font-semibold"><Github className="size-4" />GitHub</span><span className="text-[10px] font-medium text-primary">{libraryMode === 'private' ? 'Private by default' : 'Public repository'}</span></div><p className="mt-1.5 leading-relaxed text-muted-foreground">Create a new {libraryMode} repository with your existing GitHub sign-in.</p></button><button type="button" onClick={() => setSetupMode('custom')} className={`rounded-xl border p-4 text-left transition-colors ${setupMode === 'custom' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 hover:border-primary/45 hover:bg-muted/30'}`}><span className="flex items-center gap-2 font-semibold"><Server className="size-4" />Another Git server</span><p className="mt-1.5 leading-relaxed text-muted-foreground">Use GitLab, a self-hosted server, or another remote you control.</p></button></section>
+			  {showDestination && <div className="min-h-0 flex-1 overflow-y-auto pr-1"><section className="mt-5 rounded-xl border border-border/70 p-3.5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">Who can use this repository?</p><p className="mt-0.5 text-muted-foreground">This controls the library policy; GitHub can also apply the repository visibility for you.</p></div><div className="flex rounded-lg border border-border bg-muted/25 p-0.5"><button type="button" className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${libraryMode === 'private' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => void changeLibraryMode('private')}>Private</button><button type="button" className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${libraryMode === 'public' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => void changeLibraryMode('public')}>Public</button></div></div>{libraryMode === 'public' && <label className="mt-3 grid max-w-xs gap-1 text-[11px] font-medium">License for your library<span className="relative"><select value={libraryLicense} onChange={(event) => setLibraryLicense(event.target.value as typeof libraryLicense)} className="h-9 w-full appearance-none rounded-lg border border-border bg-background px-2.5 pr-9 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/40"><option value="">Choose a license…</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache 2.0</option><option value="CC0-1.0">CC0 1.0</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" /></span><span className="font-normal leading-relaxed text-muted-foreground">Public libraries require an explicit license; Skiller never chooses one for your work.</span></label>}</section><section className="mt-3 grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => { setSetupMode('github'); setRemoteUrl(''); setGitHubRepositoryPreview(null) }} className={`rounded-xl border p-4 text-left transition-colors ${setupMode === 'github' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 hover:border-primary/45 hover:bg-muted/30'}`}><div className="flex items-center justify-between"><span className="flex items-center gap-2 font-semibold"><Github className="size-4" />GitHub</span><span className="text-[10px] font-medium text-primary">{libraryMode === 'private' ? 'Private by default' : 'Public repository'}</span></div><p className="mt-1.5 leading-relaxed text-muted-foreground">Create a new {libraryMode} repository with your existing GitHub sign-in.</p></button><button type="button" onClick={() => { setSetupMode('custom'); setGitHubRepositoryPreview(null) }} className={`rounded-xl border p-4 text-left transition-colors ${setupMode === 'custom' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 hover:border-primary/45 hover:bg-muted/30'}`}><span className="flex items-center gap-2 font-semibold"><Server className="size-4" />Another Git server</span><p className="mt-1.5 leading-relaxed text-muted-foreground">Use GitLab, a self-hosted server, or another remote you control.</p></button></section>
 			  {setupMode === 'github' ? (
                 <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-border/60 pt-4">
                   {!remoteUrl ? <>
                     <label className="grid gap-1 text-[11px] text-muted-foreground">Repository name
-                      <input value={repositoryName} onChange={(event) => setRepositoryName(event.target.value)} className="h-8 w-52 rounded-lg border border-border bg-background px-2 text-xs text-foreground" />
+                      <input value={repositoryName} onChange={(event) => { setRepositoryName(event.target.value); setGitHubRepositoryPreview(null) }} className="h-8 w-52 rounded-lg border border-border bg-background px-2 text-xs text-foreground" />
 					  <span className="max-w-52 leading-relaxed">Uses your existing GitHub CLI sign-in. Skiller never receives or stores a GitHub token.</span></label>
-                    <Button size="sm" onClick={createGitHubRepository} disabled={busy !== 'idle' || preview.secret_findings.length > 0 || (libraryMode === 'public' && !libraryLicense)}>Create {libraryMode} GitHub repo</Button>
+					{githubRepositoryPreview && <div className="max-w-56 rounded-lg border border-primary/25 bg-primary/[0.06] px-3 py-2 text-[11px]"><p className="font-semibold text-foreground">Ready to create {githubRepositoryPreview.repository}</p><p className="mt-0.5 leading-relaxed text-muted-foreground">GitHub will create one {githubRepositoryPreview.visibility} repository. No skill is uploaded until the next confirmation.</p></div>}
+                    <Button size="sm" onClick={githubRepositoryPreview ? createGitHubRepository : reviewGitHubRepository} disabled={busy !== 'idle' || preview.secret_findings.length > 0 || (libraryMode === 'public' && !libraryLicense)}>{busy === 'reviewing' ? <><Loader2 className="size-3.5 animate-spin" />Reviewing…</> : busy === 'creating' ? <><Loader2 className="size-3.5 animate-spin" />Creating…</> : githubRepositoryPreview ? `Create ${libraryMode} repository` : 'Review repository'}</Button>
 				  </> : <Button size="sm" onClick={publishBackup} disabled={busy !== 'idle' || preview.secret_findings.length > 0 || (libraryMode === 'public' && !libraryLicense)}>Create library</Button>}
                 </div>
               ) : (

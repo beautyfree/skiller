@@ -340,22 +340,17 @@ export type SyncSkillPreviewJson = {
   body: string;
 };
 
-export type SyncRestorePreviewJson = {
+export type SyncConnectPreviewJson = {
   profile_id: string;
-  /** Stable identifier of the exact remote Git fast-forward reviewed in a disposable checkout. */
-  workspace_plan_id: string;
-  /** Stable identifier of the exact no-write reconciliation preview. */
-  reconciliation_plan_id: string;
-  reconciliation_engine: "dotagent" | "legacy";
-  mode: "private" | "team" | "public";
-  skills: {
-    id: string;
-    kind: "bundled" | "reference" | "skills_sh";
-    action: "create" | "unchanged" | "conflict" | "kept-local";
-    repository?: string | null;
-    ref?: string | null;
-  }[];
-  secret_findings: SyncSecretFindingJson[];
+  plan_id: string;
+  remote_identity: string;
+  agent_slugs: string[];
+};
+
+export type SyncGitHubRepositoryPreviewJson = {
+  plan_id: string;
+  repository: string;
+  visibility: "private" | "public";
 };
 
 export type SyncProfileStatusJson = {
@@ -482,45 +477,21 @@ export type AppRPCSchema = {
 	  sync_keep_external_local_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { kept: string[] } };
       sync_recovery_status: { params: { profileId: string }; response: { pending: boolean } };
       sync_recovery_rollback: { params: { profileId: string }; response: { recovered: boolean } };
-      sync_publish_preview: {
-        params: {
-          profileId: string;
-          mode: "private" | "team" | "public";
-          skillIds: string[];
-          skillKinds?: Record<string, "bundled" | "reference">;
-          agentSlugs?: string[];
-        };
-        response: SyncPublishPreviewJson;
-      };
-      sync_profile_publish: {
-        params: {
-          profileId: string;
-          mode: "private" | "team" | "public";
-          skillIds: string[];
-          skillKinds?: Record<string, "bundled" | "reference">;
-          agentSlugs?: string[];
-          remoteUrl?: string | null;
-          push: boolean;
-          planId: string;
-        };
-        response: { commit: string | null; pushed: boolean };
-      };
-      sync_profile_clone: {
-        params: { profileId: string; remoteUrl: string; agentSlugs?: string[] };
-        response: SyncProfileStatusJson;
-      };
       sync_center_connect: {
-        params: { remoteUrl: string; agentSlugs: string[] };
+        params: { profileId: string; remoteUrl: string; agentSlugs: string[]; planId: string };
         response: SyncProfileStatusJson;
+      };
+      sync_center_connect_preview: {
+        params: { remoteUrl: string; agentSlugs: string[] };
+        response: SyncConnectPreviewJson;
+      };
+      sync_github_create_repo_preview: {
+        params: { repository: string; visibility: "private" | "public" };
+        response: SyncGitHubRepositoryPreviewJson;
       };
       sync_github_create_repo: {
-        params: { repository: string; visibility: "private" | "public" };
+        params: { repository: string; visibility: "private" | "public"; planId: string };
         response: { remoteUrl: string };
-      };
-      sync_pull_preview: { params: { profileId: string }; response: SyncRestorePreviewJson };
-      sync_restore_apply: {
-        params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string };
-        response: { restored: string[]; installed_to_detected_agents: string[] };
       };
       install_skill: { params: { source: SkillSourceParam; targetAgents: string[] }; response: void };
       uninstall_skill: { params: { skillId: string; agentSlug: string }; response: void };

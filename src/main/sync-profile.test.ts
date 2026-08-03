@@ -27,6 +27,7 @@ import {
 	getSyncWorkspaceStatus,
 	initializeSyncWorkspace,
 	inspectSyncWorkspaceFastForward,
+	planSyncWorkspaceClone,
 	planSyncWorkspaceFastForward,
 	pushSyncWorkspace,
 	refreshSyncWorkspaceStatus,
@@ -220,7 +221,12 @@ describe("sync Git workspace", () => {
 		await pushSyncWorkspace(publisher);
 		expect(await getSyncWorkspaceStatus(publisher)).toMatchObject({ changed: false, ahead: 0, remoteUrl: remote });
 
-		await cloneSyncWorkspace(remote, restore);
+		const wrongDestinationPlan = await planSyncWorkspaceClone(remote, join(root, "another-restore"));
+		await expect(cloneSyncWorkspace(remote, restore, wrongDestinationPlan.planId)).rejects.toThrow("changed after review");
+		expect(existsSync(restore)).toBe(false);
+		const clonePlan = await planSyncWorkspaceClone(remote, restore);
+		expect(clonePlan.planId).toMatch(/^[a-f0-9]{64}$/);
+		await cloneSyncWorkspace(remote, restore, clonePlan.planId);
 		expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe("schema_version: 1\n");
 		expect(await simpleGit(restore).raw(["config", "user.email"])).toBe("sync@skiller.local\n");
 	});

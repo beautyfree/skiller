@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { execFile } from "node:child_process";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import simpleGit from "simple-git";
 import {
@@ -16,6 +17,7 @@ import {
 	planLibraryCommit,
 	planLibraryPull,
 	planLibraryPush,
+	type GitClonePlan,
 } from "@beautyfree/dotagent/git-workspace";
 import {
 	applyGitFastForwardPlan,
@@ -85,13 +87,26 @@ export async function initializeSyncWorkspace(workspacePath: string, remoteUrl?:
 	if (remoteUrl) await setSyncWorkspaceRemote(workspacePath, remoteUrl);
 }
 
-export async function cloneSyncWorkspace(remoteUrl: string, workspacePath: string): Promise<void> {
+export async function planSyncWorkspaceClone(remoteUrl: string, workspacePath: string): Promise<GitClonePlan> {
+	assertCredentialFreeGitRemote(remoteUrl);
+	const portableRemote = isAbsolute(remoteUrl) ? pathToFileURL(remoteUrl).href : remoteUrl;
+	return planLibraryClone(portableRemote, workspacePath);
+}
+
+export async function cloneSyncWorkspace(
+	remoteUrl: string,
+	workspacePath: string,
+	expectedPlanId?: string,
+): Promise<void> {
 	assertCredentialFreeGitRemote(remoteUrl);
 	if (existsSync(workspacePath) && readdirSync(workspacePath).length > 0) {
 		throw new Error(`Sync workspace must be empty before clone: ${workspacePath}`);
 	}
+	const plan = await planSyncWorkspaceClone(remoteUrl, workspacePath);
+	if (expectedPlanId && plan.planId !== expectedPlanId) {
+		throw new Error("Clone destination or remote changed after review. Review the connection again.");
+	}
 	try {
-		const plan = await planLibraryClone(remoteUrl, workspacePath);
 		await applyLibraryClone(plan);
 		return;
 	} catch {
@@ -99,7 +114,7 @@ export async function cloneSyncWorkspace(remoteUrl: string, workspacePath: strin
 		// back only to preserve those repositories; the caller still validates the
 		// legacy manifest before exposing the clone as a profile.
 	}
-	await simpleGit().clone(remoteUrl, workspacePath);
+	await simpleGit().clone(plan.remote, workspacePath);
 	const git = gitAt(workspacePath);
 	// A newly created bare/self-hosted remote can still advertise `master` as
 	// HEAD even after a client pushed `main`. Sync profiles always use main, so
@@ -164,15 +179,6 @@ export async function commitSyncWorkspace(workspacePath: string, message: string
 	return result.commit;
 }
 
-export async function fetchSyncWorkspace(workspacePath: string): Promise<void> {
-	if (isCanonicalSyncLibrary(workspacePath)) {
-		await fetchLibrary(workspacePath);
-		return;
-	}
-	const git = gitAt(workspacePath);
-	await git.fetch(["origin", "--prune"]);
-}
-
 /**
  * Metadata-only background check. It deliberately disables terminal prompts:
  * a periodic status refresh must never steal focus or wait for a password.
@@ -220,25 +226,6 @@ export async function applyReviewedSyncWorkspaceFastForward(
 		return applyLibraryPull(canonical);
 	}
 	return applyGitFastForwardPlan(plan);
-}
-
-/**
- * Advance only a clean managed checkout. We never create a merge commit or
- * overwrite a locally-ahead profile while preparing a restore preview.
- */
-export async function fastForwardSyncWorkspace(workspacePath: string): Promise<void> {
-	if (isCanonicalSyncLibrary(workspacePath)) {
-		const visibility = readSyncManifestFromWorkspace(workspacePath).profile.mode;
-		const plan = await planLibraryPull(workspacePath, visibility);
-		if (plan.hasBlockers) throw new Error("Remote canonical library did not pass its safety review");
-		await applyLibraryPull(plan);
-		return;
-	}
-	const git = gitAt(workspacePath);
-	const status = await git.status();
-	if (!status.isClean()) throw new Error("Sync workspace has uncommitted changes; resolve them before pulling");
-	if (status.ahead > 0) throw new Error("Sync workspace has local commits; push or reconcile them before pulling");
-	if (status.behind > 0) await git.merge(["--ff-only", `origin/${status.current || DEFAULT_BRANCH}`]);
 }
 
 /** Push is intentionally separate from commit; callers must show a reviewed plan first. */

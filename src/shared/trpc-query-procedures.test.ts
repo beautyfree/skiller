@@ -13,6 +13,8 @@ describe("tRPC query procedure registry", () => {
 			"scan_sync_inventory",
 			"get_sync_skill_preview",
 			"sync_center_publish_preview",
+			"sync_center_connect_preview",
+			"sync_github_create_repo_preview",
 			"list_sync_profiles",
 		]) {
 			expect(isTrpcQueryProcedure(name)).toBe(true);
@@ -22,6 +24,8 @@ describe("tRPC query procedure registry", () => {
 	test("does not classify state-changing Sync operations as queries", () => {
 		for (const name of [
 			"sync_center_publish",
+			"sync_center_connect",
+			"sync_github_create_repo",
 			"sync_three_way_review",
 			"sync_apply_remote_changes",
 			"sync_publish_local_changes",

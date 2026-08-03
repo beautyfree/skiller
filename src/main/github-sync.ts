@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { computePlanId } from "@beautyfree/dotagent";
 
 const execFileAsync = promisify(execFile);
 
@@ -12,18 +13,40 @@ export function assertGitHubRepositoryName(value: string): string {
 	return name;
 }
 
+export type GitHubSyncRepositoryPlan = {
+	kind: "skiller-github-repository";
+	schemaVersion: 1;
+	planId: string;
+	repository: string;
+	visibility: "private" | "public";
+};
+
+export function planGitHubSyncRepository(
+	repository: string,
+	visibility: "private" | "public",
+): GitHubSyncRepositoryPlan {
+	const payload = {
+		kind: "skiller-github-repository" as const,
+		schemaVersion: 1 as const,
+		repository: assertGitHubRepositoryName(repository),
+		visibility,
+	};
+	return { ...payload, planId: computePlanId(payload) };
+}
+
 /**
  * Uses the user's existing GitHub CLI session. Skiller deliberately never sees
  * or stores a GitHub token; `gh` owns authentication and creates the repo only
  * after an explicit UI action.
  */
-export async function createGitHubSyncRepository(
-	repository: string,
-	visibility: "private" | "public",
-): Promise<string> {
-	const name = assertGitHubRepositoryName(repository);
+export async function createGitHubSyncRepository(plan: GitHubSyncRepositoryPlan): Promise<string> {
+	const current = planGitHubSyncRepository(plan.repository, plan.visibility);
+	if (current.planId !== plan.planId) {
+		throw new Error("GitHub repository name or visibility changed after review. Review it again.");
+	}
+	const name = current.repository;
 	try {
-		await execFileAsync("gh", ["repo", "create", name, `--${visibility}`, "--disable-wiki"]);
+		await execFileAsync("gh", ["repo", "create", name, `--${current.visibility}`, "--disable-wiki"]);
 		const { stdout } = await execFileAsync("gh", ["repo", "view", name, "--json", "sshUrl", "--jq", ".sshUrl"]);
 		const remote = stdout.trim();
 		if (!/^git@github\.com:[^\s]+\.git$/.test(remote)) {

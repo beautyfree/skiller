@@ -23,9 +23,21 @@ export type ReferenceSkillCandidate = {
 	repository: string;
 	ref: string;
 	skillPath: string;
+	contentHash?: string;
+	installationAgentSlugs?: string[];
 };
 
-export type SyncPublishCandidate = BundledSkillCandidate | ReferenceSkillCandidate;
+export type SkillsShSkillCandidate = {
+	kind: "skills_sh";
+	id: string;
+	sourceUrl: string;
+	ref: string;
+	skillPath: string;
+	contentHash?: string;
+	installationAgentSlugs?: string[];
+};
+
+export type SyncPublishCandidate = BundledSkillCandidate | ReferenceSkillCandidate | SkillsShSkillCandidate;
 
 export type SyncPublishPlan = {
 	manifest: SyncManifest;
@@ -63,7 +75,7 @@ export function createSyncPublishPlan(
 	agentPolicy?: SyncManifest["agent_policy"],
 ): SyncPublishPlan {
 	const bundledSkills = candidates
-		.filter((candidate): candidate is BundledSkillCandidate => candidate.kind !== "reference")
+		.filter((candidate): candidate is BundledSkillCandidate => candidate.kind === undefined || candidate.kind === "bundled")
 		.map((candidate) => planBundledSkillExport(candidate.id, candidate.sourcePath));
 	const manifest = createSyncManifest(profileId, mode, agentPolicy);
 	manifest.skills = candidates.map((candidate) => {
@@ -74,6 +86,23 @@ export function createSyncPublishPlan(
 				repository: candidate.repository,
 				ref: candidate.ref,
 				skill_path: candidate.skillPath,
+				...(candidate.contentHash ? { sha256: candidate.contentHash } : {}),
+				...(candidate.installationAgentSlugs?.length
+					? { installations: [...new Set(candidate.installationAgentSlugs)].sort() }
+					: {}),
+			};
+		}
+		if (candidate.kind === "skills_sh") {
+			return {
+				id: candidate.id,
+				kind: "skills_sh" as const,
+				source_url: candidate.sourceUrl,
+				ref: candidate.ref,
+				skill_path: candidate.skillPath,
+				...(candidate.contentHash ? { sha256: candidate.contentHash } : {}),
+				...(candidate.installationAgentSlugs?.length
+					? { installations: [...new Set(candidate.installationAgentSlugs)].sort() }
+					: {}),
 			};
 		}
 		const skill = bundledSkills.find((item) => item.id === candidate.id);

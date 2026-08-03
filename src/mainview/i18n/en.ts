@@ -11,6 +11,7 @@ const en = {
     notifications: "Notifications",
     footerDocs: "Documentation",
     footerRepo: "GitHub",
+    footerFeedback: "Feedback",
     footerFork: "Fork on GitHub",
     starPromptText: "Enjoying Skiller?",
     starPromptAction: "Star on GitHub",
@@ -39,6 +40,13 @@ const en = {
   // === Dashboard ===
   dashboard: {
     title: "Dashboard",
+    setupTitle: "Your setup",
+    agentsReady: "{{detected}} of {{total}} agents ready",
+    skillsAvailable: "{{count}} skills available",
+		protectLibrary: "Set up remote library",
+		remoteLibraryHint: "GitHub or any Git server",
+		openSync: "Open library",
+		reviewSync: "Review changes",
     detectedAgents: "Detected Agents",
     installedSkills: "Installed Skills",
     agents: "Agents",

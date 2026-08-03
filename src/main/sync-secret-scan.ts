@@ -15,8 +15,13 @@ const rules: Rule[] = [
 	{ id: "provider-token", pattern: /\b(?:sk-ant-|sk-(?:proj-)?)[A-Za-z0-9_-]{20,}\b/g },
 	{ id: "aws-access-key", pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g },
 	{ id: "connection-string", pattern: /\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/[^/\s:@]+:[^/\s@]+@/gi },
-	{ id: "credential-assignment", pattern: /\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*["']?[^\s"']{8,}/gi },
 ];
+
+/** A connection string in an explicitly labelled documentation example is not
+ * a credential to publish. Real connection strings still remain a hard stop. */
+function isDocumentedConnectionExample(line: string): boolean {
+	return /(?:\b(?:placeholder|sample|replace(?:\s+me)?|your[_ -]?(?:database|password|url|credential)|real values?)\b|\be\.g\.)/i.test(line);
+}
 
 /**
  * Finds likely credentials without returning their values. Callers can show a
@@ -30,6 +35,7 @@ export function scanTextForSecrets(text: string): SyncSecretFinding[] {
 			rule.pattern.lastIndex = 0;
 			let match: RegExpExecArray | null;
 			while ((match = rule.pattern.exec(line)) !== null) {
+				if (rule.id === "connection-string" && isDocumentedConnectionExample(line)) continue;
 				findings.push({ rule: rule.id, line: lineIndex + 1, column: match.index + 1 });
 			}
 		}

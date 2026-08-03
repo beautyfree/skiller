@@ -17,6 +17,7 @@ import {
   Cloud,
   Trash2,
   ChevronRight,
+  MessageCircle,
 } from 'lucide-react'
 import { AgentIcon } from '@/mainview/components/AgentIcon'
 import { Button } from '@/mainview/components/ui/button'
@@ -33,6 +34,8 @@ import skillerMark from '@/mainview/assets/brand/skiller-mark.png'
 
 const GITHUB_REPO_URL =
   'https://github.com/beautyfree/skiller'
+const FEEDBACK_URL =
+  'https://github.com/beautyfree/skiller/discussions/categories/ideas'
 
 // Hoisted outside component — stable reference, no re-creation per render
 const NAV_LINK_BASE =
@@ -186,7 +189,7 @@ function LayoutInner({
             <span className="grid size-[19px] place-items-center rounded-[5px] bg-[#20242d] shadow-[0_1px_2px_rgba(0,0,0,0.16)]">
               <img src={skillerMark} alt="" draggable={false} className="size-[15px] object-contain" />
             </span>
-            <span className="pb-px text-[13px] font-semibold tracking-[-0.045em] text-foreground/85">Skiller</span>
+            <span className="relative top-px inline-block text-[14px] font-bold leading-none tracking-[-0.055em] text-foreground/90 [font-family:'Bricolage_Grotesque',sans-serif]">Skiller</span>
           </div>
         </div>
       </div>
@@ -396,6 +399,14 @@ function LayoutInner({
                 </button>
               </div>
             )}
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 transition-colors hover:text-muted-foreground/85"
+              onClick={() => openUrl(FEEDBACK_URL)}
+            >
+              <MessageCircle className="size-3" aria-hidden="true" />
+              {t('layout.footerFeedback')}
+            </button>
             <button
               type="button"
               className="transition-colors hover:text-muted-foreground/85"

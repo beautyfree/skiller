@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { scanSyncInventoryFromRoots } from "./sync-inventory";
@@ -40,6 +40,18 @@ describe("sync inventory", () => {
 				{ agentSlug: "claude-code", kind: "agent-local" },
 			]));
 		expect(inventory.collisions).toEqual([{ displayName: "Writing guide", candidateKeys: expect.any(Array) }]);
+		expect(inventory.items.find((item) => item.description === "Write well")?.whenToUse).toBeNull();
+	});
+
+	it("keeps a skill summary for review before it is selected", () => {
+		const codex = root();
+		skill(codex, "adapt", "---\nname: Adapt\ndescription: Adapt an existing interface to a new context.\nwhen_to_use: Use when adapting a feature to another platform.\n---\n# Adapt\n");
+		const inventory = scanSyncInventoryFromRoots([{ agentSlug: "codex", path: codex, kind: "agent-local" }]);
+		expect(inventory.items[0]).toMatchObject({
+			displayName: "Adapt",
+			description: "Adapt an existing interface to a new context.",
+			whenToUse: "Use when adapting a feature to another platform.",
+		});
 	});
 
 	it("keeps a unique skill key stable when its content changes", () => {
@@ -66,5 +78,29 @@ describe("sync inventory", () => {
 
 		expect(inventory.items).toHaveLength(1);
 		expect(inventory.items[0]?.locations).toEqual([{ kind: "shared" }]);
+	});
+
+	it("treats an in-library SKILL.md symlink as an already-covered alias", () => {
+		const shared = root();
+		skill(shared, "gstack/canonical", "---\nname: Canonical skill\ndescription: Shared source\n---\n# Skill\n");
+		mkdirSync(join(shared, "shortcut"), { recursive: true });
+		symlinkSync(join(shared, "gstack/canonical/SKILL.md"), join(shared, "shortcut/SKILL.md"));
+
+		const inventory = scanSyncInventoryFromRoots([{ path: shared, kind: "shared" }]);
+		expect(inventory.items).toHaveLength(1);
+		expect(inventory.invalidPaths).toBe(0);
+		expect(inventory.invalidEntries).toEqual([]);
+		expect(inventory.linkedAliases).toBe(1);
+	});
+
+	it("names a skill when a linked resource prevents a safe export", () => {
+		const shared = root();
+		skill(shared, "unsafe", "---\nname: Unsafe skill\ndescription: Has linked resource\n---\n# Skill\n");
+		symlinkSync(join(shared, "outside"), join(shared, "unsafe/linked-resource"));
+
+		const inventory = scanSyncInventoryFromRoots([{ path: shared, kind: "shared" }]);
+		expect(inventory.items).toHaveLength(0);
+		expect(inventory.invalidPaths).toBe(1);
+		expect(inventory.invalidEntries).toEqual([{ displayName: "unsafe", reason: "Contains a linked file, so Skiller will not follow it outside this skill." }]);
 	});
 });

@@ -1,4 +1,5 @@
 import { useMemo, useState, useRef, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -9,6 +10,8 @@ import {
   Copy,
   X,
   ChevronDown,
+  Cloud,
+  ShieldCheck,
 } from "lucide-react";
 import { getAgentIcon } from "@/mainview/lib/agentIcons";
 import { AgentIcon } from "@/mainview/components/AgentIcon";
@@ -26,6 +29,8 @@ import { Button } from "@/mainview/components/ui/button";
 import SearchInput from "@/mainview/components/SearchInput";
 import { cn, nativeSelectClass, nativeSelectChevronClass } from "@/mainview/lib/utils";
 import { openUrl } from "@/mainview/lib/native";
+import { invoke } from "@/mainview/lib/native";
+import type { SyncProfileStatusJson } from "@/shared/rpc-schema";
 
 export default function Dashboard() {
   const { t } = useTranslation();
@@ -43,6 +48,12 @@ export default function Dashboard() {
     isFetching: skillsFetching,
     refetch: refetchSkills,
   } = useSkills();
+
+  const { data: syncProfiles } = useQuery<SyncProfileStatusJson[]>({
+    queryKey: ["sync-profiles"],
+    queryFn: () => invoke("list_sync_profiles"),
+    staleTime: 30_000,
+  });
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "detected" | "not-installed">("all");
@@ -52,6 +63,8 @@ export default function Dashboard() {
   const detectedAgents = agents?.filter((a) => a.detected) ?? [];
   const totalSkills = skills?.length ?? 0;
   const isRefreshing = agentsFetching || skillsFetching;
+  const syncProfile = syncProfiles?.[0];
+  const syncNeedsReview = Boolean(syncProfile && (syncProfile.changed || syncProfile.behind > 0));
 
   const skillCountByAgent = useMemo(() => {
     const counts = new Map<string, number>();
@@ -103,41 +116,25 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 px-6 py-6 animate-fade-in-up">
-      {/* Stats row */}
-      <div className="grid grid-cols-2 gap-4">
-        <StatCard
-          label={t("dashboard.detectedAgents")}
-          value={agentsLoading ? null : detectedAgents.length}
-          total={agents?.length}
-          icon={<MonitorCheck className="size-4 text-primary/70" />}
-        />
-        <StatCard
-          label={t("dashboard.installedSkills")}
-          value={skillsLoading ? null : totalSkills}
-          icon={<Puzzle className="size-4 text-primary/70" />}
-        />
-      </div>
-
-      {(runtimeAgent || skillsCliLock) && (
-        <div className="rounded-xl border border-border/70 bg-muted/25 px-4 py-3 text-xs text-muted-foreground">
-          {runtimeAgent && (
-            <p>
-              {t("dashboard.runtimeAgent", {
-                agent: runtimeAgent.runtime_name,
-                source: runtimeAgent.source,
-              })}
-            </p>
-          )}
-          {skillsCliLock && (
-            <p className={runtimeAgent ? "mt-1" : undefined}>
-              {t("dashboard.skillsCliLock", {
-                count: skillsCliLock.skills.length,
-                version: skillsCliLock.version,
-              })}
-            </p>
-          )}
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-5">
+        <div>
+          <h1 className="text-lg font-semibold tracking-[-0.03em] text-foreground">{t("dashboard.setupTitle")}</h1>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5"><MonitorCheck className="size-3.5 text-primary" />{agentsLoading ? t("dashboard.scanning") : t("dashboard.agentsReady", { detected: detectedAgents.length, total: agents?.length ?? 0 })}</span>
+            <span className="hidden size-1 rounded-full bg-border sm:block" />
+            <span className="inline-flex items-center gap-1.5"><Puzzle className="size-3.5 text-primary" />{skillsLoading ? t("dashboard.scanning") : t("dashboard.skillsAvailable", { count: totalSkills })}</span>
+            {runtimeAgent && <span className="hidden lg:inline">{t("dashboard.runtimeAgent", { agent: runtimeAgent.runtime_name, source: runtimeAgent.source })}</span>}
+            {skillsCliLock && <span className="hidden lg:inline">{t("dashboard.skillsCliLock", { count: skillsCliLock.skills.length, version: skillsCliLock.version })}</span>}
+          </div>
         </div>
-      )}
+        <div className="flex flex-col items-end gap-1">
+          <Button size="sm" variant={syncProfile && !syncNeedsReview ? "outline" : "default"} onClick={() => navigate("/sync")}>
+            {syncProfile && !syncNeedsReview ? <ShieldCheck className="size-3.5" /> : <Cloud className="size-3.5" />}
+            {syncNeedsReview ? t("dashboard.reviewSync") : syncProfile ? t("dashboard.openSync") : t("dashboard.protectLibrary")}
+          </Button>
+          {!syncProfile && <p className="text-[11px] text-muted-foreground">{t("dashboard.remoteLibraryHint")}</p>}
+        </div>
+      </header>
 
       {/* Agent cards */}
       <div>
@@ -447,39 +444,6 @@ function SkillAgentsBadge({
           +{overflow}
         </span>
       )}
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  total,
-  icon,
-}: {
-  label: string;
-  value: number | null;
-  total?: number;
-  icon: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-lg p-4 glass-surface-tint glass-stat">
-      <div className="flex items-center gap-2 mb-3">
-        <div className="flex size-7 items-center justify-center rounded-xl bg-primary/10">
-          {icon}
-        </div>
-        <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      </div>
-      <div className="flex items-baseline gap-1.5">
-        {value == null ? (
-          <div className="h-8 w-10 rounded animate-skeleton" />
-        ) : (
-          <span className="text-[22px] font-[590] tabular-nums tracking-[-0.02em] leading-7">{value}</span>
-        )}
-        {total != null && value != null && (
-          <span className="text-sm text-muted-foreground/60 font-medium">/ {total}</span>
-        )}
-      </div>
     </div>
   );
 }

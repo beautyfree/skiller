@@ -9,6 +9,8 @@ export type SyncLedger = {
 	profile_id: string;
 	updated_at: string;
 	skills: Record<string, { sha256: string; kept_remote_sha256?: string }>;
+	/** Local-only decision to keep a conflicting external skill at this pin. */
+	external_kept_sources?: Record<string, { repository: string; ref: string }>;
 };
 
 export type ThreeWayAction = "take-remote" | "publish-local" | "unchanged" | "kept-local" | "conflict" | "unmanaged";
@@ -47,7 +49,11 @@ export function writeSyncLedgerAt(path: string, ledger: SyncLedger): void {
 	renameSync(temporary, path);
 }
 
-export function makeSyncLedger(profileId: string, entries: { id: string; sha256: string; keptRemoteSha256?: string }[]): SyncLedger {
+export function makeSyncLedger(
+	profileId: string,
+	entries: { id: string; sha256: string; keptRemoteSha256?: string }[],
+	externalKeptSources?: Record<string, { repository: string; ref: string }>,
+): SyncLedger {
 	return {
 		schema_version: SYNC_LEDGER_VERSION,
 		profile_id: profileId,
@@ -56,6 +62,9 @@ export function makeSyncLedger(profileId: string, entries: { id: string; sha256:
 			sha256: entry.sha256,
 			...(entry.keptRemoteSha256 ? { kept_remote_sha256: entry.keptRemoteSha256 } : {}),
 		}])),
+		...(externalKeptSources && Object.keys(externalKeptSources).length > 0
+			? { external_kept_sources: externalKeptSources }
+			: {}),
 	};
 }
 

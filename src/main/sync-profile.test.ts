@@ -21,6 +21,7 @@ import {
 	initializeSyncWorkspace,
 	pushSyncWorkspace,
 	refreshSyncWorkspaceStatus,
+	resolveGitReferenceToCommit,
 } from "./sync-workspace";
 import simpleGit from "simple-git";
 
@@ -70,18 +71,42 @@ skills:
     skill_path: skills/upstream-skill
 `);
 		expect(manifest.skills).toHaveLength(2);
-		expect(manifest.schema_version).toBe(2);
+		expect(manifest.schema_version).toBe(3);
 	});
 
-	it("reads a v1 profile without changing it until a reviewed v2 publish", () => {
+	it("records a pinned skills.sh dependency without vendoring its files", () => {
+		const manifest = parseSyncManifest(`schema_version: 3
+profile: { id: personal-backup, mode: private }
+agent_policy: { mode: detected }
+skills:
+  - { id: frontend-design, kind: skills_sh, source_url: https://github.com/vercel-labs/agent-skills, ref: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, skill_path: skills/frontend-design, installations: [codex] }
+`);
+		expect(manifest.skills).toEqual([expect.objectContaining({
+			id: "frontend-design",
+			kind: "skills_sh",
+			installations: ["codex"],
+		})]);
+	});
+
+	it("allows a skills.sh skill at the root of its source repository", () => {
+		const manifest = parseSyncManifest(`schema_version: 3
+profile: { id: personal-backup, mode: private }
+agent_policy: { mode: detected }
+skills:
+  - { id: root-skill, kind: skills_sh, source_url: https://github.com/example/root-skill, ref: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, skill_path: . }
+`);
+		expect(manifest.skills[0]).toMatchObject({ kind: "skills_sh", skill_path: "." });
+	});
+
+	it("reads a v1 profile without changing it until a reviewed v3 publish", () => {
 		const legacy = parseSyncManifest(`schema_version: 1
 profile: { id: personal, mode: private }
 agent_policy: { mode: detected }
 skills:
   - { id: writing, kind: bundled, path: skills/writing, sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa }
 `);
-		expect(legacy).toMatchObject({ schema_version: 2, skills: [{ id: "writing" }] });
-		expect(stringifySyncManifest(legacy)).toContain("schema_version: 2");
+		expect(legacy).toMatchObject({ schema_version: 3, skills: [{ id: "writing" }] });
+		expect(stringifySyncManifest(legacy)).toContain("schema_version: 3");
 	});
 
 	it("rejects traversal and duplicate ids", () => {
@@ -117,6 +142,18 @@ describe("sync secret scanner", () => {
 		expect(scanTextForSecrets("-----BEGIN PRIVATE KEY-----\n")[0]?.rule).toBe("private-key");
 		expect(scanTextForSecrets("DATABASE_URL=postgres://user:password@db.example/app\n").map((finding) => finding.rule))
 			.toContain("connection-string");
+	});
+
+	it("does not block documentation examples that merely assign credential-shaped names", () => {
+		expect(scanTextForSecrets("API_KEY=your_key_here\nTOKEN=replace_me\n")).toEqual([]);
+	});
+
+	it("does not block an explicitly labelled connection-string placeholder", () => {
+		expect(scanTextForSecrets("Build-time placeholder: DATABASE_URL=postgres://postgres:postgres@localhost:5432/app\n")).toEqual([]);
+	});
+
+	it("does not block a connection string used in an e.g. documentation example", () => {
+		expect(scanTextForSecrets("Use e.g. DATABASE_URL=postgres://postgres:postgres@localhost:5432/app\n")).toEqual([]);
 	});
 });
 
@@ -217,6 +254,23 @@ describe("sync Git workspace", () => {
 		expect(await getSyncWorkspaceStatus(observer)).toMatchObject({ behind: 1, changed: false });
 		expect(readFileSync(join(observer, "skiller-sync.yaml"), "utf8")).toBe("first\n");
 	});
+
+	it("pins a branch to the remote commit before it enters a portable manifest", async () => {
+		const root = mkdtempSync(join(tmpdir(), "skiller-sync-git-"));
+		tempDirs.push(root);
+		const remote = join(root, "remote.git");
+		const publisher = join(root, "publisher");
+		await simpleGit().raw(["init", "--bare", remote]);
+		await initializeSyncWorkspace(publisher, remote);
+		writeFileSync(join(publisher, "skiller-sync.yaml"), "first\n");
+		await commitSyncWorkspace(publisher, "first");
+		await pushSyncWorkspace(publisher);
+		const expected = (await simpleGit(publisher).revparse(["HEAD"])).trim();
+		await simpleGit(remote).raw(["symbolic-ref", "HEAD", "refs/heads/main"]);
+
+		expect(await resolveGitReferenceToCommit(remote, "main")).toBe(expected);
+		expect(await resolveGitReferenceToCommit(remote, "HEAD")).toBe(expected);
+	});
 });
 
 describe("sync publish plan", () => {
@@ -240,6 +294,46 @@ describe("sync publish plan", () => {
 			ref: "a".repeat(40),
 			skill_path: "skills/upstream",
 		}]);
+	});
+
+	it("records a pinned skills.sh dependency without copying its skill files", () => {
+		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+		tempDirs.push(workspace);
+		const plan = createSyncPublishPlan("personal", "private", [{
+			kind: "skills_sh",
+			id: "frontend-design",
+			sourceUrl: "https://github.com/vercel-labs/agent-skills",
+			ref: "a".repeat(40),
+			skillPath: "skills/frontend-design",
+			installationAgentSlugs: ["codex"],
+		}]);
+		expect(plan.bundledSkills).toEqual([]);
+		applySyncPublishPlan(workspace, plan);
+		expect(existsSync(join(workspace, "skills", "frontend-design"))).toBe(false);
+		expect(parseSyncManifest(readFileSync(join(workspace, "skiller-sync.yaml"), "utf8")).skills).toEqual([{
+			id: "frontend-design",
+			kind: "skills_sh",
+			source_url: "https://github.com/vercel-labs/agent-skills",
+			ref: "a".repeat(40),
+			skill_path: "skills/frontend-design",
+			installations: ["codex"],
+		}]);
+	});
+
+	it("preserves a reviewed external content hash for future conflict detection", () => {
+		const plan = createSyncPublishPlan("personal", "private", [{
+			kind: "reference",
+			id: "upstream",
+			repository: "https://github.com/example/skills.git",
+			ref: "a".repeat(40),
+			skillPath: "skills/upstream",
+			contentHash: "b".repeat(64),
+		}]);
+		expect(plan.manifest.skills).toContainEqual(expect.objectContaining({
+			id: "upstream",
+			kind: "reference",
+			sha256: "b".repeat(64),
+		}));
 	});
 
 	it("requires a clean reviewed plan before writing a bundled skill and manifest", () => {

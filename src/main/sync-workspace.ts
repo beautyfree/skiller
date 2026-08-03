@@ -1,5 +1,7 @@
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { execFile } from "node:child_process";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import simpleGit from "simple-git";
 import { appDataRootPath } from "./settings";
 import { assertCredentialFreeGitRemote, assertSyncStableId } from "./sync-profile";
@@ -7,6 +9,8 @@ import { assertCredentialFreeGitRemote, assertSyncStableId } from "./sync-profil
 const DEFAULT_BRANCH = "main";
 const SYNC_GIT_NAME = "Skiller Sync";
 const SYNC_GIT_EMAIL = "sync@skiller.local";
+const GIT_REFERENCE_RESOLUTION_TIMEOUT_MS = 12_000;
+const execFileAsync = promisify(execFile);
 
 export type SyncWorkspaceStatus = {
 	branch: string;
@@ -136,4 +140,44 @@ export async function pushSyncWorkspace(workspacePath: string): Promise<void> {
 	const git = gitAt(workspacePath);
 	const status = await git.status();
 	await git.push(["-u", "origin", `HEAD:${status.current || DEFAULT_BRANCH}`]);
+}
+
+/**
+ * A branch or tag in an external skill lock is not reproducible. Resolve it
+ * once, without a checkout, before recording it in the portable manifest.
+ * Authentication stays in the user's normal Git credential flow; prompts are
+ * explicitly disabled because this is called while preparing a UI preview.
+ */
+export async function resolveGitReferenceToCommit(repository: string, ref: string): Promise<string> {
+	assertCredentialFreeGitRemote(repository);
+	const requested = ref.trim();
+	if (/^[a-f0-9]{40}$/i.test(requested)) return requested.toLowerCase();
+	if (!requested) throw new Error("An external skill source has no Git revision to pin");
+	let output: string;
+	try {
+		// --refs deliberately omits the symbolic HEAD pseudo-ref. Ask Git for
+		// it explicitly when a Skills CLI lock did not retain a branch/ref.
+		const args = requested === "HEAD"
+			? ["ls-remote", "--symref", repository, "HEAD"]
+			: ["ls-remote", "--refs", repository, requested];
+		const result = await execFileAsync("git", args, {
+			timeout: GIT_REFERENCE_RESOLUTION_TIMEOUT_MS,
+			maxBuffer: 1024 * 1024,
+			env: {
+				...process.env,
+				GIT_TERMINAL_PROMPT: "0",
+				GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o ConnectTimeout=10",
+			},
+		});
+		output = result.stdout;
+	} catch {
+		throw new Error(`Could not resolve ${requested} to an immutable commit. Connect or authenticate, then retry.`);
+	}
+	const commit = requested === "HEAD"
+		? output.match(/^([a-f0-9]{40})\s+HEAD\s*$/m)?.[1]
+		: output.match(/^([a-f0-9]{40})\s/m)?.[1];
+	if (!commit) {
+		throw new Error(`Could not resolve ${requested} to an immutable commit. Check that the source and revision still exist.`);
+	}
+	return commit.toLowerCase();
 }

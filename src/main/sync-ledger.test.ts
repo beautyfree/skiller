@@ -34,4 +34,14 @@ describe("sync three-way ledger", () => {
 		writeSyncLedgerAt(path, ledger);
 		expect(readSyncLedgerAt(path)).toEqual(ledger);
 	});
+
+	it("stores an external keep-local decision only in the local ledger", () => {
+		const ledger = makeSyncLedger("profile", [], {
+			adapt: { repository: "https://github.com/example/skills.git", ref: "a".repeat(40) },
+		});
+		expect(ledger.external_kept_sources?.adapt).toEqual({
+			repository: "https://github.com/example/skills.git",
+			ref: "a".repeat(40),
+		});
+	});
 });

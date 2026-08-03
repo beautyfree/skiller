@@ -1,40 +1,87 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { AlertTriangle, CheckCircle2, ChevronRight, Cloud } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Cloud, FolderOpen, Github, Info, Loader2, Server, X } from 'lucide-react'
 import { invoke } from '@/mainview/lib/native'
 import type { SyncInventoryJson, SyncProfileStatusJson, SyncPublishPreviewJson, SyncThreeWayReviewJson } from '@/shared/rpc-schema'
 import { Button } from '@/mainview/components/ui/button'
 import { useToast } from '@/mainview/components/ToastProvider'
 import { AgentIcon } from '@/mainview/components/AgentIcon'
+import MarkdownContent from '@/mainview/components/MarkdownContent'
 
 function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? '' : 's'}`
 }
 
+function secretRuleLabel(rule: SyncPublishPreviewJson['secret_findings'][number]['rule']): string {
+  return ({
+    'private-key': 'private key',
+    'github-token': 'GitHub token',
+    'provider-token': 'provider token',
+    'aws-access-key': 'AWS access key',
+    'connection-string': 'database connection',
+    'credential-assignment': 'credential-like assignment',
+  } as const)[rule] ?? 'sensitive value'
+}
+
+function groupSecretFindings(findings: SyncPublishPreviewJson['secret_findings']) {
+  const groups = new Map<string, { skillId: string; relativePath: string; findings: typeof findings }>()
+  for (const finding of findings) {
+    const key = `${finding.skill_id}\u0000${finding.relative_path}`
+    const group = groups.get(key)
+    if (group) group.findings.push(finding)
+    else groups.set(key, { skillId: finding.skill_id, relativePath: finding.relative_path, findings: [finding] })
+  }
+  return [...groups.values()]
+}
+
 type InventoryItem = SyncInventoryJson['items'][number]
 
-const InventorySkillRow = memo(function InventorySkillRow({ item, selected, onToggle }: { item: InventoryItem; selected: boolean; onToggle: (key: string) => void }) {
+const InventorySkillRow = memo(function InventorySkillRow({ item, selected, inspected, onToggle, onInspect }: { item: InventoryItem; selected: boolean; inspected: boolean; onToggle: (key: string) => void; onInspect: (key: string) => void }) {
 	const agentSlugs = useMemo(() => [...new Set(item.locations.flatMap((location) => location.agent_slug ? [location.agent_slug] : []))], [item.locations])
 	const isShared = item.locations.some((location) => location.kind === 'shared')
-	return <label className="flex min-h-12 cursor-pointer items-center gap-3 px-2 py-2.5 text-xs hover:bg-muted/30">
-		<input className="cursor-pointer" type="checkbox" checked={selected} onChange={() => onToggle(item.candidate_key)} />
-		<Cloud className="size-3.5 shrink-0 text-muted-foreground" />
-		<span className="min-w-0 flex-1 break-words font-medium text-foreground">{item.display_name}</span>
+	return <div className={`flex min-h-12 items-center gap-2 px-2 py-2 text-xs ${inspected ? 'bg-primary/8' : 'hover:bg-muted/30'}`}>
+		<label className="flex shrink-0 cursor-pointer items-center py-0.5" aria-label={`Select ${item.display_name}`}>
+			<input className="cursor-pointer" type="checkbox" checked={selected} onChange={() => onToggle(item.candidate_key)} />
+		</label>
+		<button type="button" className="min-w-0 flex-1 break-words text-left font-medium text-foreground outline-none hover:text-primary focus-visible:rounded focus-visible:ring-2 focus-visible:ring-ring/60" onClick={() => onInspect(item.candidate_key)}><span>{item.display_name}</span>{item.source.kind === 'skills_sh' && <span className="ml-1.5 inline-flex rounded-sm bg-muted px-1.5 py-0.5 align-middle text-[9px] font-semibold tracking-[0.08em] text-muted-foreground">skills.sh</span>}{item.source.kind === 'git_reference' && <span className="ml-1.5 inline-flex rounded-sm bg-muted px-1.5 py-0.5 align-middle text-[9px] font-semibold tracking-[0.08em] text-muted-foreground">Git</span>}</button>
 		<span className="flex shrink-0 items-center gap-1.5" aria-label={agentSlugs.length ? `Linked to ${agentSlugs.join(', ')}` : isShared ? 'Shared skills library' : undefined}>
 			{isShared && <span className="text-[10px] font-medium text-muted-foreground">Shared</span>}
 			{agentSlugs.map((slug) => <span key={slug} title={slug}><AgentIcon slug={slug} className="size-4" /></span>)}
 		</span>
-	</label>
+	</div>
 })
 
+function ReviewSkillDetail({ item, onClose }: { item: InventoryItem; onClose: () => void }) {
+	const agentSlugs = [...new Set(item.locations.flatMap((location) => location.agent_slug ? [location.agent_slug] : []))]
+	const isShared = item.locations.some((location) => location.kind === 'shared')
+	const { data: preview, isLoading, error } = useQuery<{ skill_id: string; body: string }>({
+		queryKey: ['sync-skill-preview', item.candidate_key],
+		queryFn: () => invoke('get_sync_skill_preview', { skillId: item.candidate_key }),
+		staleTime: Infinity,
+		retry: false,
+	})
+	return <aside className="flex min-h-0 w-[min(26rem,46%)] shrink-0 flex-col border-l border-border/60 bg-muted/10">
+		<div className="flex shrink-0 items-center justify-between border-b border-border/60 px-4 py-3"><div className="flex items-center gap-2"><Info className="size-4 text-muted-foreground" /><p className="text-sm font-medium">Skill details</p></div><button type="button" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={onClose} aria-label="Close skill details"><X className="size-4" /></button></div>
+		<div className="min-h-0 flex-1 overflow-y-auto p-4">
+			<h3 className="text-base font-semibold leading-tight">{item.display_name}</h3>
+			{item.description && <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{item.description}</p>}
+			{item.when_to_use && <p className="mt-3 text-xs leading-relaxed text-muted-foreground"><span className="font-medium text-foreground">Use it for:</span> {item.when_to_use}</p>}
+			<div className="mt-4 border-y border-border/60 py-3 text-[11px] text-muted-foreground">{item.source.kind === 'skills_sh' ? <><p className="font-medium text-foreground">Installed through skills.sh</p><p className="mt-1 leading-relaxed">Skiller will record this skill’s source and pin it to one Git commit before publishing. It will not upload a duplicate copy.</p></> : item.source.kind === 'git_reference' ? <><p className="font-medium text-foreground">Installed from a Git source</p><p className="mt-1 leading-relaxed">Skiller will save its pinned repository reference instead of flattening this skill into a duplicate folder.</p></> : <><p className="font-medium text-foreground">Local skill</p><p className="mt-1 leading-relaxed">This skill is not linked to a known external source, so its reviewed files can be stored in your personal library.</p></>}</div>
+			<div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 py-3 text-[11px] text-muted-foreground"><span>{isShared ? 'Shared library' : 'Agent-specific'}</span>{agentSlugs.map((slug) => <span key={slug} className="inline-flex items-center gap-1"><AgentIcon slug={slug} className="size-3.5" />{slug}</span>)}</div>
+			<div className="mt-5"><p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">SKILL.md</p>{isLoading ? <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Loading local skill…</div> : error ? <p className="text-xs text-destructive">Could not load this local SKILL.md. Refresh the library review and try again.</p> : preview?.body.trim() ? <MarkdownContent content={preview.body} /> : <p className="text-xs italic text-muted-foreground">This SKILL.md does not contain instructions after its metadata.</p>}</div>
+		</div>
+	</aside>
+}
+
 /**
- * Sync has its own product surface because it describes an evolving protected
+ * Sync has its own product surface because it describes an evolving personal
  * state, not an application preference. Setup actions are deliberately kept
  * out of the first view until their reviewed plan is ready to apply.
  */
 export default function SyncCenter() {
   const [showInventory, setShowInventory] = useState(false)
+  const [inspectedSkillKey, setInspectedSkillKey] = useState<string | null>(null)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [selectionReady, setSelectionReady] = useState(false)
   const [setupMode, setSetupMode] = useState<'github' | 'custom' | null>(null)
@@ -42,9 +89,10 @@ export default function SyncCenter() {
   const [remoteUrl, setRemoteUrl] = useState('')
   const [preview, setPreview] = useState<SyncPublishPreviewJson | null>(null)
   const [remoteReview, setRemoteReview] = useState<SyncThreeWayReviewJson | null>(null)
-  const [remoteSelections, setRemoteSelections] = useState<string[]>([])
+	const [remoteSelections, setRemoteSelections] = useState<string[]>([])
 	const [localSelections, setLocalSelections] = useState<string[]>([])
 	const [keepLocalSelections, setKeepLocalSelections] = useState<string[]>([])
+	const [keepExternalSelections, setKeepExternalSelections] = useState<string[]>([])
   const [busy, setBusy] = useState<'idle' | 'reviewing' | 'creating' | 'publishing'>('idle')
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -68,6 +116,8 @@ export default function SyncCenter() {
 	  getItemKey: (index) => inventoryItems[index]?.candidate_key ?? String(index),
 	})
 	const selectedKeySet = useMemo(() => new Set(selectedKeys), [selectedKeys])
+	const inspectedSkill = useMemo(() => inventoryItems.find((item) => item.candidate_key === inspectedSkillKey) ?? null, [inventoryItems, inspectedSkillKey])
+	const externalConflicts = useMemo(() => remoteReview?.skills.filter((skill) => skill.kind !== 'bundled' && skill.action === 'conflict') ?? [], [remoteReview])
 	const toggleSelectedKey = useCallback((key: string) => {
 	  setSelectedKeys((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key])
 	}, [])
@@ -76,7 +126,7 @@ export default function SyncCenter() {
     queryFn: () => invoke('sync_recovery_status', { profileId: profile!.profile_id }),
     enabled: Boolean(profile),
   })
-  const protectedCount = inventory?.items.length ?? 0
+	const librarySkillCount = inventory?.items.length ?? 0
 	const agentCount = new Set(inventory?.items.flatMap((item) => item.locations.flatMap((location) => location.agent_slug ? [location.agent_slug] : [])) ?? []).size
 	const isLanding = !profile && !profilesLoading && !showInventory
 
@@ -98,9 +148,18 @@ export default function SyncCenter() {
     }
   }
 
+  async function revealSecretFinding(skillId: string, relativePath: string) {
+    try {
+      await invoke('reveal_sync_secret_finding', { skillId, relativePath })
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), 'destructive')
+    }
+  }
+
 	useEffect(() => {
 	  const returnHome = () => {
 		setShowInventory(false)
+		setInspectedSkillKey(null)
 		setPreview(null)
 		setSetupMode(null)
 		setRemoteUrl('')
@@ -114,7 +173,7 @@ export default function SyncCenter() {
     try {
       const result = await invoke('sync_github_create_repo', { repository: repositoryName, visibility: 'private' })
       setRemoteUrl(result.remoteUrl)
-      toast('Private GitHub repository created. Review and create the backup when ready.')
+		toast('Private GitHub repository created. Your library is ready to create.')
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), 'destructive')
     } finally {
@@ -127,7 +186,7 @@ export default function SyncCenter() {
     setBusy('publishing')
     try {
       await invoke('sync_center_publish', { remoteUrl, selectedKeys })
-      toast('Your agent library is now protected.')
+		toast('Your skill library is ready.')
       setPreview(null)
       setSetupMode(null)
       await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
@@ -145,9 +204,10 @@ export default function SyncCenter() {
     try {
       const result = await invoke('sync_three_way_review', { profileId: profile.profile_id })
       setRemoteReview(result)
-      setRemoteSelections(result.skills.filter((skill) => skill.action === 'take-remote').map((skill) => skill.id))
+	  setRemoteSelections(result.skills.filter((skill) => skill.action === 'take-remote').map((skill) => skill.id))
 	  setLocalSelections(result.skills.filter((skill) => skill.action === 'publish-local').map((skill) => skill.id))
-	  setKeepLocalSelections(result.skills.filter((skill) => skill.action === 'conflict' || skill.action === 'unmanaged').map((skill) => skill.id))
+	  setKeepLocalSelections(result.skills.filter((skill) => skill.kind === 'bundled' && (skill.action === 'conflict' || skill.action === 'unmanaged')).map((skill) => skill.id))
+	  setKeepExternalSelections(result.skills.filter((skill) => skill.kind !== 'bundled' && skill.action === 'conflict').map((skill) => skill.id))
       setShowInventory(true)
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), 'destructive')
@@ -180,6 +240,21 @@ export default function SyncCenter() {
 		toast(`Kept ${result.kept.length} local change${result.kept.length === 1 ? '' : 's'} without modifying the remote.`)
 		setRemoteReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
 		setKeepLocalSelections([])
+	  } catch (error) {
+		toast(error instanceof Error ? error.message : String(error), 'destructive')
+	  } finally {
+		setBusy('idle')
+	  }
+	}
+
+	async function keepSelectedExternalChanges() {
+	  if (!profile || keepExternalSelections.length === 0) return
+	  setBusy('publishing')
+	  try {
+		const result = await invoke('sync_keep_external_local_changes', { profileId: profile.profile_id, skillIds: keepExternalSelections })
+		toast(`Kept ${result.kept.length} external local change${result.kept.length === 1 ? '' : 's'} on this computer.`)
+		setRemoteReview(await invoke('sync_three_way_review', { profileId: profile.profile_id }))
+		setKeepExternalSelections([])
 	  } catch (error) {
 		toast(error instanceof Error ? error.message : String(error), 'destructive')
 	  } finally {
@@ -253,18 +328,24 @@ export default function SyncCenter() {
   return (
     <div className={isLanding ? 'h-full w-full animate-fade-in-up' : `mx-auto w-full max-w-4xl px-6 py-8 animate-fade-in-up ${showInventory ? 'flex h-full min-h-0 flex-col overflow-hidden pb-3' : 'min-h-full pb-12'}`}>
       {isLanding && (
-        <section className="relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden bg-primary px-6 py-10 text-center text-primary-foreground">
+        <section className="sync-center-hero relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden px-6 py-10 text-center text-primary-foreground">
           <div className="absolute -left-28 -top-24 size-80 rounded-full border border-white/15" />
           <div className="absolute -bottom-36 -right-20 size-[28rem] rounded-full border border-white/12" />
           <div className="relative max-w-2xl">
-            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-primary-foreground/70"><Cloud className="size-3.5" /> Sync Center</div>
-            <h1 className="mt-6 text-balance text-4xl font-semibold tracking-[-0.055em] sm:text-5xl">Keep your agent setup<br />ready for anything.</h1>
-            <p className="mx-auto mt-5 max-w-xl text-sm leading-relaxed text-primary-foreground/82 sm:text-base">Your skills, connections and hard-won workflow belong in one private library — ready when you change computers, add an agent, or need to recover fast.</p>
-            <div className="mt-8"><Button size="lg" className="bg-background text-foreground shadow-none hover:bg-background/90" onClick={() => setShowInventory(true)}>Protect this setup <ChevronRight className="size-4" /></Button></div>
+			<div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-white"><Cloud className="size-3.5" /> Sync Center</div>
+			<h1 className="mt-6 text-balance text-4xl font-semibold tracking-[-0.055em] text-white sm:text-5xl">Keep your agent skills<br />ready for anything.</h1>
+			<p className="mx-auto mt-5 max-w-xl text-sm leading-relaxed text-primary-foreground/82 sm:text-base">Your hard-won skills, collected in one library you can carry to a new computer or share when you choose.</p>
+            <div className="mt-8 flex flex-col items-center">
+			  <Button size="lg" className="sync-library-cta h-11 px-5" onClick={() => setShowInventory(true)}>
+				<span className="text-[13px] font-semibold">Create my library</span>
+                <ChevronRight className="ml-0.5 size-4" />
+              </Button>
+			  <p className="mt-2 text-[11px] text-primary-foreground/68">Nothing is created or uploaded until you choose a destination.</p>
+            </div>
             <div className="mt-9 flex flex-wrap justify-center gap-x-7 gap-y-2 text-xs text-primary-foreground/76">
-              <span>{inventoryLoading ? 'Scanning your setup…' : `${plural(protectedCount, 'skill')} ready to protect`}</span>
+			  <span>{inventoryLoading ? 'Scanning your setup…' : `${plural(librarySkillCount, 'skill')} ready for your library`}</span>
 			  {agentCount > 0 && <span>{inventoryLoading ? '' : `${plural(agentCount, 'agent')} linked`}</span>}
-              <span>Private by default</span>
+			  <span>Private by default · share when ready</span>
             </div>
           </div>
         </section>
@@ -274,9 +355,9 @@ export default function SyncCenter() {
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">Sync Center</p>
-            <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-foreground">Your agent library</h1>
+            <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-foreground">Your skill library</h1>
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400"><CheckCircle2 className="size-3.5" /> Protected</div>
+		  <div className="flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400"><CheckCircle2 className="size-3.5" /> In sync</div>
         </header>
       )}
 
@@ -284,7 +365,7 @@ export default function SyncCenter() {
         <section className="mt-5 rounded-2xl border border-border bg-card p-5 shadow-(--ds-shadow-layered-subtle)">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h2 className="text-sm font-semibold">{profile.skill_count} protected skills</h2>
+			  <h2 className="text-sm font-semibold">{profile.skill_count} skills in your library</h2>
               <p className="mt-1 text-xs text-muted-foreground">
                 {profile.changed ? 'Your library has local changes to review.' : 'Your local library is clean.'}
                 {profile.behind > 0 ? ` ${profile.behind} remote change${profile.behind === 1 ? '' : 's'} available.` : ''}
@@ -314,7 +395,7 @@ export default function SyncCenter() {
 
       {showInventory && (
         <section className={`${!profile ? 'mt-0 flex min-h-0 flex-1 flex-col overflow-hidden' : 'mt-5'} px-1`}>
-          <div className="flex items-start justify-between gap-4">
+          {!preview && <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Step 1 of 2</p>
               <h2 className="mt-1 text-lg font-semibold tracking-[-0.02em]">Review your library</h2>
@@ -322,77 +403,81 @@ export default function SyncCenter() {
                 Identical skills are grouped once. A skill in an individual agent folder is not automatically moved or overwritten.
               </p>
             </div>
-          </div>
-		  {!profile && !preview && (inventory?.invalid_paths || inventory?.collisions.length) ? (
-			<div className="order-1 mt-3 space-y-2">
-			  {inventory?.invalid_paths ? <div className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" /><p>{inventory.invalid_paths} unreadable or invalid skill folders were left untouched and will not be included.</p></div> : null}
-			  {(inventory?.collisions.length ?? 0) > 0 && <div className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" /><p>{plural(inventory?.collisions.length ?? 0, 'skill')} have the same name but different contents. Choose the version to protect; Skiller will not decide by filename.</p></div>}
-			</div>
-		  ) : null}
+          </div>}
 		  {!profile && !preview && (
-			<div className="order-3 mt-4 flex w-full shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 px-1 pt-3">
-			  <p className="text-xs font-semibold">{selectedKeys.length} skills selected <span className="ml-1 font-normal text-muted-foreground">Ready for the next step</span></p>
+			<div className="order-4 mt-4 flex w-full shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 px-1 pt-3">
+			  <p className="text-xs font-semibold">{selectedKeys.length} skills selected <span className="ml-1 font-normal text-muted-foreground">{librarySkillCount > selectedKeys.length ? `${librarySkillCount - selectedKeys.length} stay only on this computer` : 'Ready for the next step'}</span></p>
 			  <div className="flex gap-2">
-				<Button size="lg" onClick={prepareStorageChoice} disabled={busy !== 'idle' || selectedKeys.length === 0}>Continue <ChevronRight className="size-3.5" /></Button>
+				<Button size="lg" onClick={prepareStorageChoice} disabled={busy !== 'idle' || selectedKeys.length === 0}>{busy === 'reviewing' ? <><Loader2 className="size-3.5 animate-spin" />Preparing your library…</> : <>Choose a home <ChevronRight className="size-3.5" /></>}</Button>
 			</div>
 			</div>
 		  )}
 
-		  {!preview && <div ref={inventoryScrollRef} className="order-2 mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-			<div className="relative w-full" style={{ height: inventoryVirtualizer.getTotalSize() }}>
+		  {!preview && <div className="order-2 mt-4 flex min-h-0 flex-1 overflow-hidden">
+			<div ref={inventoryScrollRef} className="min-w-0 flex-1 overflow-y-auto pr-1"><div className="relative w-full" style={{ height: inventoryVirtualizer.getTotalSize() }}>
 			{inventoryVirtualizer.getVirtualItems().map((virtualItem) => {
 			  const item = inventoryItems[virtualItem.index]
 			  if (!item) return null
 			  return <div key={virtualItem.key} className="absolute left-0 top-0 w-full border-b border-border/60" style={{ transform: `translateY(${virtualItem.start}px)` }}>
-				<InventorySkillRow item={item} selected={selectedKeySet.has(item.candidate_key)} onToggle={toggleSelectedKey} />
+				<InventorySkillRow item={item} selected={selectedKeySet.has(item.candidate_key)} inspected={item.candidate_key === inspectedSkillKey} onToggle={toggleSelectedKey} onInspect={setInspectedSkillKey} />
 			  </div>
 			})}
-			{!inventoryLoading && protectedCount === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No valid skills were found yet.</p>}
-			</div>
+			{!inventoryLoading && librarySkillCount === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No valid skills were found yet.</p>}
+			</div></div>
+			{inspectedSkill && <ReviewSkillDetail item={inspectedSkill} onClose={() => setInspectedSkillKey(null)} />}
 		  </div>}
+		  {!profile && !preview && (inventory?.invalid_paths || inventory?.collisions.length || inventory?.linked_aliases) ? <div className="order-3 mt-3 shrink-0 space-y-2 border-t border-border/60 px-1 pt-3 text-xs">
+		  {inventory?.invalid_paths ? <div className="flex items-start gap-2 text-amber-800 dark:text-amber-200"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" /><div><p><span className="font-semibold">{plural(inventory.invalid_paths, 'folder')} wasn’t included.</span> It stays unchanged on this computer.</p><details className="mt-1.5"><summary className="cursor-pointer font-medium text-amber-900 underline-offset-2 hover:underline dark:text-amber-100">Why?</summary><ul className="mt-1.5 space-y-1 border-l border-amber-500/30 pl-2.5">{(inventory.invalid_entries ?? []).map((entry) => <li key={`${entry.display_name}-${entry.reason}`}><span className="font-medium">{entry.display_name}</span><span className="text-amber-800/80 dark:text-amber-200/80"> has a linked file. Skiller leaves it local rather than following it outside this folder.</span></li>)}</ul><p className="mt-2 leading-relaxed text-amber-800/80 dark:text-amber-200/80">To include it later, replace the linked file with a regular file inside the skill folder.</p></details></div></div> : null}
+			{(inventory?.collisions.length ?? 0) > 0 && <div className="flex items-start gap-2 text-amber-800 dark:text-amber-200"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" /><p>{plural(inventory?.collisions.length ?? 0, 'skill')} have the same name but different contents. Choose the version to include; Skiller will not decide by filename.</p></div>}
+			{(inventory?.linked_aliases ?? 0) > 0 && <div className="flex items-start gap-2 text-muted-foreground"><CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" /><p>{plural(inventory?.linked_aliases ?? 0, 'agent link')} already use this library.</p></div>}
+		  </div> : null}
           {remoteReview && (
             <div className="mt-4 rounded-xl border border-border bg-muted/25 p-3 text-xs">
-              <p className="font-semibold">Change review</p>
-              <div className="mt-2 space-y-1 text-muted-foreground">
-                {remoteReview.skills.map((skill) => {
-				  const selectable = skill.action === 'take-remote' || skill.action === 'publish-local' || skill.action === 'conflict' || skill.action === 'unmanaged'
-				  const selected = skill.action === 'take-remote' ? remoteSelections : skill.action === 'publish-local' ? localSelections : keepLocalSelections
-				  const setSelected = skill.action === 'take-remote' ? setRemoteSelections : skill.action === 'publish-local' ? setLocalSelections : setKeepLocalSelections
-                  return <label key={skill.id} className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-background/60">
+			  <p className="font-semibold">Change review</p>
+			  <div className="mt-2 space-y-1 text-muted-foreground">
+				{remoteReview.skills.map((skill) => {
+				  const isExternalConflict = skill.kind !== 'bundled' && skill.action === 'conflict'
+				  const selectable = skill.action === 'take-remote' || skill.action === 'publish-local' || ((skill.action === 'conflict' || skill.action === 'unmanaged') && skill.kind === 'bundled') || isExternalConflict
+				  const selected = skill.action === 'take-remote' ? remoteSelections : skill.action === 'publish-local' ? localSelections : isExternalConflict ? keepExternalSelections : keepLocalSelections
+				  const setSelected = skill.action === 'take-remote' ? setRemoteSelections : skill.action === 'publish-local' ? setLocalSelections : isExternalConflict ? setKeepExternalSelections : setKeepLocalSelections
+				  return <label key={skill.id} className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-background/60">
 					<input type="checkbox" disabled={!selectable} checked={selectable && selected.includes(skill.id)} onChange={() => setSelected((current) => current.includes(skill.id) ? current.filter((id) => id !== skill.id) : [...current, skill.id])} />
-                    <span className="min-w-0 flex-1 truncate">{skill.id}</span>
-                    <span>{skill.action.replace('-', ' ')}</span>
-					{skill.action === 'conflict' && <Button size="xs" variant="ghost" className="h-6 px-1.5 text-[10px]" onClick={(event) => { event.preventDefault(); void useRemoteForConflict(skill.id) }} disabled={busy !== 'idle'}>Use remote</Button>}
-                  </label>
-                })}
-              </div>
-			  <p className="mt-2 text-muted-foreground">Remote-only changes can be applied; local-only changes can be published. For a conflict, keep local records this reviewed choice without touching the remote; a new remote revision will ask again.</p>
+					<span className="min-w-0 flex-1"><span className="block truncate">{skill.id}</span>{skill.source && <span className="mt-0.5 block truncate text-[10px] text-muted-foreground/80" title={`${skill.source.repository} @ ${skill.source.ref}`}>{skill.kind === 'skills_sh' ? 'skills.sh' : 'Git'} · {skill.source.ref.slice(0, 8)}</span>}</span>
+					<span>{skill.action.replace('-', ' ')}</span>
+					{skill.action === 'conflict' && skill.kind === 'bundled' && <Button size="xs" variant="ghost" className="h-6 px-1.5 text-[10px]" onClick={(event) => { event.preventDefault(); void useRemoteForConflict(skill.id) }} disabled={busy !== 'idle'}>Use remote</Button>}
+				  </label>
+				})}
+			  </div>
+			  {externalConflicts.length > 0 && <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/8 px-3 py-2.5 text-amber-950 dark:text-amber-100"><p className="font-medium">{plural(externalConflicts.length, 'external skill')} need{externalConflicts.length === 1 ? 's' : ''} your decision</p><p className="mt-1 leading-relaxed text-amber-900/80 dark:text-amber-200/80">Their local folders differ from the pinned Git source above. Skiller has not changed them. Inspect the local copy, then either keep it as your own skill or move it aside before reviewing again to install the pinned source.</p></div>}
+			  <p className="mt-2 text-muted-foreground">Remote-only changes can be applied; local-only changes can be published. A bundled-skill conflict can use the reviewed remote copy. External-source conflicts stay untouched.</p>
               {remoteSelections.length > 0 && <Button size="sm" className="mt-3" onClick={applySelectedRemoteChanges} disabled={busy !== 'idle'}>Apply selected remote changes</Button>}
 			  {localSelections.length > 0 && <Button size="sm" variant="outline" className="mt-3 ml-2" onClick={publishSelectedLocalChanges} disabled={busy !== 'idle'}>Publish selected local changes</Button>}
 			  {keepLocalSelections.length > 0 && <Button size="sm" variant="outline" className="mt-3 ml-2" onClick={keepSelectedLocalChanges} disabled={busy !== 'idle'}>Keep selected local changes</Button>}
+			  {keepExternalSelections.length > 0 && <Button size="sm" variant="outline" className="mt-3 ml-2" onClick={keepSelectedExternalChanges} disabled={busy !== 'idle'}>Keep selected external local skills</Button>}
             </div>
           )}
           {preview && (
-            <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/5 p-5 text-xs">
-			  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Step 2 of 2</p>
-              <p className="mt-1 text-base font-semibold">Choose where to keep your library</p>
-			  <p className="mt-2 font-medium">{preview.skills.length} skills · {preview.skills.reduce((total, skill) => total + skill.file_count, 0)} files</p>
-              {preview.secret_findings.length > 0 ? <p className="mt-2 text-destructive">Blocked by {preview.secret_findings.length} possible secret(s). Remove them before creating a backup.</p> : <p className="mt-2 text-muted-foreground">No secret patterns found. This review is rebuilt immediately before commit.</p>}
-			  {!setupMode ? <div className="mt-4 flex flex-wrap gap-2"><Button size="sm" onClick={() => setSetupMode('github')} disabled={preview.secret_findings.length > 0}>Continue with GitHub <ChevronRight className="size-3.5" /></Button><Button size="sm" variant="outline" onClick={() => setSetupMode('custom')} disabled={preview.secret_findings.length > 0}>Other Git server</Button></div> : setupMode === 'github' ? (
-                <div className="mt-3 flex flex-wrap items-end gap-2">
+            <div className="mt-0 text-xs">
+			  <div className="flex items-start justify-between gap-4"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Step 2 of 2</p><h2 className="mt-1 text-lg font-semibold tracking-[-0.02em]">Choose where your library lives</h2><p className="mt-1 leading-relaxed text-muted-foreground">Review what will travel with you, then choose a Git home. Nothing is created until the final confirmation.</p></div><Button variant="ghost" size="sm" className="h-7 shrink-0 px-2" onClick={() => { setPreview(null); setSetupMode(null); setRemoteUrl('') }}><ChevronLeft className="size-3.5" />Back to skills</Button></div>
+			  <section className="mt-5"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Library plan</p><div className="mt-2 grid overflow-hidden rounded-xl border border-border/70 bg-background/35 sm:grid-cols-3"><div className="border-b border-border/60 px-4 py-3.5 sm:border-b-0 sm:border-r"><p className="text-lg font-semibold tracking-[-0.02em]">{preview.skills.length}</p><p className="mt-0.5 font-medium text-foreground">Local skills</p><p className="mt-1 text-muted-foreground">{preview.skills.reduce((total, skill) => total + skill.file_count, 0)} files will be copied into your library.</p></div><div className="border-b border-border/60 px-4 py-3.5 sm:border-b-0 sm:border-r"><p className="text-lg font-semibold tracking-[-0.02em]">{preview.skills_sh.length + preview.references.length}</p><p className="mt-0.5 font-medium text-foreground">Linked sources</p><p className="mt-1 text-muted-foreground">{preview.skills_sh.length} from skills.sh · {preview.references.length} from Git, pinned instead of copied.</p></div><div className={`px-4 py-3.5 ${preview.unresolved_sources?.length ? 'bg-amber-500/5' : ''}`}><p className={`text-lg font-semibold tracking-[-0.02em] ${preview.unresolved_sources?.length ? 'text-amber-800 dark:text-amber-200' : ''}`}>{preview.unresolved_sources?.length ?? 0}</p><p className="mt-0.5 font-medium text-foreground">Staying local</p><p className="mt-1 text-muted-foreground">{preview.unresolved_sources?.length ? 'Their source needs attention first.' : 'Everything selected can be included.'}</p></div></div></section>
+			  {preview.unresolved_sources && preview.unresolved_sources.length > 0 && <section className="mt-4 rounded-xl border border-amber-400/35 bg-amber-500/[0.07] px-4 py-3.5 text-amber-950 dark:text-amber-100"><div className="flex gap-3"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-300" /><div className="min-w-0"><p className="font-semibold">{plural(preview.unresolved_sources.length, 'external skill')} will stay on this computer</p><p className="mt-1 leading-relaxed text-amber-900/80 dark:text-amber-200/80">Skiller could not verify the source, so it will neither upload nor change these skills. Reconnect or authenticate their Git source, then refresh this review when you want to include them.</p><details className="mt-3"><summary className="cursor-pointer font-medium text-amber-900 underline-offset-2 hover:underline dark:text-amber-100">View affected skills ({preview.unresolved_sources.length})</summary><div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-amber-900/80 dark:text-amber-200/80">{preview.unresolved_sources.map((source) => <span key={`${source.kind}-${source.id}`}>{source.id}</span>)}</div></details></div></div></section>}
+			  {preview.secret_findings.length > 0 ? <section className="mt-4 border-y border-destructive/25 py-3"><p className="font-medium text-destructive">Backup is paused: review {preview.secret_findings.length} possible secret{preview.secret_findings.length === 1 ? '' : 's'} in {groupSecretFindings(preview.secret_findings).length} file{groupSecretFindings(preview.secret_findings).length === 1 ? '' : 's'} first.</p><p className="mt-1 text-muted-foreground">Skiller never shows the matched value. Lines below identify what needs your decision.</p><div className="mt-2 max-h-40 divide-y divide-destructive/10 overflow-y-auto rounded-lg border border-destructive/15 bg-background/45">{groupSecretFindings(preview.secret_findings).map((group) => <div key={`${group.skillId}-${group.relativePath}`} className="px-2.5 py-2"><div className="flex items-center gap-2"><p className="min-w-0 flex-1 truncate font-medium text-foreground">{group.skillId} <span className="font-normal text-muted-foreground">· {group.relativePath}</span></p><Button size="xs" variant="ghost" className="h-6 shrink-0 px-1.5 text-[11px]" onClick={() => void revealSecretFinding(group.skillId, group.relativePath)}><FolderOpen className="size-3" />Show file</Button></div><div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">{group.findings.map((finding) => <p key={`${finding.line}-${finding.column}-${finding.rule}`}>Line {finding.line} · Possible {secretRuleLabel(finding.rule)}</p>)}</div></div>)}</div></section> : <p className="mt-3 flex items-center gap-1.5 text-muted-foreground"><CheckCircle2 className="size-3.5 text-emerald-500" />No secret patterns found. This review is rebuilt immediately before commit.</p>}
+			  <section className="mt-5 border-t border-border/60 pt-4"><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Choose a home</p><p className="mt-1 text-muted-foreground">GitHub creates a private repository. With another server, its existing access rules apply.</p></div><div className="mt-3 grid gap-2 sm:grid-cols-2"><button type="button" disabled={preview.secret_findings.length > 0} onClick={() => { setSetupMode('github'); setRemoteUrl('') }} className={`group rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${setupMode === 'github' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 bg-background/30 hover:border-primary/45 hover:bg-muted/30'}`}><div className="flex items-center justify-between gap-3"><span className="flex items-center gap-2 font-semibold"><Github className="size-4" />GitHub</span><span className="text-[10px] font-medium text-primary">Recommended</span></div><p className="mt-1.5 leading-relaxed text-muted-foreground">Create a private repository using your existing GitHub sign-in.</p></button><button type="button" disabled={preview.secret_findings.length > 0} onClick={() => setSetupMode('custom')} className={`group rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${setupMode === 'custom' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 bg-background/30 hover:border-primary/45 hover:bg-muted/30'}`}><div className="flex items-center gap-2 font-semibold"><Server className="size-4" />Another Git server</div><p className="mt-1.5 leading-relaxed text-muted-foreground">Use GitLab, a self-hosted server, or any remote you control.</p></button></div></section>
+			  {setupMode === 'github' ? (
+                <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-border/60 pt-4">
                   {!remoteUrl ? <>
                     <label className="grid gap-1 text-[11px] text-muted-foreground">Repository name
                       <input value={repositoryName} onChange={(event) => setRepositoryName(event.target.value)} className="h-8 w-52 rounded-lg border border-border bg-background px-2 text-xs text-foreground" />
-                    </label>
+					  <span className="max-w-52 leading-relaxed">Uses your existing GitHub CLI sign-in. Skiller never receives or stores a GitHub token.</span></label>
                     <Button size="sm" onClick={createGitHubRepository} disabled={busy !== 'idle' || preview.secret_findings.length > 0}>Create private GitHub repo</Button>
-                  </> : <Button size="sm" onClick={publishBackup} disabled={busy !== 'idle' || preview.secret_findings.length > 0}>Create protected backup</Button>}
+				  </> : <Button size="sm" onClick={publishBackup} disabled={busy !== 'idle' || preview.secret_findings.length > 0}>Create library</Button>}
                 </div>
               ) : (
                 <div className="mt-3 flex flex-wrap items-end gap-2">
-                  <label className="grid gap-1 text-[11px] text-muted-foreground">Git remote
+				  <label className="grid gap-1 text-[11px] text-muted-foreground">Git remote <span className="font-normal">Visibility is controlled by this server.</span>
                     <input value={remoteUrl} onChange={(event) => setRemoteUrl(event.target.value)} placeholder="git@git.example.com:team/agent-library.git" className="h-8 w-72 rounded-lg border border-border bg-background px-2 text-xs text-foreground" />
                   </label>
-                  <Button size="sm" onClick={publishBackup} disabled={busy !== 'idle' || !remoteUrl || preview.secret_findings.length > 0}>Create protected backup</Button>
+				  <Button size="sm" onClick={publishBackup} disabled={busy !== 'idle' || !remoteUrl || preview.secret_findings.length > 0}>Create library</Button>
                 </div>
               )}
             </div>

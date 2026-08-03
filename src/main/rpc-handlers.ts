@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { dirname, join, sep } from 'node:path'
+import { basename, dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { AppPlatform } from '../shared/platform'
 import type { AppRPCSchema } from '../shared/rpc-schema'
@@ -11,6 +11,7 @@ import type {
   SkillSourceParam,
   SyncProfileStatusJson,
   SyncInventoryJson,
+	SyncSkillPreviewJson,
   SyncThreeWayReviewJson,
   SyncPublishPreviewJson,
   SyncRestorePreviewJson,
@@ -19,12 +20,12 @@ import type {
 } from '../shared/rpc-schema'
 import { detectAgents, loadAgentConfigs } from './registry'
 import { detectRuntimeAgent } from './runtime-agent'
-import { readSkillsCliLock } from './skills-cli-lock'
+import { readSkillsCliLock, type SkillsCliLockEntry } from './skills-cli-lock'
 import { getAgentsDir } from './paths'
 import type { AgentConfig } from './types'
 import type { SkillSource } from './skill-types'
 import { scanAllSkills } from './scanner'
-import { installSkillFromGit, installSkillFromPath } from './install'
+import { discardPreparedGitSkill, installPreparedGitSkill, installSkillFromGit, installSkillFromPath, prepareGitSkillInstall, type PreparedGitSkillInstall } from './install'
 import {
   detachSharedSkill,
 	unlinkInheritedSkillFromAgentConfigs,
@@ -78,13 +79,16 @@ import {
 } from './projects'
 import { resolveSkillSourcePath } from './skill-paths'
 import { sharedSkillsDir } from './shared-skills'
-import { readProvenance } from './provenance'
+import { readProvenance, type ProvenanceEntry } from './provenance'
 import { scanSyncInventory } from './sync-inventory'
+import { planBundledSkillExport } from './sync-export'
+import { parseSkillMdFile } from './parser'
 import { classifyThreeWaySkill, makeSyncLedger, readSyncLedger, writeSyncLedgerAt, syncLedgerPath } from './sync-ledger'
 import { readRestoreJournalAt, recoverRestoreJournalAt, syncJournalPath } from './sync-journal'
 import { createGitHubSyncRepository } from './github-sync'
 import { applySyncPublishPlan, createSyncPublishPlan, mergeBundledUpdateIntoManifest, type SyncPublishCandidate } from './sync-publish'
 import { applySyncRestorePlan, createSyncRestorePlan } from './sync-restore'
+import { classifyExternalRestore, externalKeptSourceMatches, externalSkillDirectory, externalSkillRepository, type ManagedExternalSkill, type ExternalRestoreAction } from './sync-external'
 import { assertCredentialFreeGitRemote, assertPortableRelativePath, assertSyncStableId, parseSyncManifest, type SyncManifest } from './sync-profile'
 import {
   commitSyncWorkspace,
@@ -99,6 +103,7 @@ import {
   syncProfilesDirectory,
   syncWorkspacePath,
 	refreshSyncWorkspaceStatus,
+	resolveGitReferenceToCommit,
 } from './sync-workspace'
 import {
   effectiveMacOSWindowBlur,
@@ -219,6 +224,9 @@ function buildSyncPublishPreview(
       references: plan.manifest.skills
         .filter((skill): skill is Extract<typeof skill, { kind: 'reference' }> => skill.kind === 'reference')
         .map((skill) => ({ id: skill.id, repository: skill.repository, ref: skill.ref, skill_path: skill.skill_path })),
+      skills_sh: plan.manifest.skills
+        .filter((skill): skill is Extract<typeof skill, { kind: 'skills_sh' }> => skill.kind === 'skills_sh')
+        .map((skill) => ({ id: skill.id, source_url: skill.source_url, ref: skill.ref, skill_path: skill.skill_path })),
     },
   }
 }
@@ -266,13 +274,31 @@ async function listSyncProfiles(refreshRemote = false): Promise<SyncProfileStatu
   return result
 }
 
+/** Sources from the inventory the user has just reviewed. Kept main-process-only. */
+let syncPreviewSources = new Map<string, string>()
+
 function syncInventoryToJson(): SyncInventoryJson {
   const inventory = scanSyncInventory(loadDetectedAgents('scan_sync_inventory'))
+	const skillsCliEntries = readSkillsCliLock()?.skills ?? []
+	const provenance = readProvenance()
+	// Review details must be as immediate as All Skills: never re-run the expensive
+	// export-safe inventory traversal merely to open an already-listed SKILL.md.
+	syncPreviewSources = new Map(inventory.items.map((item) => [item.candidateKey, item.sourcePath]))
   return {
     items: inventory.items.map((item) => ({
       candidate_key: item.candidateKey,
       display_name: item.displayName,
+		description: item.description,
+      when_to_use: item.whenToUse,
       content_hash: item.contentHash,
+			source: (() => {
+				const source = skillsCliEntryForInventoryItem(item, skillsCliEntries)
+				if (source) return { kind: 'skills_sh' as const, source_url: source.source_url, ref: source.ref, skill_path: source.skill_path }
+				const git = provenanceEntryForInventoryItem(item, provenance)
+				if (!git?.repository) return { kind: 'local' as const }
+				if (git.source === 'skills.sh') return { kind: 'skills_sh' as const, source_url: git.repository, ref: git.ref ?? null, skill_path: git.skill_path ?? null }
+				return { kind: 'git_reference' as const, repository: git.repository, ref: git.ref ?? null, skill_path: git.skill_path ?? null }
+			})(),
       locations: item.locations.map((location) => ({ ...(location.agentSlug ? { agent_slug: location.agentSlug } : {}), kind: location.kind })),
     })),
     collisions: inventory.collisions.map((collision) => ({
@@ -280,28 +306,160 @@ function syncInventoryToJson(): SyncInventoryJson {
       candidate_keys: collision.candidateKeys,
     })),
     invalid_paths: inventory.invalidPaths,
+	invalid_entries: inventory.invalidEntries.map((entry) => ({ display_name: entry.displayName, reason: entry.reason })),
+	linked_aliases: inventory.linkedAliases,
   }
 }
 
-function createSyncCenterPublishPlan(selectedKeys?: string[]) {
+function syncSkillPreviewToJson(skillId: string): SyncSkillPreviewJson {
+  assertSyncStableId(skillId)
+	const sourcePath = syncPreviewSources.get(skillId)
+	if (!sourcePath) throw new Error('Refresh the library review before opening this skill')
+  return { skill_id: skillId, body: parseSkillMdFile(join(sourcePath, 'SKILL.md')).body }
+}
+
+function skillsCliEntryForInventoryItem(
+  item: ReturnType<typeof scanSyncInventory>['items'][number],
+  entries: SkillsCliLockEntry[],
+): SkillsCliLockEntry | null {
+  // The Skills CLI lock is keyed by its installed directory name. Keep the
+  // match conservative: provenance is better omitted than attached to an
+  // unrelated same-named local skill.
+  const names = new Set([
+    item.candidateKey,
+    basename(item.sourcePath),
+    item.displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
+  ]);
+  return entries.find((entry) => names.has(entry.name)) ?? null
+}
+
+function provenanceEntryForInventoryItem(
+  item: ReturnType<typeof scanSyncInventory>['items'][number],
+  provenance: Record<string, ProvenanceEntry>,
+): ProvenanceEntry | null {
+  const names = [
+    item.candidateKey,
+    basename(item.sourcePath),
+    item.displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
+  ]
+  for (const name of names) {
+    const entry = provenance[name]
+    if (entry?.repository?.trim()) return entry
+  }
+  return null
+}
+
+function skillsCliSkillDirectory(entry: SkillsCliLockEntry): string | null {
+  const path = entry.skill_path?.trim()
+  if (!path) return null
+  if (path === 'SKILL.md') return '.'
+  return path.replace(/\/SKILL\.md$/i, '') || '.'
+}
+
+const GIT_COMMIT_CACHE_TTL_MS = 5 * 60_000
+const gitCommitResolution = new Map<string, { resolvedAt: number; promise: Promise<string> }>()
+
+/**
+ * A library review can revisit the same external source several times. Cache
+ * only its immutable resolution briefly; failed/auth-required attempts are
+ * immediately discarded so reconnecting can be retried without a restart.
+ */
+function resolveGitCommitCached(repository: string, ref: string): Promise<string> {
+	const requestedRef = ref.trim() || 'HEAD'
+	const key = `${repository.trim()}\u0000${requestedRef}`
+	const existing = gitCommitResolution.get(key)
+	if (existing && Date.now() - existing.resolvedAt < GIT_COMMIT_CACHE_TTL_MS) return existing.promise
+	const promise = resolveGitReferenceToCommit(repository, requestedRef)
+	const entry = { resolvedAt: Date.now(), promise }
+	gitCommitResolution.set(key, entry)
+	promise.catch(() => {
+		if (gitCommitResolution.get(key) === entry) gitCommitResolution.delete(key)
+	})
+	return promise
+}
+
+function resolveSkillsCliCommit(entry: SkillsCliLockEntry): Promise<string> {
+	return resolveGitCommitCached(entry.source_url, entry.ref?.trim() || 'HEAD')
+}
+
+async function mapWithConcurrency<T, Result>(items: T[], limit: number, task: (item: T) => Promise<Result>): Promise<Result[]> {
+  const output = new Array<Result>(items.length)
+  let cursor = 0
+  const worker = async () => {
+    while (cursor < items.length) {
+      const index = cursor++
+      output[index] = await task(items[index]!)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return output
+}
+
+type UnresolvedSyncCenterSource = { id: string; kind: 'reference' | 'skills_sh' }
+
+async function createSyncCenterPublishPlan(selectedKeys?: string[]): Promise<{
+  plan: ReturnType<typeof createSyncPublishPlan>
+  unresolvedSources: UnresolvedSyncCenterSource[]
+}> {
   const inventory = scanSyncInventory(loadDetectedAgents('sync_center_publish'))
   const selected = selectedKeys ? new Set(selectedKeys) : null
   const items = inventory.items.filter((item) => selected === null || selected.has(item.candidateKey))
-  if (items.length === 0) throw new Error('Choose at least one skill to protect')
+	if (items.length === 0) throw new Error('Choose at least one skill for your library')
   const selectedKeysSet = new Set(items.map((item) => item.candidateKey))
   const unresolved = inventory.collisions.filter((collision) => collision.candidateKeys.filter((key) => selectedKeysSet.has(key)).length > 1)
   if (unresolved.length > 0) {
-    throw new Error(`Resolve ${unresolved.length} same-name skill collision(s) before protecting this library`)
+		throw new Error(`Resolve ${unresolved.length} same-name skill collision(s) before creating this library`)
   }
-  return createSyncPublishPlan('agent-library', 'private', items.map((item) => ({
-    kind: 'bundled' as const,
-    id: item.candidateKey,
-    sourcePath: item.sourcePath,
-    installationAgentSlugs: item.locations.flatMap((location) => location.agentSlug ? [location.agentSlug] : []),
-  })))
+  const skillsCliEntries = readSkillsCliLock()?.skills ?? []
+	const provenance = readProvenance()
+  const unresolvedSources: UnresolvedSyncCenterSource[] = []
+  const candidates = (await mapWithConcurrency(items, 8, async (item): Promise<SyncPublishCandidate | null> => {
+    const installationAgentSlugs = item.locations.flatMap((location) => location.agentSlug ? [location.agentSlug] : [])
+    const skillsCliEntry = skillsCliEntryForInventoryItem(item, skillsCliEntries)
+    if (skillsCliEntry) {
+      const skillPath = skillsCliSkillDirectory(skillsCliEntry)
+      const sourceUrl = skillsCliEntry.source_url.trim()
+      if (!sourceUrl || !skillPath) {
+        throw new Error(`The skills.sh entry for ${item.displayName} has incomplete source information and cannot be backed up safely.`)
+      }
+      try {
+        return {
+          kind: 'skills_sh' as const,
+          id: item.candidateKey,
+          sourceUrl,
+          ref: await resolveSkillsCliCommit(skillsCliEntry),
+          skillPath,
+			contentHash: item.contentHash,
+          installationAgentSlugs,
+        }
+      } catch {
+        unresolvedSources.push({ id: item.candidateKey, kind: 'skills_sh' })
+        return null
+      }
+    }
+		const git = provenanceEntryForInventoryItem(item, provenance)
+		if (git?.repository?.trim()) {
+			const repository = git.repository.trim()
+			let ref: string
+			try {
+				ref = await resolveGitCommitCached(repository, git.ref?.trim() || 'HEAD')
+			} catch {
+				unresolvedSources.push({ id: item.candidateKey, kind: git.source === 'skills.sh' ? 'skills_sh' : 'reference' })
+				return null
+			}
+			const skillPath = externalSkillDirectory(git.skill_path)
+			if (git.source === 'skills.sh') {
+				return { kind: 'skills_sh' as const, id: item.candidateKey, sourceUrl: repository, ref, skillPath, contentHash: item.contentHash, installationAgentSlugs }
+			}
+			return { kind: 'reference' as const, id: item.candidateKey, repository, ref, skillPath, contentHash: item.contentHash, installationAgentSlugs }
+		}
+    return { kind: 'bundled' as const, id: item.candidateKey, sourcePath: item.sourcePath, installationAgentSlugs }
+  })).filter((candidate): candidate is SyncPublishCandidate => candidate !== null)
+  if (candidates.length === 0) throw new Error('No selected skills can be pinned safely. Connect or authenticate to their Git sources, then retry.')
+  return { plan: createSyncPublishPlan('agent-library', 'private', candidates), unresolvedSources }
 }
 
-function syncPublishPlanToJson(plan: ReturnType<typeof createSyncPublishPlan>): SyncPublishPreviewJson {
+function syncPublishPlanToJson(plan: ReturnType<typeof createSyncPublishPlan>, unresolvedSources: UnresolvedSyncCenterSource[] = []): SyncPublishPreviewJson {
   return {
     profile_id: plan.manifest.profile.id,
     mode: plan.manifest.profile.mode,
@@ -313,8 +471,62 @@ function syncPublishPlanToJson(plan: ReturnType<typeof createSyncPublishPlan>): 
       excluded_paths: skill.excludedPaths,
     })),
     secret_findings: syncSecretFindingsForJson(plan.bundledSkills),
-    references: [],
+    references: plan.manifest.skills
+      .filter((skill): skill is Extract<typeof skill, { kind: 'reference' }> => skill.kind === 'reference')
+      .map((skill) => ({ id: skill.id, repository: skill.repository, ref: skill.ref, skill_path: skill.skill_path })),
+    skills_sh: plan.manifest.skills
+      .filter((skill): skill is Extract<typeof skill, { kind: 'skills_sh' }> => skill.kind === 'skills_sh')
+      .map((skill) => ({ id: skill.id, source_url: skill.source_url, ref: skill.ref, skill_path: skill.skill_path })),
+    unresolved_sources: unresolvedSources,
   }
+}
+
+function externalRestoreAction(skill: ManagedExternalSkill, agents: AgentConfig[]): ExternalRestoreAction {
+	let sourcePath: string
+	try {
+		sourcePath = resolveSkillSourcePath(skill.id, agents)
+	} catch {
+		return 'create'
+	}
+	let localContentHash: string | null = null
+	if (skill.sha256) {
+		try {
+			localContentHash = planBundledSkillExport(skill.id, sourcePath).sha256
+		} catch {
+			// A managed external skill with a now-unreadable/symlinked local tree
+			// must be reviewed, never treated as an untouched exact copy.
+			return 'conflict'
+		}
+	}
+	return classifyExternalRestore(skill, true, readProvenance()[skill.id], localContentHash)
+}
+
+function externalReviewAction(
+	skill: ManagedExternalSkill,
+	agents: AgentConfig[],
+	externalKeptSources: Record<string, { repository: string; ref: string }> | undefined,
+): ExternalRestoreAction | 'kept-local' {
+	const action = externalRestoreAction(skill, agents)
+	if (action === 'conflict' && externalKeptSourceMatches(skill, externalKeptSources?.[skill.id])) return 'kept-local'
+	return action
+}
+
+async function prepareManagedExternalSkill(
+	skill: ManagedExternalSkill,
+	agents: AgentConfig[],
+	fallbackTargets: string[],
+): Promise<{ skill: ManagedExternalSkill; prepared: PreparedGitSkillInstall; targets: string[] } | null> {
+	const action = externalRestoreAction(skill, agents)
+	if (action === 'unchanged') return null
+	if (action === 'conflict') {
+		throw new Error(`Local skill ${skill.id} is not the pinned version in this library. Review it before replacing anything.`)
+	}
+	const targets = skill.installations?.filter((slug) => agents.some((agent) => agent.slug === slug && agent.detected)) ?? fallbackTargets
+	return {
+		skill,
+		targets,
+		prepared: await prepareGitSkillInstall(externalSkillRepository(skill), skill.skill_path, skill.ref, skill.id, skill.sha256),
+	}
 }
 
 async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc: BunSideRpc, allowConflict = false): Promise<{ restored: string[] }> {
@@ -329,29 +541,54 @@ async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc:
   const plan = createSyncRestorePlan(workspace, sharedSkillsDir())
   const ledger = readSyncLedger(profileId)
   const entries = new Map(plan.entries.map((entry) => [entry.id, entry]))
+	const agents = loadDetectedAgents('sync_apply_remote_changes')
+	const externalSkills = new Map(plan.manifest.skills
+		.filter((skill): skill is ManagedExternalSkill => skill.kind === 'reference' || skill.kind === 'skills_sh')
+		.map((skill) => [skill.id, skill]))
   for (const id of skillIds) {
     const entry = entries.get(id)
-    if (!entry) throw new Error(`Remote skill is not available: ${id}`)
+		if (!entry) {
+			const external = externalSkills.get(id)
+			if (!external) throw new Error(`Remote skill is not available: ${id}`)
+			if (externalRestoreAction(external, agents) !== 'create') {
+				throw new Error(`External skill ${id} must be resolved manually before it can be installed.`)
+			}
+			continue
+		}
     const action = classifyThreeWaySkill(id, ledger?.skills[id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256, ledger?.skills[id]?.kept_remote_sha256).action
 	if (action !== 'take-remote' && !(allowConflict && action === 'conflict')) throw new Error(`Remote change must be resolved manually: ${id}`)
   }
-  applySyncRestorePlan(plan, skillIds, profileId)
-  const agents = loadDetectedAgents('sync_apply_remote_changes')
-  const manifestSkills = new Map(plan.manifest.skills.filter((skill) => skill.kind === 'bundled').map((skill) => [skill.id, skill]))
-  for (const id of skillIds) {
-    const skill = manifestSkills.get(id)
-    // v1 manifests without per-skill routing retain the old, explicit
-    // profile policy. New Sync Center profiles always carry installations.
-    const targets = skill?.installations
-      ? skill.installations.filter((slug) => agents.some((agent) => agent.slug === slug && agent.detected))
-      : agents.filter((agent) => agent.detected).map((agent) => agent.slug)
-    if (targets.length > 0) installSkillFromPath(join(sharedSkillsDir(), id), targets, agents, id)
-  }
-	const nextSkills = new Map(Object.entries(ledger?.skills ?? {}).map(([id, entry]) => [id, { sha256: entry.sha256, keptRemoteSha256: entry.kept_remote_sha256 }]))
-  for (const id of skillIds) nextSkills.set(id, { sha256: entries.get(id)!.remoteSha256, keptRemoteSha256: undefined })
-  writeSyncLedgerAt(syncLedgerPath(profileId), makeSyncLedger(profileId, [...nextSkills.entries()].map(([id, entry]) => ({ id, ...entry }))))
-  rpc.send('skills_changed')
-  return { restored: skillIds }
+	const fallbackTargets = plan.manifest.agent_policy.mode === 'selected'
+		? plan.manifest.agent_policy.agent_slugs.filter((slug) => agents.some((agent) => agent.slug === slug && agent.detected))
+		: agents.filter((agent) => agent.detected).map((agent) => agent.slug)
+	const preparedExternal: { skill: ManagedExternalSkill; prepared: PreparedGitSkillInstall; targets: string[] }[] = []
+	try {
+		for (const id of skillIds.filter((id) => externalSkills.has(id))) {
+			const prepared = await prepareManagedExternalSkill(externalSkills.get(id)!, agents, fallbackTargets)
+			if (prepared) preparedExternal.push(prepared)
+		}
+		applySyncRestorePlan(plan, skillIds.filter((id) => entries.has(id)), profileId)
+		const manifestSkills = new Map(plan.manifest.skills.filter((skill) => skill.kind === 'bundled').map((skill) => [skill.id, skill]))
+		for (const id of skillIds.filter((id) => entries.has(id))) {
+			const skill = manifestSkills.get(id)
+			// v1 manifests without per-skill routing retain the old, explicit
+			// profile policy. New Sync Center profiles always carry installations.
+			const targets = skill?.installations
+				? skill.installations.filter((slug) => agents.some((agent) => agent.slug === slug && agent.detected))
+				: agents.filter((agent) => agent.detected).map((agent) => agent.slug)
+			if (targets.length > 0) installSkillFromPath(join(sharedSkillsDir(), id), targets, agents, id)
+		}
+		for (const entry of preparedExternal) {
+			installPreparedGitSkill(entry.prepared, entry.targets, agents, entry.skill.kind === 'skills_sh' ? 'skills.sh' : 'sync-reference')
+		}
+		const nextSkills = new Map(Object.entries(ledger?.skills ?? {}).map(([id, entry]) => [id, { sha256: entry.sha256, keptRemoteSha256: entry.kept_remote_sha256 }]))
+		for (const id of skillIds.filter((id) => entries.has(id))) nextSkills.set(id, { sha256: entries.get(id)!.remoteSha256, keptRemoteSha256: undefined })
+		writeSyncLedgerAt(syncLedgerPath(profileId), makeSyncLedger(profileId, [...nextSkills.entries()].map(([id, entry]) => ({ id, ...entry })), ledger?.external_kept_sources))
+		rpc.send('skills_changed')
+		return { restored: skillIds }
+	} finally {
+		for (const entry of preparedExternal) discardPreparedGitSkill(entry.prepared)
+	}
 }
 
 /**
@@ -391,7 +628,7 @@ async function publishReviewedLocalChanges(profileId: string, ids: string[]): Pr
   await pushSyncWorkspace(workspace)
 	const nextSkills = new Map(Object.entries(ledger?.skills ?? {}).map(([id, entry]) => [id, { sha256: entry.sha256, keptRemoteSha256: entry.kept_remote_sha256 }]))
   for (const id of skillIds) nextSkills.set(id, { sha256: publishedBundles.get(id)!.sha256, keptRemoteSha256: undefined })
-  writeSyncLedgerAt(syncLedgerPath(profileId), makeSyncLedger(profileId, [...nextSkills.entries()].map(([id, entry]) => ({ id, ...entry }))))
+  writeSyncLedgerAt(syncLedgerPath(profileId), makeSyncLedger(profileId, [...nextSkills.entries()].map(([id, entry]) => ({ id, ...entry })), ledger?.external_kept_sources))
   return { commit, pushed: true }
 }
 
@@ -416,8 +653,48 @@ async function keepReviewedLocalChanges(profileId: string, ids: string[]): Promi
     if (action !== 'conflict' && action !== 'unmanaged') throw new Error(`Local change does not need this decision: ${id}`)
     nextSkills.set(id, { sha256: ledger?.skills[id]?.sha256 ?? entry.localSha256, keptRemoteSha256: entry.remoteSha256 })
   }
-  writeSyncLedgerAt(syncLedgerPath(profileId), makeSyncLedger(profileId, [...nextSkills.entries()].map(([id, entry]) => ({ id, ...entry }))))
+  writeSyncLedgerAt(syncLedgerPath(profileId), makeSyncLedger(profileId, [...nextSkills.entries()].map(([id, entry]) => ({ id, ...entry })), ledger?.external_kept_sources))
   return { kept: skillIds }
+}
+
+/**
+ * Persist a per-device decision to leave an external skill alone. This never
+ * mutates the skill or remote library. The decision is scoped to its exact
+ * repository + commit, so a later remote pin forces the user to review again.
+ */
+async function keepReviewedExternalChanges(profileId: string, ids: string[]): Promise<{ kept: string[] }> {
+	assertSyncStableId(profileId)
+	const skillIds = selectedSyncSkillIds(ids)
+	if (!hasSyncWorkspace(profileId)) throw new Error('This library has not been set up on this computer')
+	const workspace = syncWorkspacePath(profileId)
+	const status = await getSyncWorkspaceStatus(workspace)
+	if (!status.remoteUrl || status.changed) throw new Error('Sync workspace must be clean and connected before keeping a local skill')
+	await fetchSyncWorkspace(workspace)
+	await fastForwardSyncWorkspace(workspace)
+	const restore = createSyncRestorePlan(workspace, sharedSkillsDir())
+	const ledger = readSyncLedger(profileId)
+	const agents = loadDetectedAgents('sync_keep_external_local_changes')
+	const externalSkills = new Map(restore.manifest.skills
+		.filter((skill): skill is ManagedExternalSkill => skill.kind === 'reference' || skill.kind === 'skills_sh')
+		.map((skill) => [skill.id, skill]))
+	const nextKeptSources = { ...(ledger?.external_kept_sources ?? {}) }
+	for (const id of skillIds) {
+		const skill = externalSkills.get(id)
+		if (!skill) throw new Error(`External skill is not available: ${id}`)
+		if (externalReviewAction(skill, agents, ledger?.external_kept_sources) !== 'conflict') {
+			throw new Error(`External skill does not need this decision: ${id}`)
+		}
+		nextKeptSources[id] = { repository: externalSkillRepository(skill), ref: skill.ref }
+	}
+	writeSyncLedgerAt(
+		syncLedgerPath(profileId),
+		makeSyncLedger(profileId, Object.entries(ledger?.skills ?? {}).map(([id, entry]) => ({
+			id,
+			sha256: entry.sha256,
+			keptRemoteSha256: entry.kept_remote_sha256,
+		})), nextKeptSources),
+	)
+	return { kept: skillIds }
 }
 
 function skillSourceParamToInternal(s: SkillSourceParam): SkillSource {
@@ -519,8 +796,10 @@ export function createRequestHandlers(ctx: {
     list_sync_profiles: async (): Promise<SyncProfileStatusJson[]> => listSyncProfiles(),
 	refresh_sync_profiles: async (): Promise<SyncProfileStatusJson[]> => listSyncProfiles(true),
     scan_sync_inventory: async (): Promise<SyncInventoryJson> => syncInventoryToJson(),
+		get_sync_skill_preview: async (params: { skillId: string }): Promise<SyncSkillPreviewJson> => syncSkillPreviewToJson(params.skillId),
     sync_center_publish_preview: async (params?: { selectedKeys?: string[] }): Promise<SyncPublishPreviewJson> => {
-      return syncPublishPlanToJson(createSyncCenterPublishPlan(params?.selectedKeys))
+      const result = await createSyncCenterPublishPlan(params?.selectedKeys)
+      return syncPublishPlanToJson(result.plan, result.unresolvedSources)
     },
     sync_center_publish: async (params: { remoteUrl: string; selectedKeys?: string[] }) => {
       const remoteUrl = params.remoteUrl.trim()
@@ -533,18 +812,18 @@ export function createRequestHandlers(ctx: {
       } else {
         const status = await getSyncWorkspaceStatus(workspace)
         if (status.changed) throw new Error('Sync workspace has uncommitted changes; resolve them before publishing')
-        if (status.remoteUrl && status.remoteUrl !== remoteUrl) throw new Error('This protected library already uses a different remote')
+			if (status.remoteUrl && status.remoteUrl !== remoteUrl) throw new Error('This library already uses a different remote')
         if (!status.remoteUrl) await setSyncWorkspaceRemote(workspace, remoteUrl)
       }
-      const plan = createSyncCenterPublishPlan(params.selectedKeys)
-      applySyncPublishPlan(workspace, plan)
-      const commit = await commitSyncWorkspace(workspace, 'Skiller sync: protect agent library')
+		const publishPlan = await createSyncCenterPublishPlan(params.selectedKeys)
+      applySyncPublishPlan(workspace, publishPlan.plan)
+		  const commit = await commitSyncWorkspace(workspace, 'Skiller sync: update skill library')
       await pushSyncWorkspace(workspace)
       writeSyncLedgerAt(
         syncLedgerPath(profileId),
-        makeSyncLedger(profileId, plan.manifest.skills
+        makeSyncLedger(profileId, publishPlan.plan.manifest.skills
           .filter((skill): skill is Extract<typeof skill, { kind: 'bundled' }> => skill.kind === 'bundled')
-          .map((skill) => ({ id: skill.id, sha256: skill.sha256 }))),
+			.map((skill) => ({ id: skill.id, sha256: skill.sha256 })), readSyncLedger(profileId)?.external_kept_sources),
       )
       return { commit, pushed: true }
     },
@@ -559,18 +838,39 @@ export function createRequestHandlers(ctx: {
       await fastForwardSyncWorkspace(workspace)
       const restore = createSyncRestorePlan(workspace, sharedSkillsDir())
       const ledger = readSyncLedger(params.profileId)
+		const agents = loadDetectedAgents('sync_three_way_review')
+		const externalSkills = restore.manifest.skills.filter((skill): skill is ManagedExternalSkill => skill.kind === 'reference' || skill.kind === 'skills_sh')
       return {
         profile_id: params.profileId,
-        skills: restore.entries.map((entry) => ({
-          id: entry.id,
-          action: classifyThreeWaySkill(entry.id, ledger?.skills[entry.id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256, ledger?.skills[entry.id]?.kept_remote_sha256).action,
-        })),
+			skills: [
+			...restore.entries.map((entry) => ({
+				id: entry.id,
+				kind: 'bundled' as const,
+				action: classifyThreeWaySkill(entry.id, ledger?.skills[entry.id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256, ledger?.skills[entry.id]?.kept_remote_sha256).action,
+			})),
+			...externalSkills.map((skill) => {
+				const externalAction = externalReviewAction(skill, agents, ledger?.external_kept_sources)
+				return {
+					id: skill.id,
+					kind: skill.kind,
+					action: externalAction === 'create'
+						? 'take-remote' as const
+						: externalAction === 'conflict'
+							? 'conflict' as const
+							: externalAction === 'kept-local'
+								? 'kept-local' as const
+								: 'unchanged' as const,
+					source: { repository: externalSkillRepository(skill), ref: skill.ref },
+				}
+			}),
+			],
       }
     },
     sync_apply_remote_changes: async (params: { profileId: string; skillIds: string[] }) => applyReviewedRemoteChanges(params.profileId, params.skillIds, rpc),
 	 sync_apply_conflicting_remote_changes: async (params: { profileId: string; skillIds: string[] }) => applyReviewedRemoteChanges(params.profileId, params.skillIds, rpc, true),
 	 sync_publish_local_changes: async (params: { profileId: string; skillIds: string[] }) => publishReviewedLocalChanges(params.profileId, params.skillIds),
 	 sync_keep_local_changes: async (params: { profileId: string; skillIds: string[] }) => keepReviewedLocalChanges(params.profileId, params.skillIds),
+	 sync_keep_external_local_changes: async (params: { profileId: string; skillIds: string[] }) => keepReviewedExternalChanges(params.profileId, params.skillIds),
     sync_recovery_status: async (params: { profileId: string }) => {
       assertSyncStableId(params.profileId)
       return { pending: readRestoreJournalAt(syncJournalPath(params.profileId)) !== null }
@@ -666,18 +966,30 @@ export function createRequestHandlers(ctx: {
       await fetchSyncWorkspace(workspace)
       await fastForwardSyncWorkspace(workspace)
       const plan = createSyncRestorePlan(workspace, sharedSkillsDir())
+      const agents = loadDetectedAgents('sync_pull_preview')
+	  const ledger = readSyncLedger(params.profileId)
+      const externalSkills = plan.manifest.skills.filter((skill): skill is ManagedExternalSkill => skill.kind === 'reference' || skill.kind === 'skills_sh')
       return {
         profile_id: params.profileId,
         mode: plan.manifest.profile.mode,
         skills: [
           ...plan.entries.map((entry) => ({ id: entry.id, kind: 'bundled' as const, action: entry.action })),
-          ...plan.manifest.skills
-            .filter((skill): skill is Extract<typeof skill, { kind: 'reference' }> => skill.kind === 'reference')
+          ...externalSkills
+            .filter((skill): skill is Extract<ManagedExternalSkill, { kind: 'reference' }> => skill.kind === 'reference')
             .map((skill) => ({
               id: skill.id,
               kind: 'reference' as const,
-              action: 'create' as const,
+			  action: externalReviewAction(skill, agents, ledger?.external_kept_sources),
               repository: skill.repository,
+              ref: skill.ref,
+            })),
+          ...externalSkills
+            .filter((skill): skill is Extract<ManagedExternalSkill, { kind: 'skills_sh' }> => skill.kind === 'skills_sh')
+            .map((skill) => ({
+              id: skill.id,
+              kind: 'skills_sh' as const,
+			  action: externalReviewAction(skill, agents, ledger?.external_kept_sources),
+              repository: skill.source_url,
               ref: skill.ref,
             })),
         ],
@@ -698,31 +1010,53 @@ export function createRequestHandlers(ctx: {
       const plan = createSyncRestorePlan(workspace, sharedSkillsDir())
       const referenceSkills = plan.manifest.skills
         .filter((skill): skill is Extract<typeof skill, { kind: 'reference' }> => skill.kind === 'reference')
-      const available = new Set([...plan.entries.map((entry) => entry.id), ...referenceSkills.map((skill) => skill.id)])
+      const skillsShSkills = plan.manifest.skills
+        .filter((skill): skill is Extract<typeof skill, { kind: 'skills_sh' }> => skill.kind === 'skills_sh')
+      const available = new Set([
+        ...plan.entries.map((entry) => entry.id),
+        ...referenceSkills.map((skill) => skill.id),
+        ...skillsShSkills.map((skill) => skill.id),
+      ])
       for (const id of skillIds) if (!available.has(id)) throw new Error(`Skill is not present in this sync profile: ${id}`)
-      applySyncRestorePlan(plan, skillIds.filter((id) => plan.entries.some((entry) => entry.id === id)), params.profileId)
-
       const agents = loadDetectedAgents('sync_restore_apply')
       const targetAgentSlugs = plan.manifest.agent_policy.mode === 'selected'
         ? plan.manifest.agent_policy.agent_slugs.filter((slug) => agents.some((agent) => agent.slug === slug && agent.detected))
         : agents.filter((agent) => agent.detected).map((agent) => agent.slug)
-      for (const id of skillIds.filter((id) => plan.entries.some((entry) => entry.id === id))) {
-        installSkillFromPath(join(sharedSkillsDir(), id), targetAgentSlugs, agents, id)
-      }
-      for (const skill of referenceSkills.filter((skill) => skillIds.includes(skill.id))) {
-        await installSkillFromGit(skill.repository, skill.skill_path, targetAgentSlugs, agents, 'sync-reference', skill.ref)
-      }
-      const previousLedger = readSyncLedger(params.profileId)
-      const nextSkills = new Map(Object.entries(previousLedger?.skills ?? {}).map(([id, entry]) => [id, entry.sha256]))
-      for (const entry of plan.entries.filter((entry) => skillIds.includes(entry.id))) {
-        nextSkills.set(entry.id, entry.remoteSha256)
-      }
-      writeSyncLedgerAt(
-        syncLedgerPath(params.profileId),
-        makeSyncLedger(params.profileId, [...nextSkills.entries()].map(([id, sha256]) => ({ id, sha256 }))),
-      )
-      rpc.send('skills_changed')
-      return { restored: skillIds, installed_to_detected_agents: targetAgentSlugs }
+		const selectedExternal = [...referenceSkills, ...skillsShSkills].filter((skill) => skillIds.includes(skill.id))
+		const preparedExternal: { skill: ManagedExternalSkill; prepared: PreparedGitSkillInstall; targets: string[] }[] = []
+		try {
+			// Resolve every external source before applying a bundled restore. A
+			// bad pin or unreachable source therefore leaves bundled skills alone.
+			for (const skill of selectedExternal) {
+				const prepared = await prepareManagedExternalSkill(skill, agents, targetAgentSlugs)
+				if (prepared) preparedExternal.push(prepared)
+			}
+			applySyncRestorePlan(plan, skillIds.filter((id) => plan.entries.some((entry) => entry.id === id)), params.profileId)
+			const bundledById = new Map(plan.manifest.skills
+				.filter((skill): skill is Extract<typeof skill, { kind: 'bundled' }> => skill.kind === 'bundled')
+				.map((skill) => [skill.id, skill]))
+			for (const id of skillIds.filter((id) => plan.entries.some((entry) => entry.id === id))) {
+				const skill = bundledById.get(id)
+				const targets = skill?.installations?.filter((slug) => agents.some((agent) => agent.slug === slug && agent.detected)) ?? targetAgentSlugs
+				installSkillFromPath(join(sharedSkillsDir(), id), targets, agents, id)
+			}
+			for (const entry of preparedExternal) {
+				installPreparedGitSkill(entry.prepared, entry.targets, agents, entry.skill.kind === 'skills_sh' ? 'skills.sh' : 'sync-reference')
+			}
+			const previousLedger = readSyncLedger(params.profileId)
+			const nextSkills = new Map(Object.entries(previousLedger?.skills ?? {}).map(([id, entry]) => [id, entry.sha256]))
+			for (const entry of plan.entries.filter((entry) => skillIds.includes(entry.id))) {
+				nextSkills.set(entry.id, entry.remoteSha256)
+			}
+			writeSyncLedgerAt(
+				syncLedgerPath(params.profileId),
+				makeSyncLedger(params.profileId, [...nextSkills.entries()].map(([id, sha256]) => ({ id, sha256 })), previousLedger?.external_kept_sources),
+			)
+			rpc.send('skills_changed')
+			return { restored: skillIds, installed_to_detected_agents: targetAgentSlugs }
+		} finally {
+			for (const entry of preparedExternal) discardPreparedGitSkill(entry.prepared)
+		}
     },
     install_skill: async (params: {
       source: SkillSourceParam
@@ -1173,6 +1507,15 @@ export function createRequestHandlers(ctx: {
     reveal_path_in_folder: async (params: { path: string }) => {
       platform.showItemInFolder(params.path)
     },
+		reveal_sync_secret_finding: async (params: { skillId: string; relativePath: string }) => {
+			assertSyncStableId(params.skillId)
+			assertPortableRelativePath(params.relativePath)
+			const item = scanSyncInventory(loadDetectedAgents('reveal_sync_secret_finding')).items.find((candidate) => candidate.candidateKey === params.skillId)
+			if (!item) throw new Error('This skill is no longer available locally')
+			const filePath = join(item.sourcePath, params.relativePath)
+			if (!existsSync(filePath)) throw new Error('This file is no longer available locally')
+			platform.showItemInFolder(filePath)
+		},
     list_projects: async () => listProjects(),
     add_project: async (params: { path: string }) => addProject(params.path),
     remove_project: async (params: { path: string }) => {

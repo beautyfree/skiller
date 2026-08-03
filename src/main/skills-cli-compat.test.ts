@@ -60,4 +60,18 @@ describe("Skills CLI compatibility", () => {
 		expect(getSkillsCliLockPath({ XDG_STATE_HOME: "/state" }, "/home/test")).toBe("/state/skills/.skill-lock.json");
 		expect(getSkillsCliLockPath({}, "/home/test")).toBe("/home/test/.agents/.skill-lock.json");
 	});
+
+	it("does not guess an unrecognised Skills CLI lockfile schema", () => {
+		const dir = mkdtempSync(join(tmpdir(), "skiller-skills-lock-"));
+		try {
+			const path = join(dir, ".skill-lock.json");
+			writeFileSync(path, JSON.stringify({
+				version: 999,
+				skills: { unknown: { source: "owner/repo", sourceType: "github", sourceUrl: "https://example.test/repo" } },
+			}));
+			expect(readSkillsCliLock(path)).toBeNull();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });

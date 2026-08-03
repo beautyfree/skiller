@@ -2,6 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+/** The lockfile schema Skiller has a tested, non-mutating adapter for. */
+export const SKILLS_CLI_LOCK_VERSION = 3;
+
 export type SkillsCliLockEntry = {
 	name: string;
 	source: string;
@@ -14,7 +17,7 @@ export type SkillsCliLockEntry = {
 
 export type SkillsCliLock = {
 	path: string;
-	version: number;
+	version: typeof SKILLS_CLI_LOCK_VERSION;
 	skills: SkillsCliLockEntry[];
 };
 
@@ -24,7 +27,11 @@ export function getSkillsCliLockPath(env = process.env, home = homedir()): strin
 		: join(home, ".agents", ".skill-lock.json");
 }
 
-/** Read Skills CLI v3 metadata without modifying its lock file. */
+/**
+ * Read tested Skills CLI v3 metadata without modifying its lock file. Unknown
+ * versions deliberately return null, so Sync Center falls back to independent
+ * provenance rather than guessing a potentially incompatible schema.
+ */
 export function readSkillsCliLock(path = getSkillsCliLockPath()): SkillsCliLock | null {
 	if (!existsSync(path)) return null;
 	let parsed: unknown;
@@ -35,7 +42,7 @@ export function readSkillsCliLock(path = getSkillsCliLockPath()): SkillsCliLock 
 	}
 	if (!parsed || typeof parsed !== "object") return null;
 	const lock = parsed as { version?: unknown; skills?: unknown };
-	if (typeof lock.version !== "number" || !lock.skills || typeof lock.skills !== "object") return null;
+	if (lock.version !== SKILLS_CLI_LOCK_VERSION || !lock.skills || typeof lock.skills !== "object") return null;
 	const skills = Object.entries(lock.skills as Record<string, unknown>)
 		.flatMap(([name, value]) => {
 			if (!value || typeof value !== "object") return [];

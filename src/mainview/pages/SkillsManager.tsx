@@ -1341,7 +1341,7 @@ function BatchSelectionCheckbox({
       className={cn(
         "flex size-4 shrink-0 items-center justify-center rounded-[5px] border transition-colors",
         checked
-          ? "border-primary bg-primary text-primary-foreground"
+		  ? "border-primary bg-primary text-white"
           : "border-muted-foreground/40 bg-background/70 hover:border-primary/70",
         disabled && "cursor-not-allowed border-border bg-muted/30 opacity-45",
         className,

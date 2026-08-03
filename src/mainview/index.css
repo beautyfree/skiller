@@ -1,8 +1,45 @@
+@import "@fontsource/bricolage-grotesque/latin-700.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+
+/* The Sync Center keeps Skiller's indigo identity even if the user changes the
+   app accent for other surfaces. This is the same indigo as the dark preset. */
+.sync-center-hero {
+  background: oklch(0.72 0.18 270);
+  --primary-foreground: #fff;
+}
+
+/* Same compact geometry and interaction as the app's primary buttons; only
+   the landing surface is light so it reads cleanly against Sync Center blue. */
+.sync-library-cta {
+  border-color: rgba(255, 255, 255, 0.74) !important;
+  background: linear-gradient(108deg, #ffffff 0%, #ffffff 35%, #eef2ff 41%, #c8d5ff 47%, #9eb4ff 50%, #c8d5ff 53%, #eef2ff 59%, #ffffff 65%, #ffffff 100%) !important;
+  background-position: 112% 0 !important;
+  background-size: 240% 100% !important;
+  color: #29387d !important;
+  box-shadow: var(--btn-primary-shadow) !important;
+  animation: sync-library-satin 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.sync-library-cta:hover {
+  filter: brightness(0.985) saturate(1.08);
+}
+
+.sync-library-cta:active {
+  filter: brightness(0.94) saturate(1.03);
+}
+
+@keyframes sync-library-satin {
+  0%, 32% { background-position: 112% 0; }
+  100% { background-position: -112% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sync-library-cta { animation: none; }
+}
 
 /* ─────────────────────────────────────────────
    Linear-inspired tokens (DESIGN.md). Dark: luminance stack + indigo/violet accent.

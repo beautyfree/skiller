@@ -17,6 +17,7 @@ import { isSymlink } from "./fsutil";
 import { getTemplatesDir } from "./paths";
 import { readProvenance, writeProvenance } from "./provenance";
 import { sharedSkillsDir } from "./shared-skills";
+import { planBundledSkillExport } from "./sync-export";
 
 export { sharedSkillsDir };
 
@@ -184,6 +185,84 @@ function deriveGitTargetSkillName(repoUrl: string, skillRelativePath: string, so
 	return sanitizeSkillDirName(basename(sourceDir)) || "skill";
 }
 
+export type PreparedGitSkillInstall = {
+	tempDir: string;
+	sourceDir: string;
+	skillName: string;
+	repository: string;
+	skillRelativePath: string;
+	resolvedSha: string | null;
+};
+
+/** Clone and verify an external skill without touching the local library. */
+export async function prepareGitSkillInstall(
+	repoUrl: string,
+	skillRelativePath: string,
+	ref?: string | null,
+	targetSkillName?: string,
+	expectedContentHash?: string,
+): Promise<PreparedGitSkillInstall> {
+	const tempDir = join(
+		tmpdir(),
+		`skiller-install-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+	);
+	try {
+		await simpleGit().clone(repoUrl, tempDir);
+		if (ref && ref.trim()) {
+			try {
+				await simpleGit(tempDir).checkout(ref.trim());
+			} catch (err) {
+				throw new Error(`Failed to checkout ref "${ref}" in ${repoUrl}: ${err}`);
+			}
+		}
+		// Capture the resolved HEAD SHA so we can pin it in the lockfile.
+		let resolvedSha: string | null = null;
+		try {
+			resolvedSha = (await simpleGit(tempDir).revparse(["HEAD"])).trim();
+		} catch {
+			/* keep null */
+		}
+
+		const source = join(tempDir, skillRelativePath);
+		const skillName = targetSkillName?.trim()
+			? sanitizeSkillDirName(targetSkillName)
+			: deriveGitTargetSkillName(repoUrl, skillRelativePath, source);
+		if (expectedContentHash) {
+			const sourcePlan = planBundledSkillExport(skillName, source);
+			if (sourcePlan.sha256 !== expectedContentHash) {
+				throw new Error(`Pinned source content does not match the reviewed manifest: ${skillName}`);
+			}
+		}
+		return { tempDir, sourceDir: source, skillName, repository: repoUrl, skillRelativePath, resolvedSha };
+	} catch (error) {
+		discardPreparedGitSkill({ tempDir } as PreparedGitSkillInstall);
+		throw error;
+	}
+}
+
+/** Materialize a previously verified external source into its selected agent paths. */
+export function installPreparedGitSkill(
+	prepared: PreparedGitSkillInstall,
+	targetAgentSlugs: string[],
+	agents: AgentConfig[],
+	sourceLabel: string,
+): string {
+	const installed = installSkillFromPath(prepared.sourceDir, targetAgentSlugs, agents, prepared.skillName);
+	const skillId = basename(installed);
+	const rel = prepared.skillRelativePath.trim();
+	writeProvenance(skillId, sourceLabel, prepared.repository, !rel || rel === "." ? null : rel, prepared.resolvedSha);
+	return installed;
+}
+
+export function discardPreparedGitSkill(prepared: Pick<PreparedGitSkillInstall, "tempDir">): void {
+	try {
+		rmSync(prepared.tempDir, { recursive: true, force: true });
+	} catch {
+		// Ignore cleanup failure: it must not mask a failed clone, checkout,
+		// or integrity check. The OS can reclaim it later.
+	}
+}
+
 export async function installSkillFromGit(
 	repoUrl: string,
 	skillRelativePath: string,
@@ -192,39 +271,17 @@ export async function installSkillFromGit(
 	sourceLabel: string,
 	/** Optional git ref (branch, tag, or SHA) to check out before copying. */
 	ref?: string | null,
+	/** Portable manifest identity when the source directory name is not the skill id. */
+	targetSkillName?: string,
+	/** When supplied by Sync Center, verify exact source content before any local write. */
+	expectedContentHash?: string,
 ): Promise<string> {
-	const tempDir = join(
-		tmpdir(),
-		`skiller-install-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-	);
-	await simpleGit().clone(repoUrl, tempDir);
-	if (ref && ref.trim()) {
+	const prepared = await prepareGitSkillInstall(repoUrl, skillRelativePath, ref, targetSkillName, expectedContentHash);
+	try {
+		return installPreparedGitSkill(prepared, targetAgentSlugs, agents, sourceLabel);
+	} finally {
 		try {
-			await simpleGit(tempDir).checkout(ref.trim());
-		} catch (err) {
-			throw new Error(`Failed to checkout ref "${ref}" in ${repoUrl}: ${err}`);
-		}
+			discardPreparedGitSkill(prepared);
+		} catch { /* discard is already failure-safe */ }
 	}
-	// Capture the resolved HEAD SHA so we can pin it in the lockfile.
-	let resolvedSha: string | null = null;
-	try {
-		resolvedSha = (await simpleGit(tempDir).revparse(["HEAD"])).trim();
-	} catch {
-		/* keep null */
-	}
-
-	const source = join(tempDir, skillRelativePath);
-	const skillName = deriveGitTargetSkillName(repoUrl, skillRelativePath, source);
-	const installed = installSkillFromPath(source, targetAgentSlugs, agents, skillName);
-	try {
-		rmSync(tempDir, { recursive: true, force: true });
-	} catch {
-		/* ignore */
-	}
-
-	const skillId = basename(installed);
-	const rel = skillRelativePath.trim();
-	const skillPath = !rel || rel === "." ? null : rel;
-	writeProvenance(skillId, sourceLabel, repoUrl, skillPath, resolvedSha);
-	return installed;
 }

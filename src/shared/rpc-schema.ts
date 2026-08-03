@@ -220,6 +220,19 @@ export type SyncPublishPreviewJson = {
   }[];
   secret_findings: SyncSecretFindingJson[];
   references: { id: string; repository: string; ref: string; skill_path: string }[];
+  /** Dependencies installed through skills.sh, pinned before publication. */
+  skills_sh: { id: string; source_url: string; ref: string; skill_path: string }[];
+  /**
+   * External sources that could not be pinned for this attempt. They are
+   * deliberately left out of the remote library and untouched locally.
+   */
+  unresolved_sources?: { id: string; kind: "reference" | "skills_sh" }[];
+};
+
+/** Full local SKILL.md body, loaded only when a user opens its review popover. */
+export type SyncSkillPreviewJson = {
+  skill_id: string;
+  body: string;
 };
 
 export type SyncRestorePreviewJson = {
@@ -227,8 +240,8 @@ export type SyncRestorePreviewJson = {
   mode: "private" | "team" | "public";
   skills: {
     id: string;
-    kind: "bundled" | "reference";
-    action: "create" | "unchanged" | "conflict";
+    kind: "bundled" | "reference" | "skills_sh";
+    action: "create" | "unchanged" | "conflict" | "kept-local";
     repository?: string | null;
     ref?: string | null;
   }[];
@@ -254,18 +267,30 @@ export type SyncInventoryJson = {
   items: {
     candidate_key: string;
     display_name: string;
+    description: string | null;
+		when_to_use: string | null;
     content_hash: string;
+    /** Provenance observed locally; it is resolved to an immutable commit only in the reviewed publish plan. */
+    source:
+      | { kind: "local" }
+      | { kind: "skills_sh"; source_url: string; ref: string | null; skill_path: string | null }
+      | { kind: "git_reference"; repository: string; ref: string | null; skill_path: string | null };
     locations: { agent_slug?: string; kind: "shared" | "agent-local" | "inherited" }[];
   }[];
   collisions: { display_name: string; candidate_keys: string[] }[];
   invalid_paths: number;
+	invalid_entries: { display_name: string; reason: string }[];
+	linked_aliases: number;
 };
 
 export type SyncThreeWayReviewJson = {
   profile_id: string;
   skills: {
     id: string;
+    kind: "bundled" | "reference" | "skills_sh";
     action: "take-remote" | "publish-local" | "unchanged" | "kept-local" | "conflict" | "unmanaged";
+		/** Present for externally sourced skills so a conflict is actionable. */
+		source?: { repository: string; ref: string };
   }[];
 };
 
@@ -294,6 +319,8 @@ export type AppRPCSchema = {
       list_sync_profiles: { params?: void; response: SyncProfileStatusJson[] };
 	  refresh_sync_profiles: { params?: void; response: SyncProfileStatusJson[] };
       scan_sync_inventory: { params?: void; response: SyncInventoryJson };
+		get_sync_skill_preview: { params: { skillId: string }; response: SyncSkillPreviewJson };
+		reveal_sync_secret_finding: { params: { skillId: string; relativePath: string }; response: void };
       sync_center_publish_preview: {
         params?: { selectedKeys?: string[] };
         response: SyncPublishPreviewJson;
@@ -307,6 +334,7 @@ export type AppRPCSchema = {
 	  sync_apply_conflicting_remote_changes: { params: { profileId: string; skillIds: string[] }; response: { restored: string[] } };
       sync_publish_local_changes: { params: { profileId: string; skillIds: string[] }; response: { commit: string | null; pushed: boolean } };
 	  sync_keep_local_changes: { params: { profileId: string; skillIds: string[] }; response: { kept: string[] } };
+	  sync_keep_external_local_changes: { params: { profileId: string; skillIds: string[] }; response: { kept: string[] } };
       sync_recovery_status: { params: { profileId: string }; response: { pending: boolean } };
       sync_recovery_rollback: { params: { profileId: string }; response: { recovered: boolean } };
       sync_publish_preview: {

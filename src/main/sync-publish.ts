@@ -1,9 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
 import type { VendoredOrigin } from "@beautyfree/dotagent/config";
 import {
-	assertPortableRelativePath,
+	applyLibraryUpdatePlan,
+	planLibraryUpdate,
+	type LibraryUpdatePlan,
+} from "@beautyfree/dotagent/library-update";
+import {
 	createSyncManifest,
 	stringifySyncManifest,
 	validateSyncManifest,
@@ -181,66 +182,24 @@ export function applySyncPublishFiles(
 	plan: SyncPublishPlan,
 	portableFiles: Record<string, string>,
 ): void {
-	if (plan.secretFindings.length > 0) {
-		throw new Error(`Sync publish is blocked by ${plan.secretFindings.length} secret finding(s)`);
-	}
-	const workspace = resolve(workspacePath);
-	const stagedBundles = plan.bundledSkills.map((skill) => prepareStagedBundle(workspace, skill));
-	try {
-		for (const staged of stagedBundles) replaceWorkspacePath(workspace, staged.bundledPath, staged.stagingPath);
-		for (const [file, content] of Object.entries(portableFiles).sort(([left], [right]) => left.localeCompare(right, "en"))) {
-			assertPortableRelativePath(file);
-			const destination = workspaceChild(workspace, file);
-			mkdirSync(dirname(destination), { recursive: true });
-			const temporary = `${destination}.skiller-staging-${randomUUID()}`;
-			writeFileSync(temporary, content, "utf8");
-			replaceWorkspacePath(workspace, file, temporary);
-		}
-	} finally {
-		for (const staged of stagedBundles) {
-			if (existsSync(staged.stagingPath)) rmSync(staged.stagingPath, { recursive: true, force: true });
-		}
-	}
+	const update = createSyncPublishWorkspacePlan(workspacePath, plan, portableFiles);
+	applyLibraryUpdatePlan(update, { portableFiles });
 }
 
-function prepareStagedBundle(workspace: string, plan: BundledSkillExportPlan): { bundledPath: string; stagingPath: string } {
-	assertPortableRelativePath(plan.bundledPath);
-	const stagingPath = workspaceChild(workspace, `.skiller-staging/${randomUUID()}/${plan.bundledPath}`);
-	for (const file of plan.files) {
-		assertPortableRelativePath(file.relativePath);
-		const source = readFileSync(join(plan.sourcePath, file.relativePath));
-		const sha256 = createHash("sha256").update(source).digest("hex");
-		if (sha256 !== file.sha256) {
-			throw new Error(`Sync source changed after preview: ${plan.id}/${file.relativePath}`);
-		}
-		const destination = workspaceChild(stagingPath, file.relativePath);
-		mkdirSync(dirname(destination), { recursive: true });
-		writeFileSync(destination, source);
-	}
-	return { bundledPath: plan.bundledPath, stagingPath };
-}
-
-function replaceWorkspacePath(workspace: string, bundledPath: string, stagingPath: string): void {
-	const destination = workspaceChild(workspace, bundledPath);
-	mkdirSync(dirname(destination), { recursive: true });
-	const backup = `${destination}.skiller-backup-${randomUUID()}`;
-	const hadPrevious = existsSync(destination);
-	if (hadPrevious) renameSync(destination, backup);
-	try {
-		renameSync(stagingPath, destination);
-		if (hadPrevious) rmSync(backup, { recursive: true, force: true });
-	} catch (error) {
-		if (existsSync(destination)) rmSync(destination, { recursive: true, force: true });
-		if (hadPrevious && existsSync(backup)) renameSync(backup, destination);
-		throw error;
-	}
-}
-
-function workspaceChild(workspace: string, portablePath: string): string {
-	assertPortableRelativePath(portablePath);
-	const target = resolve(workspace, portablePath);
-	if (target !== workspace && !target.startsWith(`${workspace}${sep}`)) {
-		throw new Error(`Sync workspace path escapes managed workspace: ${portablePath}`);
-	}
-	return target;
+/** Provider/UI adapter for dotagent's shared transactional workspace update. */
+export function createSyncPublishWorkspacePlan(
+	workspacePath: string,
+	plan: SyncPublishPlan,
+	portableFiles: Record<string, string>,
+): LibraryUpdatePlan {
+	return planLibraryUpdate({
+		root: workspacePath,
+		skills: plan.bundledSkills.map((skill) => ({
+			skill: skill.id,
+			path: skill.bundledPath,
+			sourcePath: skill.sourcePath,
+			integrity: skill.sha256,
+		})),
+		portableFiles,
+	});
 }

@@ -36,6 +36,7 @@ import { getMaterializationStatus } from '@beautyfree/dotagent/status'
 import { diffLibraryLocks } from '@beautyfree/dotagent/sources'
 import { parseImportDecisions, type ImportDecision, type ImportDisposition } from '@beautyfree/dotagent/decisions'
 import { scanOwnedSkill } from '@beautyfree/dotagent/inventory'
+import { hasLibraryUpdateRecovery, libraryUpdateJournalPath, recoverLibraryUpdate } from '@beautyfree/dotagent/library-update'
 import { homedir } from 'node:os'
 import { readSkillsCliLock, type SkillsCliLockEntry } from './skills-cli-lock'
 import { getAgentsDir } from './paths'
@@ -1135,11 +1136,15 @@ export function createRequestHandlers(ctx: {
 	 sync_keep_external_local_changes: async (params: { profileId: string; skillIds: string[] }) => keepReviewedExternalChanges(params.profileId, params.skillIds),
     sync_recovery_status: async (params: { profileId: string }) => {
       assertSyncStableId(params.profileId)
-      return { pending: readRestoreJournalAt(syncJournalPath(params.profileId)) !== null }
+      const restorePending = readRestoreJournalAt(syncJournalPath(params.profileId)) !== null
+      const publishPending = hasLibraryUpdateRecovery(libraryUpdateJournalPath(syncWorkspacePath(params.profileId)))
+      return { pending: restorePending || publishPending }
     },
     sync_recovery_rollback: async (params: { profileId: string }) => {
       assertSyncStableId(params.profileId)
-      return { recovered: recoverRestoreJournalAt(syncJournalPath(params.profileId)) }
+      const restored = recoverRestoreJournalAt(syncJournalPath(params.profileId))
+      const published = recoverLibraryUpdate(libraryUpdateJournalPath(syncWorkspacePath(params.profileId)))
+      return { recovered: restored || published }
     },
     sync_publish_preview: async (params: {
       profileId: string

@@ -3,7 +3,12 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { planBundledSkillExport } from "./sync-export";
-import { applySyncPublishPlan, createSyncPublishPlan, mergeBundledUpdateIntoManifest } from "./sync-publish";
+import {
+	applySyncPublishPlan,
+	createSyncPublishPlan,
+	createSyncPublishWorkspacePlan,
+	mergeBundledUpdateIntoManifest,
+} from "./sync-publish";
 import { applySyncRestorePlan, createSyncRestorePlan } from "./sync-restore";
 import { createLegacySyncRestorePlan } from "./sync-restore-legacy";
 import { makeSyncLedger } from "./sync-ledger";
@@ -349,6 +354,11 @@ describe("sync publish plan", () => {
 		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
 		tempDirs.push(workspace);
 		const plan = createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: root }]);
+		const portableFiles = { "skiller-sync.yaml": stringifySyncManifest(plan.manifest) };
+		const update = createSyncPublishWorkspacePlan(workspace, plan, portableFiles);
+		expect(update.planId).toBe(createSyncPublishWorkspacePlan(workspace, plan, portableFiles).planId);
+		expect(update.operations.map((operation) => operation.path)).toEqual(["skiller-sync.yaml", "skills/writing"]);
+		expect(existsSync(join(workspace, "skiller-sync.yaml"))).toBe(false);
 		applySyncPublishPlan(workspace, plan);
 		expect(readFileSync(join(workspace, "skills/writing/SKILL.md"), "utf8")).toBe("# Writing\n");
 		expect(parseSyncManifest(readFileSync(join(workspace, "skiller-sync.yaml"), "utf8"))).toMatchObject({

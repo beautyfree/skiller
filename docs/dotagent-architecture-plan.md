@@ -407,6 +407,8 @@ Exit: fixtures explain every current Skiller source kind and expected no-write p
 
 Exit: package builds on macOS/Linux/Windows CI and validates fixtures without touching user files.
 
+Current foundation evidence (2026-08-03): the public repository is `https://github.com/beautyfree/dotagent`; CI run `30799140948` passed typecheck, 29 tests, build, and a CLI smoke test on macOS, Linux, and Windows using a frozen install with lifecycle scripts disabled. npm publication, lint/format enforcement, and release automation remain deliberately open.
+
 ### Phase 2 — inventory, source resolution, and audit
 
 - [x] Implement bounded canonical library scan and deterministic hashes without following symlinks.

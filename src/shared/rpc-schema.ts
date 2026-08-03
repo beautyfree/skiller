@@ -153,6 +153,22 @@ export type DotagentAuditJson = {
   issues: { code: string; severity: "error" | "warning" | "info"; message: string; remediation: string; field?: string }[];
 };
 
+export type DotagentImportPlanJson = {
+  plan_id: string;
+  has_conflicts: boolean;
+  requires_resolve: boolean;
+  owned_skill_count: number;
+  dependency_count: number;
+  operations: {
+    skill_id: string;
+    action: "copy-owned" | "record-dependency" | "unchanged" | "leave-local" | "exclude" | "conflict";
+    source_kind: "owned" | "dependency" | "local-only" | "excluded";
+    package?: string;
+    reason?: string;
+  }[];
+  secret_findings: SyncSecretFindingJson[];
+};
+
 export type RepoEntryJson = {
   repo_url?: string | null;
   local_path?: string | null;
@@ -389,6 +405,13 @@ export type AppRPCSchema = {
       dotagent_materialization_status: { params: { libraryRoot: string }; response: DotagentMaterializationStatusJson };
       dotagent_skill_discovery: { params?: void; response: DotagentSkillDiscoveryJson };
       dotagent_audit: { params: { libraryRoot: string; visibility: "private" | "team" | "public" }; response: DotagentAuditJson };
+      dotagent_import_plan: {
+        params: {
+          libraryRoot: string;
+          decisions: { candidateKey: string; disposition: "suggested" | "owned" | "dependency" | "local-only" | "excluded"; reason?: string }[];
+        };
+        response: DotagentImportPlanJson;
+      };
       read_skills_cli_lock: { params?: void; response: SkillsCliLockJson };
       scan_all_skills: { params?: void; response: SkillJson[] };
       scan_agent_skills: { params: { agentSlug: string }; response: SkillJson[] };

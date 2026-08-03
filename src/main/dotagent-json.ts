@@ -1,7 +1,7 @@
 import type { DoctorReport } from "@beautyfree/dotagent/doctor";
 import type { MaterializationStatus } from "@beautyfree/dotagent/status";
 import type { LibraryAuditReport } from "@beautyfree/dotagent/audit";
-import type { ImportCandidate } from "@beautyfree/dotagent/import";
+import type { ImportCandidate, ImportPlan } from "@beautyfree/dotagent/import";
 import type { SkillDiscoveryReport } from "@beautyfree/dotagent/discovery";
 import type {
 	DotagentAuditJson,
@@ -9,6 +9,7 @@ import type {
 	DotagentMachineInventoryJson,
 	DotagentMaterializationStatusJson,
 	DotagentSkillDiscoveryJson,
+	DotagentImportPlanJson,
 } from "../shared/rpc-schema";
 
 export function dotagentMachineToJson(machine: NonNullable<DoctorReport["machine"]>): DotagentMachineInventoryJson {
@@ -101,6 +102,30 @@ export function dotagentAuditToJson(report: LibraryAuditReport): DotagentAuditJs
 			message: issue.message,
 			remediation: issue.remediation,
 			...(issue.field ? { field: issue.field } : {}),
+		})),
+	};
+}
+
+export function dotagentImportPlanToJson(plan: ImportPlan): DotagentImportPlanJson {
+	return {
+		plan_id: plan.planId,
+		has_conflicts: plan.hasConflicts,
+		requires_resolve: plan.requiresResolve,
+		owned_skill_count: plan.nextManifest.skills.length,
+		dependency_count: Object.keys(plan.nextManifest.dependencies).length,
+		operations: plan.operations.map((operation) => ({
+			skill_id: operation.skill,
+			action: operation.action,
+			source_kind: operation.sourceKind,
+			...(operation.package ? { package: operation.package } : {}),
+			...(operation.reason ? { reason: operation.reason } : {}),
+		})),
+		secret_findings: plan.secretFindings.map((finding) => ({
+			rule: finding.rule,
+			skill_id: finding.skill,
+			relative_path: finding.relativePath,
+			line: finding.line,
+			column: finding.column,
 		})),
 	};
 }

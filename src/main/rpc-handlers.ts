@@ -10,6 +10,7 @@ import type {
   DotagentMaterializationStatusJson,
   DotagentSkillDiscoveryJson,
   DotagentAuditJson,
+  DotagentImportPlanJson,
   RepoProgressJson,
   SkillJson,
   SkillRepoJson,
@@ -27,8 +28,8 @@ import { detectAgents, loadAgentConfigs } from './registry'
 import { detectRuntimeAgent } from './runtime-agent'
 import { scanDotagentMachine } from './dotagent-catalog'
 import { dotagentDescriptorsFromSkiller } from './dotagent-catalog'
-import { scanDotagentSkillDiscovery } from './dotagent-discovery'
-import { dotagentAuditToJson, dotagentDiscoveryToJson, dotagentDoctorToJson, dotagentMachineToJson, dotagentStatusToJson } from './dotagent-json'
+import { planDotagentImportFromDiscovery, scanDotagentSkillDiscovery, type DotagentImportDecision } from './dotagent-discovery'
+import { dotagentAuditToJson, dotagentDiscoveryToJson, dotagentDoctorToJson, dotagentImportPlanToJson, dotagentMachineToJson, dotagentStatusToJson } from './dotagent-json'
 import { doctorLibrary } from '@beautyfree/dotagent/doctor'
 import { auditLibrary } from '@beautyfree/dotagent/audit'
 import { getMaterializationStatus } from '@beautyfree/dotagent/status'
@@ -812,6 +813,12 @@ export function createRequestHandlers(ctx: {
     },
     dotagent_audit: async (params: { libraryRoot: string; visibility: 'private' | 'team' | 'public' }): Promise<DotagentAuditJson> =>
       dotagentAuditToJson(await auditLibrary({ root: params.libraryRoot, visibility: params.visibility })),
+    dotagent_import_plan: async (params: { libraryRoot: string; decisions: DotagentImportDecision[] }): Promise<DotagentImportPlanJson> =>
+      dotagentImportPlanToJson(await planDotagentImportFromDiscovery(
+        params.libraryRoot,
+        loadDetectedAgents('dotagent_import_plan'),
+        params.decisions,
+      )),
     read_skills_cli_lock: async () => readSkillsCliLock(),
     scan_all_skills: async () => {
       const agents = loadDetectedAgents('scan_all_skills')

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { dotagentAuditToJson, dotagentDiscoveryToJson, dotagentDoctorToJson, dotagentStatusToJson } from "./dotagent-json";
+import { dotagentAuditToJson, dotagentDiscoveryToJson, dotagentDoctorToJson, dotagentImportPlanToJson, dotagentStatusToJson } from "./dotagent-json";
 
 describe("dotagent renderer JSON mapping", () => {
 	it("removes machine paths from doctor issues and detection evidence", () => {
@@ -49,6 +49,19 @@ describe("dotagent renderer JSON mapping", () => {
 			issues: [{ code: "missing-license", severity: "error", message: "No license", remediation: "Choose one", path: "/private/library/skills.json", field: "license" }],
 		});
 		expect(json).toMatchObject({ ok: false, library: { name: "personal", dependency_count: 1 }, issues: [{ field: "license" }] });
+		expect(JSON.stringify(json)).not.toContain("/private");
+	});
+
+	it("maps an import plan without source or target paths", () => {
+		const json = dotagentImportPlanToJson({
+			kind: "import", schemaVersion: 1, planId: "plan", library: "/private/library", baseManifestHash: "base", baseConfigHash: "config",
+			nextManifest: { schema_version: 1, name: "personal", version: "1.0.0", skills: ["skills/writing"], dependencies: {} },
+			nextConfig: { schema_version: 1, defaults: { include: "all" }, skills: { writing: { include: true } } },
+			operations: [{ skill: "writing", action: "copy-owned", sourceKind: "owned", source: "/private/source", target: "/private/library/skills/writing", sourceIntegrity: "hash" }],
+			secretFindings: [{ skill: "writing", relativePath: "notes.md", rule: "github-token", line: 2, column: 1 }],
+			hasConflicts: false, requiresResolve: false,
+		});
+		expect(json).toMatchObject({ plan_id: "plan", owned_skill_count: 1, operations: [{ skill_id: "writing", action: "copy-owned" }], secret_findings: [{ relative_path: "notes.md" }] });
 		expect(JSON.stringify(json)).not.toContain("/private");
 	});
 });

@@ -26,6 +26,7 @@ export function createAppRouter(ctx: {
     dotagent_materialization_status: proc.input(anyIn).query(({ input }) => h.dotagent_materialization_status(input)),
     dotagent_skill_discovery: proc.query(() => h.dotagent_skill_discovery()),
     dotagent_audit: proc.input(anyIn).query(({ input }) => h.dotagent_audit(input)),
+    dotagent_import_plan: proc.input(anyIn).query(({ input }) => h.dotagent_import_plan(input)),
     read_skills_cli_lock: proc.query(() => h.read_skills_cli_lock()),
     scan_all_skills: proc.query(() => h.scan_all_skills()),
     scan_agent_skills: proc.input(anyIn).query(({ input }) => h.scan_agent_skills(input)),

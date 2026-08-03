@@ -9,6 +9,7 @@ describe("tRPC query procedure registry", () => {
 			"dotagent_materialization_status",
 			"dotagent_skill_discovery",
 			"dotagent_audit",
+			"dotagent_import_plan",
 			"scan_sync_inventory",
 			"get_sync_skill_preview",
 			"sync_center_publish_preview",

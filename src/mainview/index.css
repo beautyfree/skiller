@@ -41,6 +41,24 @@
   .sync-library-cta { animation: none; }
 }
 
+/* The library review is a desktop master/detail view at normal window sizes.
+   When the app is narrowed, details replace the list instead of squeezing both
+   panes; the explicit Back to skills action restores the list. */
+.sync-library-review {
+  container-type: inline-size;
+}
+
+@container (max-width: 42rem) {
+  .sync-library-review-body:has(.sync-library-review-detail) > .sync-library-review-list {
+    display: none;
+  }
+
+  .sync-library-review-detail {
+    width: 100%;
+    border-left: 0;
+  }
+}
+
 /* ─────────────────────────────────────────────
    Linear-inspired tokens (DESIGN.md). Dark: luminance stack + indigo/violet accent.
    Maps to shadcn semantic tokens for components.

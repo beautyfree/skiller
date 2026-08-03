@@ -5,6 +5,9 @@
 > Owners: beautyfree/dotagent core and Skiller integration  
 > Decision rule: update this document whenever the format, package boundary, migration order, or acceptance criteria changes.
 
+Requirement-by-requirement evidence and the current interface-quality findings
+are recorded in [`dotagent-completion-audit.md`](./dotagent-completion-audit.md).
+
 ## 1. Outcome
 
 `beautyfree/dotagent` is a TypeScript library and headless CLI for maintaining one canonical agent library, normally cloned at `~/.agents`, and materializing reviewed views into the native locations of supported agents.

@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Cloud, FolderOpen, Github, Info, Loader2, Server, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Cloud, FolderOpen, Github, Info, Loader2, Server } from 'lucide-react'
 import { invoke } from '@/mainview/lib/native'
 import type { AgentConfigJson, SyncConnectPreviewJson, SyncGitHubRepositoryPreviewJson, SyncInventoryJson, SyncLibraryDecisionJson, SyncProfileStatusJson, SyncPublishPreviewJson, SyncThreeWayReviewJson } from '@/shared/rpc-schema'
 import { Button } from '@/mainview/components/ui/button'
@@ -46,7 +46,7 @@ const InventorySkillRow = memo(function InventorySkillRow({ item, selected, insp
 	const agentSlugs = useMemo(() => [...new Set(item.locations.flatMap((location) => location.agent_slug ? [location.agent_slug] : []))], [item.locations])
 	const isShared = item.locations.some((location) => location.kind === 'shared')
 	return <div className={`flex min-h-12 items-center gap-2 px-2 py-2 text-xs ${inspected ? 'bg-primary/8' : 'hover:bg-muted/30'}`}>
-		<label className="flex shrink-0 cursor-pointer items-center py-0.5" aria-label={`Select ${item.display_name}`}>
+		<label className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md hover:bg-muted/50" aria-label={`Select ${item.display_name}`}>
 			<input className="cursor-pointer" type="checkbox" checked={selected} onChange={() => onToggle(item.candidate_key)} />
 		</label>
 		<button type="button" className="min-w-0 flex-1 break-words text-left font-medium text-foreground outline-none hover:text-primary focus-visible:rounded focus-visible:ring-2 focus-visible:ring-ring/60" onClick={() => onInspect(item.candidate_key)}><span>{item.display_name}</span>{item.source.kind === 'skills_sh' && <span className="ml-1.5 inline-flex rounded-sm bg-muted px-1.5 py-0.5 align-middle text-[9px] font-semibold tracking-[0.08em] text-muted-foreground">skills.sh</span>}{item.source.kind === 'git_reference' && <span className="ml-1.5 inline-flex rounded-sm bg-muted px-1.5 py-0.5 align-middle text-[9px] font-semibold tracking-[0.08em] text-muted-foreground">Git</span>}</button>
@@ -76,8 +76,8 @@ function ReviewSkillDetail({ item, decision, onDecision, onClose }: { item: Inve
 		staleTime: Infinity,
 		retry: false,
 	})
-	return <aside className="flex min-h-0 w-[min(26rem,46%)] shrink-0 flex-col border-l border-border/60 bg-muted/10">
-		<div className="flex shrink-0 items-center justify-between border-b border-border/60 px-4 py-3"><div className="flex items-center gap-2"><Info className="size-4 text-muted-foreground" /><p className="text-sm font-medium">Skill details</p></div><button type="button" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={onClose} aria-label="Close skill details"><X className="size-4" /></button></div>
+	return <aside className="sync-library-review-detail flex min-h-0 w-[min(26rem,46%)] shrink-0 flex-col border-l border-border/60 bg-muted/10">
+		<div className="flex shrink-0 items-center justify-between border-b border-border/60 px-4 py-3"><div className="flex items-center gap-2"><Info className="size-4 text-muted-foreground" /><p className="text-sm font-medium">Skill details</p></div><button type="button" className="inline-flex min-h-7 items-center gap-1 rounded px-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground" onClick={onClose} aria-label="Back to skills"><ChevronLeft className="size-3.5" />Back to skills</button></div>
 		<div className="min-h-0 flex-1 overflow-y-auto p-4">
 			<h3 className="text-base font-semibold leading-tight">{item.display_name}</h3>
 			{item.description && <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{item.description}</p>}
@@ -558,7 +558,7 @@ export default function SyncCenter() {
       )}
 
       {showInventory && (
-        <section className={`${!profile ? 'mt-0 flex min-h-0 flex-1 flex-col overflow-hidden' : 'mt-5'} px-1`}>
+        <section className={`sync-library-review ${!profile ? 'mt-0 flex min-h-0 flex-1 flex-col overflow-hidden' : 'mt-5'} px-1`}>
           {!preview && <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">{remoteReview ? 'Restore review' : 'Step 1 of 3'}</p>
@@ -577,8 +577,8 @@ export default function SyncCenter() {
 			</div>
 		  )}
 
-		  {!preview && !remoteReview && <div className="order-2 mt-4 flex min-h-0 flex-1 overflow-hidden">
-			<div ref={inventoryScrollRef} className="min-w-0 flex-1 overflow-y-auto pr-1"><div className="relative w-full" style={{ height: inventoryVirtualizer.getTotalSize() }}>
+		  {!preview && !remoteReview && <div className="sync-library-review-body order-2 mt-4 flex min-h-0 flex-1 overflow-hidden">
+			<div ref={inventoryScrollRef} className="sync-library-review-list min-w-0 flex-1 overflow-y-auto pr-1"><div className="relative w-full" style={{ height: inventoryVirtualizer.getTotalSize() }}>
 			{inventoryVirtualizer.getVirtualItems().map((virtualItem) => {
 			  const item = inventoryItems[virtualItem.index]
 			  if (!item) return null

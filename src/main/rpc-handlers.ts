@@ -100,7 +100,7 @@ import { readProvenance, type ProvenanceEntry } from './provenance'
 import { scanSyncInventory } from './sync-inventory'
 import { planBundledSkillExport } from './sync-export'
 import { parseSkillMdFile } from './parser'
-import { classifyThreeWaySkill, makeSyncLedger, readSyncLedger, writeSyncLedgerAt, syncLedgerPath } from './sync-ledger'
+import { makeSyncLedger, readSyncLedger, writeSyncLedgerAt, syncLedgerPath } from './sync-ledger'
 import { readRestoreJournalAt, recoverRestoreJournalAt, syncJournalPath } from './sync-journal'
 import { createGitHubSyncRepository } from './github-sync'
 import { applySyncPublishFiles, applySyncPublishPlan, createSyncPublishPlan, mergeBundledUpdateIntoManifest, type SyncPublishCandidate } from './sync-publish'
@@ -727,8 +727,8 @@ async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc:
   if (!status.remoteUrl || status.changed) throw new Error('Sync workspace must be clean and connected before applying remote changes')
   await fetchSyncWorkspace(workspace)
   await fastForwardSyncWorkspace(workspace)
-  const plan = createSyncRestorePlan(workspace, sharedSkillsDir())
-  const ledger = readSyncLedger(profileId)
+	const ledger = readSyncLedger(profileId)
+	const plan = createSyncRestorePlan(workspace, sharedSkillsDir(), ledger ?? undefined)
   const entries = new Map(plan.entries.map((entry) => [entry.id, entry]))
 	const agents = loadDetectedAgents('sync_apply_remote_changes')
 	const externalSkills = new Map(plan.manifest.skills
@@ -744,7 +744,7 @@ async function applyReviewedRemoteChanges(profileId: string, ids: string[], rpc:
 			}
 			continue
 		}
-    const action = classifyThreeWaySkill(id, ledger?.skills[id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256, ledger?.skills[id]?.kept_remote_sha256).action
+		const action = entry.threeWayAction
 	if (action !== 'take-remote' && !(allowConflict && action === 'conflict')) throw new Error(`Remote change must be resolved manually: ${id}`)
   }
 	const routing = syncRestoreAgentRouting(workspace, plan.manifest, agents)
@@ -791,9 +791,9 @@ async function publishReviewedLocalChanges(
   if (!status.remoteUrl || status.changed) throw new Error('Sync workspace must be clean and connected before publishing local changes')
   await fetchSyncWorkspace(workspace)
   await fastForwardSyncWorkspace(workspace)
-  const restore = createSyncRestorePlan(workspace, sharedSkillsDir())
-  const existing = restore.manifest
-  const ledger = readSyncLedger(profileId)
+	const ledger = readSyncLedger(profileId)
+	const restore = createSyncRestorePlan(workspace, sharedSkillsDir(), ledger ?? undefined)
+	const existing = restore.manifest
   const entries = new Map(restore.entries.map((entry) => [entry.id, entry]))
   const existingSkills = new Map(existing.skills.map((skill) => [skill.id, skill]))
   const agents = loadDetectedAgents('sync_adopt_local_changes')
@@ -804,7 +804,7 @@ async function publishReviewedLocalChanges(
     if (!current) throw new Error(`Library skill is not available: ${id}`)
     if (current.kind === 'bundled') {
       if (!entry || entry.localSha256 === null) throw new Error(`Local skill is not available: ${id}`)
-      const action = classifyThreeWaySkill(id, ledger?.skills[id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256, ledger?.skills[id]?.kept_remote_sha256).action
+			const action = entry.threeWayAction
       if (action !== 'publish-local' && !(options.allowConflict && (action === 'conflict' || action === 'unmanaged'))) {
         throw new Error(`Local change does not need publishing: ${id}`)
       }
@@ -845,14 +845,14 @@ async function keepReviewedLocalChanges(profileId: string, ids: string[]): Promi
   if (!status.remoteUrl || status.changed) throw new Error('Sync workspace must be clean and connected before keeping local changes')
   await fetchSyncWorkspace(workspace)
   await fastForwardSyncWorkspace(workspace)
-  const restore = createSyncRestorePlan(workspace, sharedSkillsDir())
-  const ledger = readSyncLedger(profileId)
+	const ledger = readSyncLedger(profileId)
+	const restore = createSyncRestorePlan(workspace, sharedSkillsDir(), ledger ?? undefined)
   const entries = new Map(restore.entries.map((entry) => [entry.id, entry]))
   const nextSkills = new Map(Object.entries(ledger?.skills ?? {}).map(([id, entry]) => [id, { sha256: entry.sha256, keptRemoteSha256: entry.kept_remote_sha256 }]))
   for (const id of skillIds) {
     const entry = entries.get(id)
     if (!entry || entry.localSha256 === null) throw new Error(`Local skill is not available: ${id}`)
-    const action = classifyThreeWaySkill(id, ledger?.skills[id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256, ledger?.skills[id]?.kept_remote_sha256).action
+		const action = entry.threeWayAction
     if (action !== 'conflict' && action !== 'unmanaged') throw new Error(`Local change does not need this decision: ${id}`)
     nextSkills.set(id, { sha256: ledger?.skills[id]?.sha256 ?? entry.localSha256, keptRemoteSha256: entry.remoteSha256 })
   }
@@ -874,8 +874,8 @@ async function keepReviewedExternalChanges(profileId: string, ids: string[]): Pr
 	if (!status.remoteUrl || status.changed) throw new Error('Sync workspace must be clean and connected before keeping a local skill')
 	await fetchSyncWorkspace(workspace)
 	await fastForwardSyncWorkspace(workspace)
-	const restore = createSyncRestorePlan(workspace, sharedSkillsDir())
 	const ledger = readSyncLedger(profileId)
+	const restore = createSyncRestorePlan(workspace, sharedSkillsDir(), ledger ?? undefined)
 	const agents = loadDetectedAgents('sync_keep_external_local_changes')
 	const externalSkills = new Map(restore.manifest.skills
 		.filter((skill): skill is ManagedExternalSkill => skill.kind === 'reference' || skill.kind === 'skills_sh')
@@ -1085,12 +1085,14 @@ export function createRequestHandlers(ctx: {
 	  const dependencyChanges = previousLock && nextLock
 		? diffLibraryLocks(previousLock, nextLock).filter((change) => change.action !== 'unchanged')
 		: []
-      const restore = createSyncRestorePlan(workspace, sharedSkillsDir())
-      const ledger = readSyncLedger(params.profileId)
+		const ledger = readSyncLedger(params.profileId)
+		const restore = createSyncRestorePlan(workspace, sharedSkillsDir(), ledger ?? undefined)
 		const agents = loadDetectedAgents('sync_three_way_review')
 		const externalSkills = restore.manifest.skills.filter((skill): skill is ManagedExternalSkill => skill.kind === 'reference' || skill.kind === 'skills_sh')
       return {
         profile_id: params.profileId,
+			reconciliation_plan_id: restore.engine === 'dotagent' ? restore.corePlan.planId : null,
+			reconciliation_engine: restore.engine,
 		dependency_changes: dependencyChanges.map((change) => ({
 			dependency: change.dependency,
 			action: change.action as 'added' | 'updated' | 'removed',
@@ -1105,7 +1107,7 @@ export function createRequestHandlers(ctx: {
 			...restore.entries.map((entry) => ({
 				id: entry.id,
 				kind: 'bundled' as const,
-				action: classifyThreeWaySkill(entry.id, ledger?.skills[entry.id]?.sha256 ?? null, entry.localSha256, entry.remoteSha256, ledger?.skills[entry.id]?.kept_remote_sha256).action,
+				action: entry.threeWayAction,
 			})),
 			...externalSkills.map((skill) => {
 				const externalAction = externalReviewAction(skill, agents, ledger?.external_kept_sources)
@@ -1215,12 +1217,14 @@ export function createRequestHandlers(ctx: {
       if (status.changed) throw new Error('Sync workspace has uncommitted changes; resolve them before pulling')
       await fetchSyncWorkspace(workspace)
       await fastForwardSyncWorkspace(workspace)
-      const plan = createSyncRestorePlan(workspace, sharedSkillsDir())
+			const plan = createSyncRestorePlan(workspace, sharedSkillsDir(), readSyncLedger(params.profileId) ?? undefined)
       const agents = loadDetectedAgents('sync_pull_preview')
 	  const ledger = readSyncLedger(params.profileId)
       const externalSkills = plan.manifest.skills.filter((skill): skill is ManagedExternalSkill => skill.kind === 'reference' || skill.kind === 'skills_sh')
       return {
         profile_id: params.profileId,
+			reconciliation_plan_id: plan.engine === 'dotagent' ? plan.corePlan.planId : null,
+			reconciliation_engine: plan.engine,
         mode: plan.manifest.profile.mode,
         skills: [
           ...plan.entries.map((entry) => ({ id: entry.id, kind: 'bundled' as const, action: entry.action })),
@@ -1257,7 +1261,8 @@ export function createRequestHandlers(ctx: {
       const skillIds = selectedSyncSkillIds(params.skillIds)
       if (!hasSyncWorkspace(params.profileId)) throw new Error('Sync profile has not been set up on this computer')
       const workspace = syncWorkspacePath(params.profileId)
-      const plan = createSyncRestorePlan(workspace, sharedSkillsDir())
+			const previousLedger = readSyncLedger(params.profileId)
+			const plan = createSyncRestorePlan(workspace, sharedSkillsDir(), previousLedger ?? undefined)
       const referenceSkills = plan.manifest.skills
         .filter((skill): skill is Extract<typeof skill, { kind: 'reference' }> => skill.kind === 'reference')
       const skillsShSkills = plan.manifest.skills
@@ -1288,7 +1293,6 @@ export function createRequestHandlers(ctx: {
 			for (const entry of preparedExternal) {
 				installPreparedGitSkill(entry.prepared, entry.targets, agents, entry.skill.kind === 'skills_sh' ? 'skills.sh' : 'sync-reference')
 			}
-			const previousLedger = readSyncLedger(params.profileId)
 			const nextSkills = new Map(Object.entries(previousLedger?.skills ?? {}).map(([id, entry]) => [id, entry.sha256]))
 			for (const entry of plan.entries.filter((entry) => skillIds.includes(entry.id))) {
 				nextSkills.set(entry.id, entry.remoteSha256)

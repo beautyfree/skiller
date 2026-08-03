@@ -8,6 +8,21 @@ const cleanup: string[] = [];
 afterEach(() => cleanup.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true })));
 
 describe("sync restore journal", () => {
+	it("recognizes and cleans up a completed dotagent reconciliation journal", () => {
+		const root = mkdtempSync(join(tmpdir(), "skiller-journal-"));
+		cleanup.push(root);
+		const journalPath = join(root, "journal.json");
+		writeFileSync(journalPath, `${JSON.stringify({
+			kind: "library-reconcile",
+			schemaVersion: 1,
+			planId: "reviewed-plan",
+			phase: "completed",
+			entries: [],
+		})}\n`);
+		expect(recoverRestoreJournalAt(journalPath)).toBe(true);
+		expect(existsSync(journalPath)).toBe(false);
+	});
+
 	it("restores the old target after an interrupted apply", () => {
 		const root = mkdtempSync(join(tmpdir(), "skiller-journal-"));
 		cleanup.push(root);

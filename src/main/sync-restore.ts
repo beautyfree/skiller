@@ -1,10 +1,20 @@
-import { createHash, randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
-import type { SyncManifest } from "./sync-profile";
+import {
+	applyLibraryReconciliationPlan,
+	classifyThreeWaySkill,
+	planLibraryReconciliation,
+	type LibraryReconciliationPlan,
+	type ThreeWayAction,
+} from "@beautyfree/dotagent/reconcile";
+import type { SyncLedger } from "./sync-ledger";
 import { readSyncManifestFromWorkspace } from "./sync-dotagent";
-import { planBundledSkillExport, type SyncExportFinding } from "./sync-export";
-import { recoverRestoreJournalAt, syncJournalPath, writeRestoreJournalAt, type RestoreJournal } from "./sync-journal";
+import {
+	applyLegacySyncRestorePlan,
+	createLegacySyncRestorePlan,
+	type SyncRestorePlan as LegacySyncRestorePlan,
+} from "./sync-restore-legacy";
+import { syncJournalPath } from "./sync-journal";
+import type { SyncManifest } from "./sync-profile";
+import type { SyncExportFinding } from "./sync-export";
 
 export type SyncRestoreAction = "create" | "unchanged" | "conflict";
 
@@ -13,185 +23,133 @@ export type SyncRestoreEntry = {
 	sourcePath: string;
 	targetPath: string;
 	action: SyncRestoreAction;
+	threeWayAction: ThreeWayAction;
 	remoteSha256: string;
 	localSha256: string | null;
+	reason?: string;
 };
 
 export type SyncRestoreFinding = SyncExportFinding & { skillId: string };
 
-export type SyncRestorePlan = {
+type DotagentSyncRestorePlan = {
+	engine: "dotagent";
 	manifest: SyncManifest;
 	entries: SyncRestoreEntry[];
 	secretFindings: SyncRestoreFinding[];
+	corePlan: LibraryReconciliationPlan;
 };
 
-/**
- * Reads a fetched workspace without changing local skills. Integrity and
- * containment checks happen before a UI may offer "Apply" for any entry.
- */
-export function createSyncRestorePlan(workspacePath: string, canonicalSkillsPath: string): SyncRestorePlan {
-	const workspace = realpathSync(workspacePath);
-	const manifest = readSyncManifestFromWorkspace(workspace);
-	const entries: SyncRestoreEntry[] = [];
-	const secretFindings: SyncRestoreFinding[] = [];
+type LegacyCompatibilityPlan = {
+	engine: "legacy";
+	manifest: SyncManifest;
+	entries: SyncRestoreEntry[];
+	secretFindings: SyncRestoreFinding[];
+	legacyPlan: LegacySyncRestorePlan;
+};
 
-	for (const skill of manifest.skills) {
-		if (skill.kind !== "bundled") continue;
-		const sourcePath = workspaceChildRealPath(workspace, skill.path);
-		const remote = planBundledSkillExport(skill.id, sourcePath);
-		if (remote.sha256 !== skill.sha256) {
-			throw new Error(`Sync bundle integrity mismatch: ${skill.id}`);
-		}
-		secretFindings.push(...remote.secretFindings.map((finding) => ({ ...finding, skillId: skill.id })));
+export type SyncRestorePlan = DotagentSyncRestorePlan | LegacyCompatibilityPlan;
 
-		const targetPath = resolve(canonicalSkillsPath, skill.id);
-		let action: SyncRestoreAction = "create";
-		let localSha256: string | null = null;
-		if (existsSync(targetPath)) {
-			const targetStat = lstatSync(targetPath);
-			if (targetStat.isSymbolicLink() || !targetStat.isDirectory()) {
-				action = "conflict";
-			} else {
-				try {
-					localSha256 = planBundledSkillExport(skill.id, targetPath).sha256;
-					action = localSha256 === remote.sha256 ? "unchanged" : "conflict";
-				} catch {
-					action = "conflict";
-				}
-			}
-		}
-		entries.push({
-			id: skill.id,
-			sourcePath,
-			targetPath,
-			action,
-			remoteSha256: remote.sha256,
-			localSha256,
-		});
-	}
-	return { manifest, entries, secretFindings };
+function compatibilityAction(entry: LibraryReconciliationPlan["operations"][number]): SyncRestoreAction {
+	if (entry.expectedTarget.kind === "absent") return "create";
+	if (entry.localIntegrity === entry.remoteIntegrity) return "unchanged";
+	return "conflict";
 }
 
-/**
- * Applies only entries explicitly selected by the user after preview. It
- * refuses to overwrite a local skill that changed since that preview.
- */
-export function applySyncRestorePlan(plan: SyncRestorePlan, selectedIds: string[], profileId?: string): void {
-	if (plan.secretFindings.length > 0) {
-		throw new Error(`Sync restore is blocked by ${plan.secretFindings.length} secret finding(s)`);
-	}
-	const selected = new Set(selectedIds);
-	const entries = plan.entries.filter((entry) => selected.has(entry.id) && entry.action !== "unchanged");
-	if (entries.length === 0) return;
+function ledgerBase(ledger?: SyncLedger): Record<string, { baseIntegrity: string | null; keptRemoteIntegrity?: string }> | undefined {
+	if (!ledger) return undefined;
+	return Object.fromEntries(
+		Object.entries(ledger.skills).map(([id, entry]) => [
+			id,
+			{
+				baseIntegrity: entry.sha256,
+				...(entry.kept_remote_sha256 ? { keptRemoteIntegrity: entry.kept_remote_sha256 } : {}),
+			},
+		]),
+	);
+}
 
-	const stagedRoot = join(dirname(entries[0].targetPath), `.skiller-sync-restore-${randomUUID()}`);
-	const backupRoot = `${stagedRoot}-backup`;
-	const staged = entries.map((entry) => ({ entry, stagingPath: stageRestoreEntry(stagedRoot, entry) }));
-	const applied: { targetPath: string; backupPath: string; hadPrevious: boolean }[] = [];
-	const journalPath = profileId ? syncJournalPath(profileId) : null;
-	if (journalPath) {
-		// A stale journal represents an interrupted earlier restore and must be
-		// recovered before a new plan changes the same canonical library.
-		recoverRestoreJournalAt(journalPath);
-	}
-	const journal: RestoreJournal | null = journalPath ? {
-		schema_version: 1,
-		profile_id: profileId!,
-		staged_root: stagedRoot,
-		backup_root: backupRoot,
-		phase: "applying",
-		entries: staged.map(({ entry }) => ({
-			id: entry.id,
-			targetPath: entry.targetPath,
-			backupPath: join(backupRoot, entry.id),
-			hadPrevious: existsSync(entry.targetPath),
-			stage: "pending",
+function legacyCompatibilityPlan(
+	workspacePath: string,
+	canonicalSkillsPath: string,
+	ledger?: SyncLedger,
+): LegacyCompatibilityPlan {
+	const legacyPlan = createLegacySyncRestorePlan(workspacePath, canonicalSkillsPath);
+	return {
+		engine: "legacy",
+		legacyPlan,
+		manifest: legacyPlan.manifest,
+		entries: legacyPlan.entries.map((entry) => ({
+			...entry,
+			threeWayAction: classifyThreeWaySkill(
+				entry.id,
+				ledger?.skills[entry.id]?.sha256 ?? null,
+				entry.localSha256,
+				entry.remoteSha256,
+				ledger?.skills[entry.id]?.kept_remote_sha256,
+			).action,
 		})),
-	} : null;
-	if (journal && journalPath) writeRestoreJournalAt(journalPath, journal);
-	try {
-		for (const { entry, stagingPath } of staged) {
-			assertRestorePrecondition(entry);
-			const backupPath = join(backupRoot, entry.id);
-			const hadPrevious = existsSync(entry.targetPath);
-			if (hadPrevious) {
-				mkdirSync(dirname(backupPath), { recursive: true });
-				renameSync(entry.targetPath, backupPath);
-				if (journal && journalPath) {
-					journal.entries.find((item) => item.id === entry.id)!.stage = "backed-up";
-					writeRestoreJournalAt(journalPath, journal);
-				}
-			}
-			try {
-				mkdirSync(dirname(entry.targetPath), { recursive: true });
-				renameSync(stagingPath, entry.targetPath);
-			} catch (error) {
-				if (hadPrevious && existsSync(backupPath)) renameSync(backupPath, entry.targetPath);
-				throw error;
-			}
-			applied.push({ targetPath: entry.targetPath, backupPath, hadPrevious });
-			if (journal && journalPath) {
-				journal.entries.find((item) => item.id === entry.id)!.stage = "applied";
-				writeRestoreJournalAt(journalPath, journal);
-			}
-		}
-		if (journal && journalPath) {
-			journal.phase = "completed";
-			writeRestoreJournalAt(journalPath, journal);
-		}
-		rmSync(backupRoot, { recursive: true, force: true });
-		if (journalPath) rmSync(journalPath, { force: true });
-	} catch (error) {
-		for (const item of applied.reverse()) {
-			if (existsSync(item.targetPath)) rmSync(item.targetPath, { recursive: true, force: true });
-			if (item.hadPrevious && existsSync(item.backupPath)) renameSync(item.backupPath, item.targetPath);
-		}
-		if (journalPath) rmSync(journalPath, { force: true });
-		throw error;
-	} finally {
-		if (existsSync(stagedRoot)) rmSync(stagedRoot, { recursive: true, force: true });
-		if (existsSync(backupRoot)) rmSync(backupRoot, { recursive: true, force: true });
-	}
+		secretFindings: legacyPlan.secretFindings,
+	};
 }
 
-function stageRestoreEntry(stagedRoot: string, entry: SyncRestoreEntry): string {
-	const sourcePlan = planBundledSkillExport(entry.id, entry.sourcePath);
-	if (sourcePlan.sha256 !== entry.remoteSha256 || sourcePlan.secretFindings.length > 0) {
-		throw new Error(`Sync remote skill changed after preview: ${entry.id}`);
+/**
+ * Compatibility adapter from legacy/canonical Skiller manifests to the shared
+ * dotagent reconciliation module. Set SKILLER_SYNC_RECONCILE_ENGINE=legacy to
+ * compare or temporarily fall back while migration fixtures remain active.
+ */
+export function createSyncRestorePlan(
+	workspacePath: string,
+	canonicalSkillsPath: string,
+	ledger?: SyncLedger,
+): SyncRestorePlan {
+	if (process.env.SKILLER_SYNC_RECONCILE_ENGINE === "legacy") {
+		return legacyCompatibilityPlan(workspacePath, canonicalSkillsPath, ledger);
 	}
-	const stagingPath = join(stagedRoot, entry.id);
-	for (const file of sourcePlan.files) {
-		const source = readFileSync(join(sourcePlan.sourcePath, file.relativePath));
-		if (createHash("sha256").update(source).digest("hex") !== file.sha256) {
-			throw new Error(`Sync remote file changed during restore: ${entry.id}/${file.relativePath}`);
-		}
-		const destination = join(stagingPath, file.relativePath);
-		mkdirSync(dirname(destination), { recursive: true });
-		writeFileSync(destination, source);
-	}
-	return stagingPath;
+	const manifest = readSyncManifestFromWorkspace(workspacePath);
+	const base = ledgerBase(ledger);
+	const corePlan = planLibraryReconciliation({
+		sourceRoot: workspacePath,
+		targetRoot: canonicalSkillsPath,
+		skills: manifest.skills
+			.filter((skill): skill is Extract<typeof skill, { kind: "bundled" }> => skill.kind === "bundled")
+			.map((skill) => ({ id: skill.id, path: skill.path, integrity: skill.sha256 })),
+		...(base ? { base } : {}),
+	});
+	return {
+		engine: "dotagent",
+		manifest,
+		corePlan,
+		entries: corePlan.operations.map((entry) => ({
+			id: entry.skill,
+			sourcePath: entry.source,
+			targetPath: entry.target,
+			action: compatibilityAction(entry),
+			threeWayAction: entry.action,
+			remoteSha256: entry.remoteIntegrity,
+			localSha256: entry.localIntegrity,
+			...(entry.reason ? { reason: entry.reason } : {}),
+		})),
+		secretFindings: corePlan.secretFindings.map((finding) => ({
+			rule: finding.rule,
+			skillId: finding.skill,
+			relativePath: finding.relativePath,
+			line: finding.line,
+			column: finding.column,
+		})),
+	};
 }
 
-function assertRestorePrecondition(entry: SyncRestoreEntry): void {
-	if (entry.action === "create") {
-		if (existsSync(entry.targetPath)) throw new Error(`Local skill appeared after preview: ${entry.id}`);
+/** Apply only user-selected remote versions through the active engine. */
+export function applySyncRestorePlan(plan: SyncRestorePlan, selectedIds: string[], profileId?: string): void {
+	if (plan.engine === "legacy") {
+		applyLegacySyncRestorePlan(plan.legacyPlan, selectedIds, profileId);
 		return;
 	}
-	if (entry.localSha256 === null || !existsSync(entry.targetPath) || lstatSync(entry.targetPath).isSymbolicLink()) {
-		throw new Error(`Local skill cannot be safely replaced: ${entry.id}`);
-	}
-	const current = planBundledSkillExport(entry.id, entry.targetPath).sha256;
-	if (current !== entry.localSha256) throw new Error(`Local skill changed after preview: ${entry.id}`);
-}
-
-function workspaceChildRealPath(workspace: string, relativePath: string): string {
-	const candidate = resolve(workspace, relativePath);
-	if (!candidate.startsWith(`${workspace}${sep}`)) {
-		throw new Error(`Sync workspace path escapes managed workspace: ${relativePath}`);
-	}
-	const real = realpathSync(candidate);
-	if (!real.startsWith(`${workspace}${sep}`)) {
-		throw new Error(`Sync workspace bundle escapes managed workspace: ${relativePath}`);
-	}
-	return real;
+	applyLibraryReconciliationPlan(
+		plan.corePlan,
+		selectedIds
+			.filter((skill) => plan.corePlan.operations.some((operation) => operation.skill === skill && operation.action !== "unchanged"))
+			.map((skill) => ({ skill, action: "take-remote" })),
+		profileId ? { journalPath: syncJournalPath(profileId) } : {},
+	);
 }

@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { recoverLibraryReconciliation } from "@beautyfree/dotagent/reconcile";
 import { appDataRootPath } from "./settings";
 
 export type RestoreJournalEntry = {
@@ -30,11 +31,16 @@ export function writeRestoreJournalAt(path: string, journal: RestoreJournal): vo
 	renameSync(temporary, path);
 }
 
-export function readRestoreJournalAt(path: string): RestoreJournal | null {
+export type CurrentRestoreJournal = { kind: "library-reconcile"; schemaVersion: 1; entries: unknown[] };
+
+export function readRestoreJournalAt(path: string): RestoreJournal | CurrentRestoreJournal | null {
 	try {
-		const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<RestoreJournal>;
+		const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+		if (raw.kind === "library-reconcile" && raw.schemaVersion === 1 && Array.isArray(raw.entries)) {
+			return raw as unknown as CurrentRestoreJournal;
+		}
 		if (raw.schema_version !== 1 || raw.phase === undefined || !Array.isArray(raw.entries)) return null;
-		return raw as RestoreJournal;
+		return raw as unknown as RestoreJournal;
 	} catch {
 		return null;
 	}
@@ -48,6 +54,7 @@ export function readRestoreJournalAt(path: string): RestoreJournal | null {
 export function recoverRestoreJournalAt(path: string): boolean {
 	const journal = readRestoreJournalAt(path);
 	if (!journal) return false;
+	if ("kind" in journal) return recoverLibraryReconciliation(path);
 	if (journal.phase === "completed") {
 		if (existsSync(journal.staged_root)) rmSync(journal.staged_root, { recursive: true, force: true });
 		if (existsSync(journal.backup_root)) rmSync(journal.backup_root, { recursive: true, force: true });

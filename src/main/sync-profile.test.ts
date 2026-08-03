@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { planBundledSkillExport } from "./sync-export";
 import { applySyncPublishPlan, createSyncPublishPlan, mergeBundledUpdateIntoManifest } from "./sync-publish";
 import { applySyncRestorePlan, createSyncRestorePlan } from "./sync-restore";
+import { createLegacySyncRestorePlan } from "./sync-restore-legacy";
+import { makeSyncLedger } from "./sync-ledger";
 import {
 	assertPortableRelativePath,
 	createSyncManifest,
@@ -409,6 +411,77 @@ describe("sync publish plan", () => {
 });
 
 describe("sync restore preview", () => {
+	it("keeps the dotagent adapter compatible with the legacy restore preview", () => {
+		const source = makeSkill({ "SKILL.md": "# Writing\n" });
+		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+		const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
+		tempDirs.push(workspace, canonical);
+		applySyncPublishPlan(workspace, createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: source }]));
+
+		const comparable = (entries: ReturnType<typeof createLegacySyncRestorePlan>["entries"]) => entries.map((entry) => ({
+			id: entry.id,
+			sourcePath: entry.sourcePath,
+			targetPath: entry.targetPath,
+			action: entry.action,
+			remoteSha256: entry.remoteSha256,
+			localSha256: entry.localSha256,
+		}));
+		const compareCurrent = () => {
+			const current = createSyncRestorePlan(workspace, canonical);
+			expect(current.engine).toBe("dotagent");
+			expect(comparable(current.entries)).toEqual(comparable(createLegacySyncRestorePlan(workspace, canonical).entries));
+			return current;
+		};
+
+		const first = compareCurrent();
+		const repeated = createSyncRestorePlan(workspace, canonical);
+		expect(first.engine).toBe("dotagent");
+		expect(repeated.engine).toBe("dotagent");
+		if (first.engine !== "dotagent" || repeated.engine !== "dotagent") throw new Error("dotagent reconciliation is required");
+		expect(first.corePlan.planId).toBe(repeated.corePlan.planId);
+		mkdirSync(join(canonical, "writing"));
+		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Local\n");
+		compareCurrent();
+		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Writing\n");
+		compareCurrent();
+	});
+
+	it("supports a temporary legacy kill switch while parity is monitored", () => {
+		const source = makeSkill({ "SKILL.md": "# Writing\n" });
+		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+		const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
+		tempDirs.push(workspace, canonical);
+		applySyncPublishPlan(workspace, createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: source }]));
+		const previous = process.env.SKILLER_SYNC_RECONCILE_ENGINE;
+		try {
+			process.env.SKILLER_SYNC_RECONCILE_ENGINE = "legacy";
+			expect(createSyncRestorePlan(workspace, canonical)).toMatchObject({
+				engine: "legacy",
+				entries: [{ id: "writing", action: "create", threeWayAction: "take-remote" }],
+			});
+		} finally {
+			if (previous === undefined) delete process.env.SKILLER_SYNC_RECONCILE_ENGINE;
+			else process.env.SKILLER_SYNC_RECONCILE_ENGINE = previous;
+		}
+	});
+
+	it("maps ledger state into the shared three-way plan", () => {
+		const source = makeSkill({ "SKILL.md": "# Base\n" });
+		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+		const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
+		tempDirs.push(workspace, canonical);
+		applySyncPublishPlan(workspace, createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: source }]));
+		mkdirSync(join(canonical, "writing"));
+		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Base\n");
+		const basePlan = createSyncRestorePlan(workspace, canonical);
+		const base = basePlan.entries[0].remoteSha256;
+		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Local\n");
+		writeFileSync(join(source, "SKILL.md"), "# Remote\n");
+		applySyncPublishPlan(workspace, createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: source }]));
+		const plan = createSyncRestorePlan(workspace, canonical, makeSyncLedger("personal", [{ id: "writing", sha256: base }]));
+		expect(plan.entries).toMatchObject([{ id: "writing", threeWayAction: "conflict" }]);
+	});
+
 	it("classifies bundled skills before restoring them", () => {
 		const source = makeSkill({ "SKILL.md": "# Writing\n" });
 		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
@@ -444,11 +517,13 @@ describe("sync restore preview", () => {
 		const createPlan = createSyncRestorePlan(workspace, canonical);
 		applySyncRestorePlan(createPlan, ["writing"]);
 		expect(readFileSync(join(canonical, "writing", "SKILL.md"), "utf8")).toBe("# Remote\n");
+		applySyncRestorePlan(createSyncRestorePlan(workspace, canonical), ["writing"]);
+		expect(readFileSync(join(canonical, "writing", "SKILL.md"), "utf8")).toBe("# Remote\n");
 
 		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Local\n");
 		const conflictPlan = createSyncRestorePlan(workspace, canonical);
 		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Changed after preview\n");
-		expect(() => applySyncRestorePlan(conflictPlan, ["writing"])).toThrow("changed after preview");
+		expect(() => applySyncRestorePlan(conflictPlan, ["writing"])).toThrow("changed after review");
 		expect(readFileSync(join(canonical, "writing", "SKILL.md"), "utf8")).toBe("# Changed after preview\n");
 	});
 });

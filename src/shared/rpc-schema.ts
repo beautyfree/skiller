@@ -340,6 +340,9 @@ export type SyncSkillPreviewJson = {
 
 export type SyncRestorePreviewJson = {
   profile_id: string;
+  /** Stable identifier of the exact no-write reconciliation preview. */
+  reconciliation_plan_id: string | null;
+  reconciliation_engine: "dotagent" | "legacy";
   mode: "private" | "team" | "public";
   skills: {
     id: string;
@@ -388,6 +391,9 @@ export type SyncInventoryJson = {
 
 export type SyncThreeWayReviewJson = {
   profile_id: string;
+  /** Stable identifier of the exact no-write reconciliation preview. */
+  reconciliation_plan_id: string | null;
+  reconciliation_engine: "dotagent" | "legacy";
   dependency_changes: {
     dependency: string;
     action: "added" | "updated" | "removed";

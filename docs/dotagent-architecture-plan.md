@@ -444,7 +444,7 @@ Exit: CLI and Skiller produce the same plan hash for the same library/machine fi
 
 Current integration evidence (2026-08-03): dotagent owns the legacy Skiller schemas, migrations, portable-path checks, duplicate detection, and credential-free remote validation. Skiller retains a compatibility facade so existing imports and repositories do not change. The focused Skiller sync suite passes through the package adapter; full release/platform gates remain open.
 
-Latest runtime evidence (2026-08-03): dotagent has 48 passing tests including CLI plan/apply/status, locally modified managed-copy conflicts, rollback, and journal recovery. Skiller has read-only `dotagent_machine_inventory`, `dotagent_doctor`, and `dotagent_materialization_status` tRPC queries with absolute-path redaction; its full 92-test suite and production Electron/Vite build pass. The legacy Skiller detector remains the install authority until full golden parity is complete.
+Latest runtime evidence (2026-08-03): dotagent commit `29a08a1` has 48 passing tests including CLI plan/apply/status, locally modified managed-copy conflicts, rollback, and journal recovery; CI run `30800503691` passes on macOS, Linux, and Windows. Skiller has read-only `dotagent_machine_inventory`, `dotagent_doctor`, and `dotagent_materialization_status` tRPC queries with absolute-path redaction; its full 92-test suite and production Electron/Vite build pass. The legacy Skiller detector remains the install authority until full golden parity is complete.
 
 ### Phase 5 — public/private library UX
 

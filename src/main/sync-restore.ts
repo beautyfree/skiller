@@ -1,6 +1,5 @@
 import {
 	applyLibraryReconciliationPlan,
-	classifyThreeWaySkill,
 	planLibraryReconciliation,
 	type LibraryReconciliationPlan,
 	type ThreeWayAction,
@@ -8,11 +7,6 @@ import {
 import { computePlanId } from "@beautyfree/dotagent";
 import type { SyncLedger } from "./sync-ledger";
 import { readSyncManifestFromWorkspace } from "./sync-dotagent";
-import {
-	applyLegacySyncRestorePlan,
-	createLegacySyncRestorePlan,
-	type SyncRestorePlan as LegacySyncRestorePlan,
-} from "./sync-restore-legacy";
 import { syncJournalPath } from "./sync-journal";
 import type { SyncManifest } from "./sync-profile";
 import type { SyncExportFinding } from "./sync-export";
@@ -32,7 +26,7 @@ export type SyncRestoreEntry = {
 
 export type SyncRestoreFinding = SyncExportFinding & { skillId: string };
 
-type DotagentSyncRestorePlan = {
+export type SyncRestorePlan = {
 	engine: "dotagent";
 	manifest: SyncManifest;
 	entries: SyncRestoreEntry[];
@@ -40,17 +34,7 @@ type DotagentSyncRestorePlan = {
 	corePlan: LibraryReconciliationPlan;
 };
 
-type LegacyCompatibilityPlan = {
-	engine: "legacy";
-	manifest: SyncManifest;
-	entries: SyncRestoreEntry[];
-	secretFindings: SyncRestoreFinding[];
-	legacyPlan: LegacySyncRestorePlan;
-};
-
-export type SyncRestorePlan = DotagentSyncRestorePlan | LegacyCompatibilityPlan;
-
-/** Stable, path-redacted review token for both the shared and temporary legacy engine. */
+/** Stable, path-redacted review token for the shared reconciliation engine. */
 export function syncRestorePlanId(plan: SyncRestorePlan): string {
 	return computePlanId({
 		kind: "skiller-reconciliation",
@@ -86,43 +70,15 @@ function ledgerBase(ledger?: SyncLedger): Record<string, { baseIntegrity: string
 	);
 }
 
-function legacyCompatibilityPlan(
-	workspacePath: string,
-	canonicalSkillsPath: string,
-	ledger?: SyncLedger,
-): LegacyCompatibilityPlan {
-	const legacyPlan = createLegacySyncRestorePlan(workspacePath, canonicalSkillsPath);
-	return {
-		engine: "legacy",
-		legacyPlan,
-		manifest: legacyPlan.manifest,
-		entries: legacyPlan.entries.map((entry) => ({
-			...entry,
-			threeWayAction: classifyThreeWaySkill(
-				entry.id,
-				ledger?.skills[entry.id]?.sha256 ?? null,
-				entry.localSha256,
-				entry.remoteSha256,
-				ledger?.skills[entry.id]?.kept_remote_sha256,
-			).action,
-		})),
-		secretFindings: legacyPlan.secretFindings,
-	};
-}
-
 /**
  * Compatibility adapter from legacy/canonical Skiller manifests to the shared
- * dotagent reconciliation module. Set SKILLER_SYNC_RECONCILE_ENGINE=legacy to
- * compare or temporarily fall back while migration fixtures remain active.
+ * dotagent reconciliation module.
  */
 export function createSyncRestorePlan(
 	workspacePath: string,
 	canonicalSkillsPath: string,
 	ledger?: SyncLedger,
 ): SyncRestorePlan {
-	if (process.env.SKILLER_SYNC_RECONCILE_ENGINE === "legacy") {
-		return legacyCompatibilityPlan(workspacePath, canonicalSkillsPath, ledger);
-	}
 	const manifest = readSyncManifestFromWorkspace(workspacePath);
 	const base = ledgerBase(ledger);
 	const corePlan = planLibraryReconciliation({
@@ -159,10 +115,6 @@ export function createSyncRestorePlan(
 
 /** Apply only user-selected remote versions through the active engine. */
 export function applySyncRestorePlan(plan: SyncRestorePlan, selectedIds: string[], profileId?: string): void {
-	if (plan.engine === "legacy") {
-		applyLegacySyncRestorePlan(plan.legacyPlan, selectedIds, profileId);
-		return;
-	}
 	applyLibraryReconciliationPlan(
 		plan.corePlan,
 		selectedIds

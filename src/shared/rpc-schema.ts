@@ -394,7 +394,7 @@ export type SyncThreeWayReviewJson = {
   workspace_plan_id: string;
   /** Stable identifier of the exact no-write reconciliation preview. */
   reconciliation_plan_id: string;
-  reconciliation_engine: "dotagent" | "legacy";
+  reconciliation_engine: "dotagent";
   dependency_changes: {
     dependency: string;
     action: "added" | "updated" | "removed";

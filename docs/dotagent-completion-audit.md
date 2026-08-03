@@ -5,8 +5,8 @@ Audit date: 2026-08-03
 Audited revisions:
 
 - `beautyfree/dotagent` `96ef6eee92133364f773141657be5ab0cfc4a806`
-- `beautyfree/skiller` `feat/agent-sync-foundation`, based on `75c608c` with
-  the audit remediations carried by this document's commit
+- `beautyfree/skiller` integration boundary `6ca1c0ca48a7b15ee95794429d94f9904bba37e0`
+  on `feat/agent-sync-foundation`
 
 This report audits the objective and every acceptance boundary in
 `dotagent-architecture-plan.md`. A checked roadmap item is not accepted as
@@ -62,6 +62,10 @@ Fresh local verification at the audited revisions:
 - Skiller `bun test`: 108 tests and 386 assertions pass;
 - Skiller `bun run typecheck`: renderer and Node configurations pass;
 - Skiller production Electron/Vite build passes with the audit remediations;
+- the exact `6ca1c0c` Electron dev checkout at `127.0.0.1:5180` loads Sync
+  Center with 260 reviewable skills, 14 linked agents, both create/connect
+  actions, and the no-upload-before-destination guarantee without a visible
+  RPC failure;
 - Developer-ID-signed local arm64 `.app` passes
   `codesign --verify --deep --strict` and exact-path runtime review of Dashboard,
   Sync Center, and existing-library connection without visible RPC failure;

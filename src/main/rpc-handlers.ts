@@ -5,6 +5,9 @@ import type { AppPlatform } from '../shared/platform'
 import type { AppRPCSchema } from '../shared/rpc-schema'
 import type {
   MarketplaceSkillJson,
+  DotagentMachineInventoryJson,
+  DotagentDoctorJson,
+  DotagentMaterializationStatusJson,
   RepoProgressJson,
   SkillJson,
   SkillRepoJson,
@@ -20,6 +23,12 @@ import type {
 } from '../shared/rpc-schema'
 import { detectAgents, loadAgentConfigs } from './registry'
 import { detectRuntimeAgent } from './runtime-agent'
+import { scanDotagentMachine } from './dotagent-catalog'
+import { dotagentDescriptorsFromSkiller } from './dotagent-catalog'
+import { dotagentDoctorToJson, dotagentMachineToJson, dotagentStatusToJson } from './dotagent-json'
+import { doctorLibrary } from '@beautyfree/dotagent/doctor'
+import { getMaterializationStatus } from '@beautyfree/dotagent/status'
+import { homedir } from 'node:os'
 import { readSkillsCliLock, type SkillsCliLockEntry } from './skills-cli-lock'
 import { getAgentsDir } from './paths'
 import type { AgentConfig } from './types'
@@ -778,6 +787,21 @@ export function createRequestHandlers(ctx: {
     // Runtime context is informational only. It must never influence the
     // installable-agent list, which remains guarded by registry detection.
     detect_runtime_agent: async () => detectRuntimeAgent(),
+    dotagent_machine_inventory: async (): Promise<DotagentMachineInventoryJson> => {
+      const inventory = await scanDotagentMachine(loadAgentConfigs(getAgentsDir()))
+      return dotagentMachineToJson(inventory)
+    },
+    dotagent_doctor: async (params: { libraryRoot: string }): Promise<DotagentDoctorJson> => {
+      const configs = loadAgentConfigs(getAgentsDir())
+      return dotagentDoctorToJson(await doctorLibrary({
+        root: params.libraryRoot,
+        descriptors: dotagentDescriptorsFromSkiller(configs),
+        platform: process.platform as 'darwin' | 'linux' | 'win32',
+        home: homedir(),
+      }))
+    },
+    dotagent_materialization_status: async (params: { libraryRoot: string }): Promise<DotagentMaterializationStatusJson> =>
+      dotagentStatusToJson(await getMaterializationStatus(params.libraryRoot)),
     read_skills_cli_lock: async () => readSkillsCliLock(),
     scan_all_skills: async () => {
       const agents = loadDetectedAgents('scan_all_skills')

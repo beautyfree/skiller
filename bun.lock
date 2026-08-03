@@ -6,7 +6,7 @@
       "name": "skiller",
       "dependencies": {
         "@base-ui/react": "^1.3.0",
-        "@beautyfree/dotagent": "git+https://github.com/beautyfree/dotagent.git#c3c4b0a39ca439482e84e53fd23bef7e67843824",
+        "@beautyfree/dotagent": "git+https://github.com/beautyfree/dotagent.git#26230f674deac5fa64cb149f24cc0c01c3e14be3",
         "@fontsource/bricolage-grotesque": "^5.3.0",
         "@iarna/toml": "^2.2.5",
         "@lobehub/icons": "^5.0.1",
@@ -152,7 +152,7 @@
 
     "@base-ui/utils": ["@base-ui/utils@0.2.6", "", { "dependencies": { "@babel/runtime": "^7.28.6", "@floating-ui/utils": "^0.2.11", "reselect": "^5.1.1", "use-sync-external-store": "^1.6.0" }, "peerDependencies": { "@types/react": "^17 || ^18 || ^19", "react": "^17 || ^18 || ^19", "react-dom": "^17 || ^18 || ^19" } }, "sha512-yQ+qeuqohwhsNpoYDqqXaLllYAkPCP4vYdDrVo8FQXaAPfHWm1pG/Vm+jmGTA5JFS0BAIjookyapuJFY8F9PIw=="],
 
-    "@beautyfree/dotagent": ["@beautyfree/dotagent@github:beautyfree/dotagent#c3c4b0a", { "dependencies": { "yaml": "^2.8.3", "zod": "^3.24.0" }, "bin": { "beautyfree-dotagent": "./dist/cli.js" } }, "beautyfree-dotagent-c3c4b0a", "sha512-Do5ZvvsLlbl7podvUWRnnsJw3zUctrUQYRkCEluACHEhrvRGf6xucV3wcVmA4I9yUHOvyB0iMcL/Joj26OxRkA=="],
+    "@beautyfree/dotagent": ["@beautyfree/dotagent@github:beautyfree/dotagent#26230f6", { "dependencies": { "yaml": "^2.8.3", "zod": "^3.24.0" }, "bin": { "beautyfree-dotagent": "./dist/cli.js" } }, "beautyfree-dotagent-26230f6", "sha512-el5+wqIkbipxxn/mNGNZlwBCgmQjLnoKvEI+AlMBrtXAQc7Gp1bfLIZhdELXz6PgWObH60Aq0pcbkwyDVeEDPQ=="],
 
     "@braintree/sanitize-url": ["@braintree/sanitize-url@7.1.2", "https://registry.npmmirror.com/@braintree/sanitize-url/-/sanitize-url-7.1.2.tgz", {}, "sha512-jigsZK+sMF/cuiB7sERuo9V7N9jx+dhmHHnQyDSVdpZwVutaBu7WvNYqMDLSgFgfB30n452TP3vjDAvFC973mA=="],
 

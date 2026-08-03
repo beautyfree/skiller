@@ -82,6 +82,46 @@ export type RuntimeAgentJson = {
   source: "AI_AGENT" | "@vercel/detect-agent";
 } | null;
 
+/** Read-only dotagent detector output; no machine path evidence crosses IPC. */
+export type DotagentMachineInventoryJson = {
+  platform: "darwin" | "linux" | "win32";
+  detected_slugs: string[];
+  agents: {
+    slug: string;
+    display_name: string;
+    detected: boolean;
+    reason: "command" | "marker" | "skills-only" | "not-found" | "unsupported-platform";
+  }[];
+};
+
+export type DotagentDoctorJson = {
+  ok: boolean;
+  library: {
+    name: string;
+    version: string;
+    owned_skill_count: number;
+    dependency_count: number;
+    locked: boolean;
+  } | null;
+  machine: DotagentMachineInventoryJson | null;
+  issues: {
+    code: string;
+    severity: "error" | "warning" | "info";
+    message: string;
+    remediation: string;
+    field?: string;
+  }[];
+};
+
+export type DotagentMaterializationStatusJson = {
+  targets: {
+    agent_slug: string;
+    skill_id: string;
+    mode: "symlink" | "junction" | "copy";
+    health: "missing" | "current" | "locally-modified" | "link-changed" | "invalid";
+  }[];
+};
+
 export type RepoEntryJson = {
   repo_url?: string | null;
   local_path?: string | null;
@@ -313,6 +353,9 @@ export type AppRPCSchema = {
       list_agents: { params?: void; response: AgentConfigJson[] };
       detect_agents: { params?: void; response: AgentConfigJson[] };
       detect_runtime_agent: { params?: void; response: RuntimeAgentJson };
+      dotagent_machine_inventory: { params?: void; response: DotagentMachineInventoryJson };
+      dotagent_doctor: { params: { libraryRoot: string }; response: DotagentDoctorJson };
+      dotagent_materialization_status: { params: { libraryRoot: string }; response: DotagentMaterializationStatusJson };
       read_skills_cli_lock: { params?: void; response: SkillsCliLockJson };
       scan_all_skills: { params?: void; response: SkillJson[] };
       scan_agent_skills: { params: { agentSlug: string }; response: SkillJson[] };

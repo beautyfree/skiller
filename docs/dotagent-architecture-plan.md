@@ -403,7 +403,7 @@ Exit: fixtures explain every current Skiller source kind and expected no-write p
 - [ ] Establish Node 20+ ESM TypeScript build, Bun tests, lint/format, and release workflow.
 - [ ] Implement branded paths/IDs, typed issues, `Result`, filesystem/Git ports, and schema version helpers.
 - [x] Implement `skills.json`, `skills.lock`, `dotagent.yaml`, and local-overlay parsing/validation.
-- [ ] Publish no package and create no remote until naming and fixtures are reviewed.
+- [x] Review naming, then create the public `beautyfree/dotagent` source repository without publishing an npm package or stable release.
 
 Exit: package builds on macOS/Linux/Windows CI and validates fixtures without touching user files.
 
@@ -422,12 +422,12 @@ Exit: a public fixture repository resolves reproducibly; tampered content, movin
 
 ### Phase 3 — agent catalog and materialization
 
-- [ ] Define capability descriptors and migrate agent definitions incrementally. (Typed capability contract is implemented; Skiller catalog migration remains.)
-- [ ] Implement native-shared, per-skill symlink, Windows junction, config-path, and reviewed copy strategies.
-- [ ] Implement machine scan without treating `.agents/skills` as installation evidence.
-- [ ] Implement import/materialization plans and managed ownership markers. (Deterministic conflict-safe materialization plan is implemented; machine scan and markers remain.)
-- [ ] Implement journaled apply and rollback.
-- [ ] Implement `plan`, `apply`, `status`, and first `sync` command.
+- [ ] Define capability descriptors and migrate agent definitions incrementally. (All current Skiller TOML agents project into shared descriptors with unique-slug and shared-reader parity tests; making dotagent data authoritative remains.)
+- [ ] Implement native-shared, per-skill symlink, Windows junction, config-path, and reviewed copy strategies. (Native/link/junction/copy plan and apply exist; managed config patching remains.)
+- [x] Implement machine scan without treating `.agents/skills` or a skills-only marker as installation evidence.
+- [ ] Implement import/materialization plans and managed ownership markers. (Deterministic materialization planning, ownership ledger, copy markers, and unmanaged-target conflicts exist; canonical import planning remains.)
+- [x] Implement journaled apply, rollback, stale-source/target validation, and interrupted-run recovery.
+- [ ] Implement `plan`, `apply`, `status`, and first `sync` command. (`plan`, confirmed `apply`, `status`, and `recover` are implemented and exercised end-to-end; composite `sync` remains.)
 
 Exit: clean-machine fixtures materialize to representative agents on all three OSes; unmanaged targets survive every failure case.
 
@@ -436,13 +436,15 @@ Exit: clean-machine fixtures materialize to representative agents on all three O
 - [x] Add `@beautyfree/dotagent` as an explicit dependency, first locally and then as an immutable Git commit with committed build artifacts until npm publication.
 - [x] Replace Skiller manifest parsing with adapter-backed dotagent parsing while preserving v1/v2/v3 behavior.
 - [ ] Replace secret/source/integrity logic in vertical slices, one subsystem at a time. (Secret scanning and three-way classification are shared; source resolution and export policy remain.)
-- [ ] Map dotagent plans/issues to existing tRPC JSON without exposing internal classes.
-- [ ] Compare old/new outputs on golden fixtures and retain a kill switch during migration.
+- [ ] Map dotagent plans/issues to existing tRPC JSON without exposing internal classes. (Machine inventory, doctor issues, and managed status have path-redacting query contracts; materialization/reconcile plan mapping remains.)
+- [ ] Compare old/new outputs on golden fixtures and retain a kill switch during migration. (All configured slugs project uniquely and the skills-only detector invariant has parity coverage; full source/conflict fixture matrix remains.)
 - [ ] Remove duplicated Skiller implementations only after parity and live UX checks.
 
 Exit: CLI and Skiller produce the same plan hash for the same library/machine fixture.
 
 Current integration evidence (2026-08-03): dotagent owns the legacy Skiller schemas, migrations, portable-path checks, duplicate detection, and credential-free remote validation. Skiller retains a compatibility facade so existing imports and repositories do not change. The focused Skiller sync suite passes through the package adapter; full release/platform gates remain open.
+
+Latest runtime evidence (2026-08-03): dotagent has 48 passing tests including CLI plan/apply/status, locally modified managed-copy conflicts, rollback, and journal recovery. Skiller has read-only `dotagent_machine_inventory`, `dotagent_doctor`, and `dotagent_materialization_status` tRPC queries with absolute-path redaction; its full 92-test suite and production Electron/Vite build pass. The legacy Skiller detector remains the install authority until full golden parity is complete.
 
 ### Phase 5 — public/private library UX
 

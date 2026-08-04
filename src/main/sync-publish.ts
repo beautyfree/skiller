@@ -7,7 +7,7 @@ import {
 	type SkillerSyncPublishCandidate,
 	type SkillerSyncPublishPlan,
 	type SkillerVendoredPublishCandidate,
-} from "dotagents/adapters/skiller";
+} from "./legacy-skiller-sync";
 import {
 	applyLibraryUpdatePlan,
 	planLibraryUpdate,

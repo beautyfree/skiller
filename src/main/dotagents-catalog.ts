@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import {
 	skillerAgentCatalogToDescriptors,
-} from "dotagents/adapters/skiller-agents";
+} from "./skiller-agent-catalog";
 import { builtinAgentDescriptors } from "dotagents/catalog";
 import type { AgentDescriptor, Platform } from "dotagents/agents";
 import {

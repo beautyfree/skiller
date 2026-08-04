@@ -17,12 +17,12 @@ export {
 	parseSkillerSyncManifest as parseSyncManifest,
 	stringifySkillerSyncManifest as stringifySyncManifest,
 	validateSkillerSyncManifest as validateSyncManifest,
-} from "dotagents/adapters/skiller";
+} from "./legacy-skiller-sync";
 
 export type {
 	SkillerSyncManifest as SyncManifest,
 	SkillerSyncSkill as SyncSkill,
-} from "dotagents/adapters/skiller";
+} from "./legacy-skiller-sync";
 
 /** Derive a private local workspace id without exposing this concept in setup UI. */
 export function syncProfileIdFromRemote(remoteUrl: string): string {

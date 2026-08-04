@@ -2,8 +2,8 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { appDataRootPath } from "./settings";
 
-export { classifyThreeWaySkill } from "@beautyfree/dotagent/reconcile";
-export type { ThreeWayAction, ThreeWaySkill } from "@beautyfree/dotagent/reconcile";
+export { classifyThreeWaySkill } from "dotagents/reconcile";
+export type { ThreeWayAction, ThreeWaySkill } from "dotagents/reconcile";
 
 export const SYNC_LEDGER_VERSION = 1;
 

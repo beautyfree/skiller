@@ -1,50 +1,84 @@
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join, sep } from 'node:path'
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { AppPlatform } from '../shared/platform'
 import type { AppRPCSchema } from '../shared/rpc-schema'
 import type {
   MarketplaceSkillJson,
-  DotagentMachineInventoryJson,
-  DotagentDoctorJson,
-  DotagentMaterializationStatusJson,
-  DotagentSkillDiscoveryJson,
-  DotagentAuditJson,
-  DotagentImportPlanJson,
+  DotagentsMachineInventoryJson,
+  DotagentsDoctorJson,
+  DotagentsMaterializationStatusJson,
+  DotagentsSkillDiscoveryJson,
+  DotagentsAuditJson,
+  DotagentsImportPlanJson,
+  SkillQualityOverviewJson,
+  SkillQualityEvalPlanJson,
+  SkillQualityEvalPreviewRequestJson,
+  SkillQualityDryRunReportJson,
+  SkillQualityMeasuredReportJson,
   RepoProgressJson,
   SkillJson,
   SkillRepoJson,
   SkillSourceParam,
   SyncProfileStatusJson,
+	SyncRemoteTrustPreviewJson,
   SyncInventoryJson,
 	SyncSkillPreviewJson,
   SyncConnectPreviewJson,
   SyncGitHubRepositoryPreviewJson,
   SyncThreeWayReviewJson,
+  SyncHistoryEntryJson,
+  SyncUndoPreviewJson,
+  DotagentsLibraryHealthJson,
+  DotagentsLibraryRepairPreviewJson,
+  DotagentsScopeCompositionPreviewJson,
+  DotagentsScopeCompositionUndoPreviewJson,
+  DotagentsScopeMigrationPreviewJson,
+  DotagentsScopeOverviewJson,
+  DotagentsResourceOverviewJson,
+  DotagentsResourceSelectionJson,
+  DotagentsResourceAdoptionRequestJson,
+  DotagentsResourceAdoptionPreviewJson,
   SyncPublishPreviewJson,
   UpdateAllResultJson,
   UpdateProgressJson,
 } from '../shared/rpc-schema'
 import { detectAgents, loadAgentConfigs } from './registry'
 import { detectRuntimeAgent } from './runtime-agent'
-import { scanDotagentMachine } from './dotagent-catalog'
-import { dotagentDescriptorsFromSkiller } from './dotagent-catalog'
-import { planDotagentImportFromDiscovery, scanDotagentSkillDiscovery, type DotagentImportDecision } from './dotagent-discovery'
-import { dotagentAuditToJson, dotagentDiscoveryToJson, dotagentDoctorToJson, dotagentImportPlanToJson, dotagentMachineToJson, dotagentStatusToJson } from './dotagent-json'
-import { doctorLibrary } from '@beautyfree/dotagent/doctor'
-import { auditLibrary } from '@beautyfree/dotagent/audit'
-import { getMaterializationStatus } from '@beautyfree/dotagent/status'
-import { diffLibraryLocks } from '@beautyfree/dotagent/sources'
-import { parseImportDecisions, type ImportDecision, type ImportDisposition } from '@beautyfree/dotagent/decisions'
-import { scanOwnedSkill } from '@beautyfree/dotagent/inventory'
-import { hasLibraryUpdateRecovery, libraryUpdateJournalPath, recoverLibraryUpdate } from '@beautyfree/dotagent/library-update'
-import { computePlanId } from '@beautyfree/dotagent'
+import { scanDotagentsMachine } from './dotagents-catalog'
+import { dotagentsDescriptorsFromSkiller } from './dotagents-catalog'
+import { planDotagentsImportFromDiscovery, scanDotagentsSkillDiscovery, type DotagentsImportDecision } from './dotagents-discovery'
+import { dotagentsAuditToJson, dotagentsDiscoveryToJson, dotagentsDoctorToJson, dotagentsImportPlanToJson, dotagentsMachineToJson, dotagentsStatusToJson } from './dotagents-json'
+import { doctorLibrary } from 'dotagents/doctor'
+import { auditLibrary } from 'dotagents/audit'
+import { getMaterializationStatus } from 'dotagents/status'
+import { diffLibraryLocks, normalizeGitIdentity } from 'dotagents/sources'
+import { parseImportDecisions, type ImportDecision, type ImportDisposition } from 'dotagents/decisions'
+import { scanOwnedSkill } from 'dotagents/inventory'
+import { hasLibraryUpdateRecovery, libraryUpdateJournalPath, recoverLibraryUpdate } from 'dotagents/library-update'
+import { computePlanId, GitDependencyResolver } from 'dotagents'
+import { applyOperationUndo, listOperationHistory, planOperationUndo } from 'dotagents/history'
+import {
+  exactSourceSecurityPolicy,
+  requireMinimumReleaseAge,
+  requireTrustedSource,
+  SourceReleaseAgeError,
+  type SourceCommitAgeDecision,
+  type SourceSecurityPolicy,
+  type SourceTrustDecision,
+} from 'dotagents/source-policy'
 import { homedir } from 'node:os'
 import { readSkillsCliLock, type SkillsCliLockEntry } from './skills-cli-lock'
 import { getAgentsDir } from './paths'
 import type { AgentConfig } from './types'
 import type { SkillSource } from './skill-types'
 import { scanAllSkills } from './scanner'
+import { inspectSkillQualityOverview, skillQualityIdentity } from './skill-quality'
+import { createSkillQualityEvalPlan, inspectLocalCredentialProfile, inspectLocalDockerImage } from './skill-quality-eval'
+import { runSkillQualityDryPlan } from './skill-quality-dry-run'
+import { runSkillQualityMeasuredPlan } from './skill-quality-measured-run'
+import { LibraryRepairSession, readResourceLibraryOverview, ResourceAdoptionSession } from './resource-library'
+import { ScopeCompositionSession, type ScopeProfileReference } from './scope-composition'
 import { discardPreparedGitSkill, installPreparedGitSkill, installSkillFromGit, installSkillFromPath, prepareGitSkillInstall, type PreparedGitSkillInstall } from './install'
 import {
   detachSharedSkill,
@@ -54,7 +88,7 @@ import {
   uninstallSkillFromAll,
 } from './uninstall'
 import { updateAll, updateSingleSkill } from './update'
-import { readSettings, writeSettings } from './settings'
+import { appDataRootPath, readSettings, writeSettings } from './settings'
 import {
   agentConfigToJson,
   marketplaceSkillToJson,
@@ -78,6 +112,7 @@ import {
   installRepoSkill,
   listRepoSkillsAsJson,
   listSkillRepos,
+	normalizeSkillRepoUrl,
   removeSkillRepo,
   syncSkillRepo,
 } from './repos'
@@ -108,10 +143,11 @@ import { readRestoreJournalAt, recoverRestoreJournalAt, syncJournalPath } from '
 import { createGitHubSyncRepository, planGitHubSyncRepository } from './github-sync'
 import { applySyncPublishFiles, applySyncPublishPlan, createSyncPublishPlan, mergeBundledUpdateIntoManifest, type SyncPublishCandidate } from './sync-publish'
 import { applySyncRestorePlan, createSyncRestorePlan, syncRestorePlanId } from './sync-restore'
-import { canonicalSyncAgentRouting, isCanonicalSyncLibrary, planCanonicalSyncLibrary, readCanonicalSyncLock, readSyncManifestFromWorkspace, writeLocalSyncAgentSelection } from './sync-dotagent'
+import { canonicalSyncAgentRouting, isCanonicalSyncLibrary, planCanonicalSyncLibrary, readCanonicalSyncLock, readSyncManifestFromWorkspace, writeLocalSyncAgentSelection, writeLocalSyncSourceSecurityPolicy } from './sync-dotagents'
 import { classifyExternalRestore, externalKeptSourceMatches, externalSkillDirectory, externalSkillRepository, type ManagedExternalSkill, type ExternalRestoreAction } from './sync-external'
 import { assertCredentialFreeGitRemote, assertPortableRelativePath, assertSyncStableId, syncProfileIdFromRemote, type SyncManifest } from './sync-profile'
 import {
+	applySyncWorkspaceRemoteTrust,
   applyReviewedSyncWorkspaceFastForward,
   commitSyncWorkspace,
   cloneSyncWorkspace,
@@ -126,7 +162,9 @@ import {
   syncProfilesDirectory,
   syncWorkspacePath,
 	refreshSyncWorkspaceStatus,
-	resolveGitReferenceToCommit,
+	inspectSyncWorkspaceRemoteTrust,
+	planSyncWorkspaceRemoteTrust,
+	SYNC_REMOTE_MINIMUM_RELEASE_AGE_MINUTES,
 } from './sync-workspace'
 import {
   effectiveMacOSWindowBlur,
@@ -142,6 +180,12 @@ let titleBarZoomRestoreFrame: {
   height: number
 } | null = null
 let titleBarZoomActive = false
+const resourceAdoptionSession = new ResourceAdoptionSession()
+const libraryRepairSession = new LibraryRepairSession()
+const scopeCompositionSession = new ScopeCompositionSession({
+  stateFile: join(appDataRootPath(), 'scope-composition.local.json'),
+  resolveWorkspace: syncWorkspacePath,
+})
 
 export type BunSideRpc = {
   send: (
@@ -234,6 +278,7 @@ async function planSyncCenterConnection(params: {
   profileId?: string
   remoteUrl: string
   agentSlugs: string[]
+  minimumReleaseAgeMinutes: number
 }): Promise<SyncCenterConnectPlan> {
   const remoteUrl = params.remoteUrl.trim()
   if (!remoteUrl) throw new Error('Enter the Git repository that contains your library')
@@ -241,18 +286,23 @@ async function planSyncCenterConnection(params: {
   const profileId = params.profileId ?? availableSyncProfileId(remoteUrl)
   assertSyncStableId(profileId)
   const agentSlugs = selectedDetectedAgentSlugs(params.agentSlugs, loadDetectedAgents('sync_center_connect_preview'))
-  const clone = await planSyncWorkspaceClone(remoteUrl, syncWorkspacePath(profileId))
+  const sourcePolicy = reviewedRemoteSourcePolicy(remoteUrl, params.minimumReleaseAgeMinutes)
+  const clone = await planSyncWorkspaceClone(remoteUrl, syncWorkspacePath(profileId), sourcePolicy)
   const payload = {
     kind: 'skiller-sync-connect' as const,
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     profileId,
     clonePlanId: clone.planId,
     agentSlugs,
+    sourcePolicy,
   }
   return {
     profile_id: profileId,
     plan_id: computePlanId(payload),
     remote_identity: clone.remoteIdentity,
+    resolved_commit: clone.resolvedCommit,
+    committed_at: clone.committedAt,
+    minimum_release_age_minutes: clone.minimumAgeMinutes,
     agent_slugs: agentSlugs,
     clone_plan_id: clone.planId,
   }
@@ -263,6 +313,7 @@ async function cloneSyncProfile(params: {
   remoteUrl: string
   agentSlugs?: string[]
   clonePlanId?: string
+  minimumReleaseAgeMinutes: number
 }): Promise<SyncProfileStatusJson> {
   assertSyncStableId(params.profileId)
   const remoteUrl = params.remoteUrl.trim()
@@ -277,17 +328,22 @@ async function cloneSyncProfile(params: {
     ? undefined
     : selectedDetectedAgentSlugs(params.agentSlugs, agents)
   try {
-    await cloneSyncWorkspace(remoteUrl, workspace, params.clonePlanId)
+    await cloneSyncWorkspace(
+      remoteUrl,
+      workspace,
+      reviewedRemoteSourcePolicy(remoteUrl, params.minimumReleaseAgeMinutes),
+      params.clonePlanId,
+    )
     const canonical = isCanonicalSyncLibrary(workspace)
     const manifest = readSyncManifestFromWorkspace(workspace)
     // Legacy profiles used their portable id as their local storage key.
-    // Canonical dotagent libraries deliberately separate the repository name
+    // Canonical dotagents libraries deliberately separate the repository name
     // from this computer's private profile id.
     if (!canonical && manifest.profile.id !== params.profileId) {
       throw new Error('The legacy remote profile id does not match the requested profile')
     }
     if (localAgentSlugs !== undefined) {
-      if (!canonical) throw new Error('Choose-local-agents requires a canonical dotagent library')
+      if (!canonical) throw new Error('Choose-local-agents requires a canonical dotagents library')
       writeLocalSyncAgentSelection(workspace, localAgentSlugs)
     }
     const status = await getSyncWorkspaceStatus(workspace)
@@ -302,6 +358,7 @@ async function cloneSyncProfile(params: {
       behind: status.behind,
       last_checked_at: new Date().toISOString(),
       check_error: null,
+	  remote_trust_required: false,
     }
   } catch (error) {
     // The destination was proven absent above and belongs solely to this
@@ -324,7 +381,11 @@ async function listSyncProfiles(refreshRemote = false): Promise<SyncProfileStatu
 	  let status = await getSyncWorkspaceStatus(workspace)
 	  let checkError: string | null = null
 	  let checkedAt: string | null = null
+	  const remoteTrust = await inspectSyncWorkspaceRemoteTrust(workspace)
 	  if (refreshRemote && status.remoteUrl) {
+		if (remoteTrust.required) {
+		  checkError = 'Review this library remote before Skiller checks it from this device.'
+		} else {
 		try {
 		  await refreshSyncWorkspaceStatus(workspace)
 		  checkedAt = new Date().toISOString()
@@ -333,6 +394,7 @@ async function listSyncProfiles(refreshRemote = false): Promise<SyncProfileStatu
 		  // Intentionally do not surface arbitrary Git output: it can include a
 		  // remote URL. The user gets a clear, non-sensitive next step instead.
 		  checkError = 'Could not check the remote. Connect or authenticate, then retry from Sync Center.'
+		}
 		}
 	  }
       result.push({
@@ -346,12 +408,20 @@ async function listSyncProfiles(refreshRemote = false): Promise<SyncProfileStatu
         behind: status.behind,
 		last_checked_at: checkedAt,
 		check_error: checkError,
+		remote_trust_required: remoteTrust.required,
       })
     } catch {
       // An incomplete/non-Skiller Git folder is intentionally not a profile.
     }
   }
   return result
+}
+
+async function scopeProfileReferences(): Promise<ScopeProfileReference[]> {
+  return (await listSyncProfiles()).map((profile) => ({
+    profileId: profile.profile_id,
+    canonical: isCanonicalSyncLibrary(syncWorkspacePath(profile.profile_id)),
+  }))
 }
 
 /** Sources from the inventory the user has just reviewed. Kept main-process-only. */
@@ -424,7 +494,17 @@ function provenanceEntryForInventoryItem(
   ]
   for (const name of names) {
     const entry = provenance[name]
-    if (entry?.repository?.trim()) return entry
+    if (!entry?.repository?.trim()) continue
+    try {
+      // Absolute paths in provenance describe this device's installation, not
+      // a portable upstream. Treating them as Git references leaks private
+      // paths and produces manifests that cannot be restored elsewhere.
+      if (normalizeGitIdentity(entry.repository).startsWith('file://')) continue
+      return entry
+    } catch {
+      // Invalid provenance is never promoted to a network source implicitly.
+      // The skill remains usable as owned/local content after user review.
+    }
   }
   return null
 }
@@ -434,32 +514,6 @@ function skillsCliSkillDirectory(entry: SkillsCliLockEntry): string | null {
   if (!path) return null
   if (path === 'SKILL.md') return '.'
   return path.replace(/\/SKILL\.md$/i, '') || '.'
-}
-
-const GIT_COMMIT_CACHE_TTL_MS = 5 * 60_000
-const gitCommitResolution = new Map<string, { resolvedAt: number; promise: Promise<string> }>()
-
-/**
- * A library review can revisit the same external source several times. Cache
- * only its immutable resolution briefly; failed/auth-required attempts are
- * immediately discarded so reconnecting can be retried without a restart.
- */
-function resolveGitCommitCached(repository: string, ref: string): Promise<string> {
-	const requestedRef = ref.trim() || 'HEAD'
-	const key = `${repository.trim()}\u0000${requestedRef}`
-	const existing = gitCommitResolution.get(key)
-	if (existing && Date.now() - existing.resolvedAt < GIT_COMMIT_CACHE_TTL_MS) return existing.promise
-	const promise = resolveGitReferenceToCommit(repository, requestedRef)
-	const entry = { resolvedAt: Date.now(), promise }
-	gitCommitResolution.set(key, entry)
-	promise.catch(() => {
-		if (gitCommitResolution.get(key) === entry) gitCommitResolution.delete(key)
-	})
-	return promise
-}
-
-function resolveSkillsCliCommit(entry: SkillsCliLockEntry): Promise<string> {
-	return resolveGitCommitCached(entry.source_url, entry.ref?.trim() || 'HEAD')
 }
 
 async function mapWithConcurrency<T, Result>(items: T[], limit: number, task: (item: T) => Promise<Result>): Promise<Result[]> {
@@ -475,10 +529,83 @@ async function mapWithConcurrency<T, Result>(items: T[], limit: number, task: (i
   return output
 }
 
-type UnresolvedSyncCenterSource = { id: string; kind: 'reference' | 'skills_sh' }
+const DEFAULT_MINIMUM_RELEASE_AGE_MINUTES = SYNC_REMOTE_MINIMUM_RELEASE_AGE_MINUTES
+
+function reviewedRemoteSourcePolicy(remoteUrl: string, minimumReleaseAgeMinutes: number): SourceSecurityPolicy {
+  return exactSourceSecurityPolicy([remoteUrl], {
+    minimum_release_age_minutes: minimumReleaseAgeMinutes,
+  })
+}
+
+type UnresolvedSyncCenterSource = {
+  id: string
+  kind: 'reference' | 'skills_sh'
+  reason: 'unverified' | 'too-new'
+  ageMinutes?: number
+  minimumAgeMinutes?: number
+}
 type SyncCenterLicense = 'MIT' | 'Apache-2.0' | 'CC0-1.0'
 type FinalSyncCenterDisposition = Exclude<ImportDisposition, 'suggested'>
 type SyncCenterDecisionOutcome = { candidateKey: string; disposition: FinalSyncCenterDisposition; license?: string }
+type SyncCenterExternalSource = {
+  kind: 'reference' | 'skills_sh'
+  repository: string
+  requestedRef: string
+  skillPath: string
+}
+type SyncCenterPreparedItem = {
+  item: ReturnType<typeof scanSyncInventory>['items'][number]
+  disposition: FinalSyncCenterDisposition
+  installationAgentSlugs: string[]
+  reviewed?: ImportDecision
+  external: SyncCenterExternalSource | null
+}
+type SyncCenterSourceResolution = {
+  source: string
+  requestedRef: string
+  commit: string
+  committedAt: string
+  integrity: string
+  skillPaths: string[]
+}
+type SyncCenterPublishPlanResult = {
+  plan: ReturnType<typeof createSyncPublishPlan>
+  reviewPlanId: string
+  sourceAuthorizationId: string
+  sourcePolicy: SourceSecurityPolicy
+  unresolvedSources: UnresolvedSyncCenterSource[]
+  decisions: SyncCenterDecisionOutcome[]
+  sourceTrust: SourceTrustDecision[]
+  sourceAges: SourceCommitAgeDecision[]
+}
+
+const SYNC_CENTER_REVIEW_CACHE_TTL_MS = 5 * 60 * 1000
+const syncCenterReviewCache = new Map<string, { expiresAt: number; result: SyncCenterPublishPlanResult }>()
+
+function cachedSyncCenterReview(sourceAuthorizationId: string): SyncCenterPublishPlanResult | null {
+  const now = Date.now()
+  for (const [key, cached] of syncCenterReviewCache) {
+    if (cached.expiresAt <= now) syncCenterReviewCache.delete(key)
+  }
+  const cached = syncCenterReviewCache.get(sourceAuthorizationId)
+  return cached && cached.expiresAt > now ? cached.result : null
+}
+
+function cacheSyncCenterReview(result: SyncCenterPublishPlanResult): void {
+  // The cache is deliberately process-local: it cannot become portable trust
+  // state or survive a restart. Its key binds every reviewed local content hash,
+  // disposition, source and policy. Final publish still recomputes that key from
+  // the live inventory before this verified immutable plan can be reused.
+  syncCenterReviewCache.set(result.sourceAuthorizationId, {
+    expiresAt: Date.now() + SYNC_CENTER_REVIEW_CACHE_TTL_MS,
+    result,
+  })
+  while (syncCenterReviewCache.size > 3) {
+    const oldest = syncCenterReviewCache.keys().next().value
+    if (!oldest) break
+    syncCenterReviewCache.delete(oldest)
+  }
+}
 
 function syncCenterPublicLicense(mode: 'private' | 'public', license: unknown): SyncCenterLicense | undefined {
   if (mode === 'private') return undefined
@@ -490,11 +617,9 @@ async function createSyncCenterPublishPlan(
   selectedKeys?: string[],
   mode: 'private' | 'public' = 'private',
   reviewedDecisions?: ImportDecision[],
-): Promise<{
-  plan: ReturnType<typeof createSyncPublishPlan>
-  unresolvedSources: UnresolvedSyncCenterSource[]
-  decisions: SyncCenterDecisionOutcome[]
-}> {
+  minimumReleaseAgeMinutes = DEFAULT_MINIMUM_RELEASE_AGE_MINUTES,
+  expectedSourceAuthorizationId?: string,
+): Promise<SyncCenterPublishPlanResult> {
   const inventory = scanSyncInventory(loadDetectedAgents('sync_center_publish'))
   const selected = selectedKeys ? new Set(selectedKeys) : null
   const decisions = reviewedDecisions ? parseImportDecisions(reviewedDecisions) : null
@@ -516,7 +641,6 @@ async function createSyncCenterPublishPlan(
   }
   const skillsCliEntries = readSkillsCliLock()?.skills ?? []
 	const provenance = readProvenance()
-  const unresolvedSources: UnresolvedSyncCenterSource[] = []
   const outcomes = new Map<string, SyncCenterDecisionOutcome>()
   for (const item of inventory.items) {
     const reviewed = decisionByKey.get(item.candidateKey)
@@ -531,23 +655,23 @@ async function createSyncCenterPublishPlan(
       })
     }
   }
-  const candidates = (await mapWithConcurrency(items, 8, async (item): Promise<SyncPublishCandidate | null> => {
+  const prepared = items.map((item): SyncCenterPreparedItem => {
     const installationAgentSlugs = item.locations.flatMap((location) => location.agentSlug ? [location.agentSlug] : [])
     const skillsCliEntry = skillsCliEntryForInventoryItem(item, skillsCliEntries)
     const git = provenanceEntryForInventoryItem(item, provenance)
-    const external = skillsCliEntry
+    const external: SyncCenterExternalSource | null = skillsCliEntry
       ? {
-          kind: 'skills_sh' as const,
+          kind: 'skills_sh',
           repository: skillsCliEntry.source_url.trim(),
           requestedRef: skillsCliEntry.ref?.trim() || 'HEAD',
-          skillPath: skillsCliSkillDirectory(skillsCliEntry),
+          skillPath: skillsCliSkillDirectory(skillsCliEntry) ?? '',
         }
       : git?.repository?.trim()
         ? {
-            kind: git.source === 'skills.sh' ? 'skills_sh' as const : 'reference' as const,
+            kind: git.source === 'skills.sh' ? 'skills_sh' : 'reference',
             repository: git.repository.trim(),
             requestedRef: git.ref?.trim() || 'HEAD',
-            skillPath: externalSkillDirectory(git.skill_path),
+            skillPath: externalSkillDirectory(git.skill_path) ?? '',
           }
         : null
     const requested = requestedDisposition(item.candidateKey)
@@ -560,60 +684,184 @@ async function createSyncCenterPublishPlan(
       disposition,
       ...(reviewed?.license ? { license: reviewed.license } : {}),
     })
-    if (disposition === 'owned') {
-      return { kind: 'bundled' as const, id: item.candidateKey, sourcePath: item.sourcePath, installationAgentSlugs }
-    }
-    if (!external?.repository || !external.skillPath) {
+    if (disposition !== 'owned' && (!external?.repository || !external.skillPath)) {
       throw new Error(`${item.displayName} has no verified Git source. Save it as owned or keep it on this computer.`)
     }
-    assertCredentialFreeGitRemote(external.repository)
-    let ref: string
-    try {
-      ref = skillsCliEntry
-        ? await resolveSkillsCliCommit(skillsCliEntry)
-        : await resolveGitCommitCached(external.repository, external.requestedRef)
-    } catch {
-      unresolvedSources.push({ id: item.candidateKey, kind: external.kind })
-      outcomes.set(item.candidateKey, { candidateKey: item.candidateKey, disposition: 'local-only' })
-      return null
+    if (disposition === 'vendored' && !reviewed?.license) {
+      throw new Error(`Choose the upstream license before vendoring ${item.displayName}`)
     }
-    if (disposition === 'vendored') {
-      if (!reviewed?.license) throw new Error(`Choose the upstream license before vendoring ${item.displayName}`)
-      const scanned = await scanOwnedSkill(dirname(item.sourcePath), basename(item.sourcePath))
-      if (!scanned.ok) throw new Error(`Could not verify vendored files for ${item.displayName}: ${scanned.issues[0]?.message ?? 'unsafe skill'}`)
-      return {
-        kind: 'vendored' as const,
-        id: item.candidateKey,
-        sourcePath: item.sourcePath,
+    return { item, disposition, installationAgentSlugs, reviewed, external: disposition === 'owned' ? null : external }
+  })
+
+  const repositories = prepared.flatMap((entry) => entry.external ? [entry.external.repository] : [])
+  const sourcePolicy = exactSourceSecurityPolicy(repositories, {
+    minimum_release_age_minutes: minimumReleaseAgeMinutes,
+  })
+  const sourceTrustBySource = new Map<string, SourceTrustDecision>()
+  for (const repository of repositories) {
+    assertCredentialFreeGitRemote(repository)
+    const decision = requireTrustedSource(repository, sourcePolicy)
+    sourceTrustBySource.set(decision.source, decision)
+  }
+  const sourceTrust = [...sourceTrustBySource.values()].sort((left, right) => left.source.localeCompare(right.source, 'en'))
+  const sourceAuthorizationId = computePlanId({
+    kind: 'sync-center-source-authorization',
+    schemaVersion: 1,
+    mode,
+    sourcePolicy,
+    items: prepared.map((entry) => ({
+      candidateKey: entry.item.candidateKey,
+      contentHash: entry.item.contentHash,
+      disposition: entry.disposition,
+      installationAgentSlugs: [...entry.installationAgentSlugs].sort(),
+      ...(entry.reviewed?.license ? { license: entry.reviewed.license } : {}),
+      ...(entry.external ? {
+        source: requireTrustedSource(entry.external.repository, sourcePolicy).source,
+        requestedRef: entry.external.requestedRef,
+        skillPath: entry.external.skillPath,
+      } : {}),
+    })),
+  })
+  if (expectedSourceAuthorizationId && expectedSourceAuthorizationId !== sourceAuthorizationId) {
+    throw new Error('The selected sources or trust policy changed after review. Review them again before Skiller contacts Git.')
+  }
+  const cachedReview = cachedSyncCenterReview(sourceAuthorizationId)
+  if (cachedReview) return cachedReview
+
+  const sourceGroups = new Map<string, { source: string; requestedRef: string; entries: SyncCenterPreparedItem[] }>()
+  for (const entry of prepared) {
+    if (!entry.external) continue
+    const source = requireTrustedSource(entry.external.repository, sourcePolicy).source
+    const key = `${source}\u0000${entry.external.requestedRef}`
+    const group = sourceGroups.get(key)
+    if (group) group.entries.push(entry)
+    else sourceGroups.set(key, { source, requestedRef: entry.external.requestedRef, entries: [entry] })
+  }
+  const resolver = new GitDependencyResolver({
+    cacheRoot: join(syncProfilesDirectory(), '.source-cache', 'git'),
+    sourcePolicy,
+  })
+  // Source verification is dominated by independent network round-trips. A
+  // conservative limit of four made a normal 90+ repository library take
+  // nearly a minute even with a warm object cache. Keep the bound explicit,
+  // but allow enough overlap for the review screen to finish promptly.
+  const resolvedGroups = await mapWithConcurrency(
+    [...sourceGroups.values()].sort((left, right) => `${left.source}\u0000${left.requestedRef}`.localeCompare(`${right.source}\u0000${right.requestedRef}`, 'en')),
+    16,
+    async (group) => {
+      const first = group.entries[0]!.external!
+      try {
+        const resolved = await resolver.resolve(`sync-center-${computePlanId({ source: group.source, ref: group.requestedRef }).slice(0, 16)}`, {
+          url: first.repository,
+          ref: group.requestedRef,
+          select: [...new Set(group.entries.map((entry) => entry.external!.skillPath))].sort(),
+        })
+        if (!resolved.committed_at) throw new Error(`Git source ${group.source} did not provide a commit timestamp`)
+        return { group, resolved } as const
+      } catch (error) {
+        return { group, error } as const
+      }
+    },
+  )
+  const unresolvedSources: UnresolvedSyncCenterSource[] = []
+  const resolvedByCandidate = new Map<string, Awaited<ReturnType<GitDependencyResolver['resolve']>>>()
+  const sourceAges: SourceCommitAgeDecision[] = []
+  const sourceResolutions: SyncCenterSourceResolution[] = []
+  for (const result of resolvedGroups) {
+    if ('error' in result) {
+      const releaseAge = result.error instanceof SourceReleaseAgeError ? result.error.decision : null
+      for (const entry of result.group.entries) {
+        unresolvedSources.push({
+          id: entry.item.candidateKey,
+          kind: entry.external!.kind,
+          reason: releaseAge ? 'too-new' : 'unverified',
+          ...(releaseAge ? { ageMinutes: releaseAge.ageMinutes, minimumAgeMinutes: releaseAge.minimumAgeMinutes } : {}),
+        })
+        outcomes.set(entry.item.candidateKey, { candidateKey: entry.item.candidateKey, disposition: 'local-only' })
+      }
+      continue
+    }
+    const age = requireMinimumReleaseAge(result.group.source, result.resolved.committed_at!, sourcePolicy)
+    sourceAges.push(age)
+    sourceResolutions.push({
+      source: result.group.source,
+      requestedRef: result.group.requestedRef,
+      commit: result.resolved.commit,
+      committedAt: result.resolved.committed_at!,
+      integrity: result.resolved.integrity,
+      skillPaths: result.resolved.skills.map((skill) => skill.path).sort(),
+    })
+    for (const entry of result.group.entries) resolvedByCandidate.set(entry.item.candidateKey, result.resolved)
+  }
+
+  const candidates: SyncPublishCandidate[] = []
+  for (const entry of prepared) {
+    if (entry.disposition === 'owned') {
+      candidates.push({ kind: 'bundled', id: entry.item.candidateKey, sourcePath: entry.item.sourcePath, installationAgentSlugs: entry.installationAgentSlugs })
+      continue
+    }
+    const external = entry.external!
+    const resolved = resolvedByCandidate.get(entry.item.candidateKey)
+    if (!resolved) continue
+    if (entry.disposition === 'vendored') {
+      const scanned = await scanOwnedSkill(dirname(entry.item.sourcePath), basename(entry.item.sourcePath))
+      if (!scanned.ok) throw new Error(`Could not verify vendored files for ${entry.item.displayName}: ${scanned.issues[0]?.message ?? 'unsafe skill'}`)
+      candidates.push({
+        kind: 'vendored',
+        id: entry.item.candidateKey,
+        sourcePath: entry.item.sourcePath,
         origin: {
           url: external.repository,
-          commit: ref,
+          commit: resolved.commit,
           skill_path: external.skillPath,
           integrity: scanned.value.integrity,
-          license: reviewed.license,
+          license: entry.reviewed!.license!,
         },
-        installationAgentSlugs,
-      }
+        installationAgentSlugs: entry.installationAgentSlugs,
+      })
+      continue
     }
-    return external.kind === 'skills_sh'
-      ? { kind: 'skills_sh' as const, id: item.candidateKey, sourceUrl: external.repository, ref, skillPath: external.skillPath, contentHash: item.contentHash, installationAgentSlugs }
-      : { kind: 'reference' as const, id: item.candidateKey, repository: external.repository, ref, skillPath: external.skillPath, contentHash: item.contentHash, installationAgentSlugs }
-  })).filter((candidate): candidate is SyncPublishCandidate => candidate !== null)
-  if (candidates.length === 0) throw new Error('No selected skills can be pinned safely. Connect or authenticate to their Git sources, then retry.')
-  return {
-    plan: createSyncPublishPlan('agent-library', mode, candidates),
+    candidates.push(external.kind === 'skills_sh'
+      ? { kind: 'skills_sh', id: entry.item.candidateKey, sourceUrl: external.repository, ref: resolved.commit, skillPath: external.skillPath, contentHash: entry.item.contentHash, installationAgentSlugs: entry.installationAgentSlugs }
+      : { kind: 'reference', id: entry.item.candidateKey, repository: external.repository, ref: resolved.commit, skillPath: external.skillPath, contentHash: entry.item.contentHash, installationAgentSlugs: entry.installationAgentSlugs })
+  }
+  const plan = createSyncPublishPlan('agent-library', mode, candidates)
+  const reviewPlanId = computePlanId({
+    kind: 'sync-center-publish-review',
+    schemaVersion: 1,
+    sourceAuthorizationId,
+    publishPlanId: plan.planId,
+    sourcePolicy,
+    sourceResolutions: sourceResolutions.sort((left, right) => `${left.source}\u0000${left.requestedRef}`.localeCompare(`${right.source}\u0000${right.requestedRef}`, 'en')),
+    unresolvedSources: [...unresolvedSources].sort((left, right) => left.id.localeCompare(right.id, 'en')),
+  })
+  const result: SyncCenterPublishPlanResult = {
+    plan,
+    reviewPlanId,
+    sourceAuthorizationId,
+    sourcePolicy,
     unresolvedSources,
     decisions: inventory.items.map((item) => outcomes.get(item.candidateKey) ?? { candidateKey: item.candidateKey, disposition: 'local-only' }),
+    sourceTrust,
+    sourceAges: sourceAges.sort((left, right) => left.source.localeCompare(right.source, 'en')),
   }
+  cacheSyncCenterReview(result)
+  return result
 }
 
 function syncPublishPlanToJson(
   plan: ReturnType<typeof createSyncPublishPlan>,
+  reviewPlanId: string,
+  sourceAuthorizationId: string,
+  sourcePolicy: SourceSecurityPolicy,
   unresolvedSources: UnresolvedSyncCenterSource[] = [],
   decisions: SyncCenterDecisionOutcome[] = [],
+  sourceTrust: SourceTrustDecision[] = [],
+  sourceAges: SourceCommitAgeDecision[] = [],
 ): SyncPublishPreviewJson {
   return {
-    plan_id: plan.planId,
+    plan_id: reviewPlanId,
+    source_authorization_id: sourceAuthorizationId,
     profile_id: plan.manifest.profile.id,
     mode: plan.manifest.profile.mode,
     skills: plan.bundledSkills.map((skill) => ({
@@ -630,12 +878,33 @@ function syncPublishPlanToJson(
     skills_sh: plan.manifest.skills
       .filter((skill): skill is Extract<typeof skill, { kind: 'skills_sh' }> => skill.kind === 'skills_sh')
       .map((skill) => ({ id: skill.id, source_url: skill.source_url, ref: skill.ref, skill_path: skill.skill_path })),
+    source_trust: sourceTrust.map((decision) => ({
+      source: decision.source,
+      kind: decision.kind,
+      rule: decision.rule,
+    })),
+    source_security: {
+      minimum_release_age_minutes: sourcePolicy.minimum_release_age_minutes,
+      commit_ages: sourceAges.map((decision) => ({
+        source: decision.source,
+        committed_at: decision.committedAt,
+        age_minutes: decision.ageMinutes,
+        minimum_age_minutes: decision.minimumAgeMinutes,
+        excluded: decision.excluded,
+      })),
+    },
     decisions: decisions.map((decision) => ({
       candidate_key: decision.candidateKey,
       disposition: decision.disposition,
       ...(decision.license ? { license: decision.license } : {}),
     })),
-    unresolved_sources: unresolvedSources,
+    unresolved_sources: unresolvedSources.map((source) => ({
+      id: source.id,
+      kind: source.kind,
+      reason: source.reason,
+      ...(source.ageMinutes === undefined ? {} : { age_minutes: source.ageMinutes }),
+      ...(source.minimumAgeMinutes === undefined ? {} : { minimum_age_minutes: source.minimumAgeMinutes }),
+    })),
   }
 }
 
@@ -694,7 +963,14 @@ async function prepareManagedExternalSkill(
 	return {
 		skill,
 		targets,
-		prepared: await prepareGitSkillInstall(externalSkillRepository(skill), skill.skill_path, skill.ref, skill.id, skill.sha256),
+		prepared: await prepareGitSkillInstall(
+			externalSkillRepository(skill),
+			skill.skill_path,
+			skill.ref,
+			skill.id,
+			skill.sha256,
+			exactSourceSecurityPolicy([externalSkillRepository(skill)]),
+		),
 	}
 }
 
@@ -933,21 +1209,25 @@ async function fetchRemoteSkillContent(
   repoUrl: string,
   skillName?: string | null
 ): Promise<string> {
-  const repo = repoUrl
-    .trim()
-    .replace(/\/$/, '')
-    .replace(/\.git$/, '')
-  const rawBase = repo.replace('github.com', 'raw.githubusercontent.com')
+  const trust = requireTrustedSource(repoUrl, exactSourceSecurityPolicy([repoUrl]))
+  if (trust.kind !== 'git') throw new Error('Skill preview requires a remote GitHub repository')
+  const repository = new URL(trust.source)
+  if (repository.protocol !== 'https:' || repository.hostname !== 'github.com') {
+    throw new Error('Remote SKILL.md preview currently supports HTTPS GitHub repositories only')
+  }
+  const parts = repository.pathname.replace(/\.git$/, '').split('/').filter(Boolean)
+  if (parts.length !== 2) throw new Error('GitHub repository must identify exactly one owner and repository')
+  const rawBase = `https://raw.githubusercontent.com/${encodeURIComponent(parts[0]!)}/${encodeURIComponent(parts[1]!)}`
   const branches = ['main', 'master'] as const
   const filePaths: string[] = []
-  if (skillName) filePaths.push(`skills/${skillName}/SKILL.md`)
+  if (skillName) filePaths.push(`skills/${encodeURIComponent(skillName)}/SKILL.md`)
   filePaths.push('SKILL.md')
 
   for (const path of filePaths) {
     for (const branch of branches) {
       const url = `${rawBase}/${branch}/${path}`
       try {
-        const res = await fetch(url, { signal: fetchTimeoutSignal(10_000) })
+        const res = await fetch(url, { signal: fetchTimeoutSignal(10_000), redirect: 'error' })
         if (res.ok) {
           const text = await res.text()
           if (text.length > 0) return text
@@ -980,31 +1260,31 @@ export function createRequestHandlers(ctx: {
     // Runtime context is informational only. It must never influence the
     // installable-agent list, which remains guarded by registry detection.
     detect_runtime_agent: async () => detectRuntimeAgent(),
-    dotagent_machine_inventory: async (): Promise<DotagentMachineInventoryJson> => {
-      const inventory = await scanDotagentMachine(loadAgentConfigs(getAgentsDir()))
-      return dotagentMachineToJson(inventory)
+    dotagents_machine_inventory: async (): Promise<DotagentsMachineInventoryJson> => {
+      const inventory = await scanDotagentsMachine(loadAgentConfigs(getAgentsDir()))
+      return dotagentsMachineToJson(inventory)
     },
-    dotagent_doctor: async (params: { libraryRoot: string }): Promise<DotagentDoctorJson> => {
+    dotagents_doctor: async (params: { libraryRoot: string }): Promise<DotagentsDoctorJson> => {
       const configs = loadAgentConfigs(getAgentsDir())
-      return dotagentDoctorToJson(await doctorLibrary({
+      return dotagentsDoctorToJson(await doctorLibrary({
         root: params.libraryRoot,
-        descriptors: dotagentDescriptorsFromSkiller(configs),
+        descriptors: dotagentsDescriptorsFromSkiller(configs),
         platform: process.platform as 'darwin' | 'linux' | 'win32',
         home: homedir(),
       }))
     },
-    dotagent_materialization_status: async (params: { libraryRoot: string }): Promise<DotagentMaterializationStatusJson> =>
-      dotagentStatusToJson(await getMaterializationStatus(params.libraryRoot)),
-    dotagent_skill_discovery: async (): Promise<DotagentSkillDiscoveryJson> => {
-      const discovery = await scanDotagentSkillDiscovery(loadDetectedAgents('dotagent_skill_discovery'))
-      return dotagentDiscoveryToJson(discovery.report, discovery.suggestions)
+    dotagents_materialization_status: async (params: { libraryRoot: string }): Promise<DotagentsMaterializationStatusJson> =>
+      dotagentsStatusToJson(await getMaterializationStatus(params.libraryRoot)),
+    dotagents_skill_discovery: async (): Promise<DotagentsSkillDiscoveryJson> => {
+      const discovery = await scanDotagentsSkillDiscovery(loadDetectedAgents('dotagents_skill_discovery'))
+      return dotagentsDiscoveryToJson(discovery.report, discovery.suggestions)
     },
-    dotagent_audit: async (params: { libraryRoot: string; visibility: 'private' | 'team' | 'public' }): Promise<DotagentAuditJson> =>
-      dotagentAuditToJson(await auditLibrary({ root: params.libraryRoot, visibility: params.visibility })),
-    dotagent_import_plan: async (params: { libraryRoot: string; decisions: DotagentImportDecision[] }): Promise<DotagentImportPlanJson> =>
-      dotagentImportPlanToJson(await planDotagentImportFromDiscovery(
+    dotagents_audit: async (params: { libraryRoot: string; visibility: 'private' | 'team' | 'public' }): Promise<DotagentsAuditJson> =>
+      dotagentsAuditToJson(await auditLibrary({ root: params.libraryRoot, visibility: params.visibility })),
+    dotagents_import_plan: async (params: { libraryRoot: string; decisions: DotagentsImportDecision[] }): Promise<DotagentsImportPlanJson> =>
+      dotagentsImportPlanToJson(await planDotagentsImportFromDiscovery(
         params.libraryRoot,
-        loadDetectedAgents('dotagent_import_plan'),
+        loadDetectedAgents('dotagents_import_plan'),
         params.decisions,
       )),
     read_skills_cli_lock: async () => readSkillsCliLock(),
@@ -1022,13 +1302,252 @@ export function createRequestHandlers(ctx: {
         .filter((s) => s.installations.some((i) => i.agent_slug === agentSlug))
         .map(skillToJson)
     },
+    skill_quality_overview: async (): Promise<SkillQualityOverviewJson> =>
+      inspectSkillQualityOverview(scanAllSkills(loadDetectedAgents('skill_quality_overview'))),
+    skill_quality_reveal_file: async (params: { qualityId: string; relativePath: string }) => {
+      if (!/^[a-f0-9]{16}$/.test(params.qualityId)) throw new Error('Invalid quality item identity')
+      assertPortableRelativePath(params.relativePath)
+      const skill = scanAllSkills(loadDetectedAgents('skill_quality_reveal_file')).find(
+        (candidate) => skillQualityIdentity(candidate) === params.qualityId,
+      )
+      if (!skill) throw new Error('This skill is no longer available locally')
+      const root = realpathSync(skill.canonical_path)
+      const filePath = join(root, ...params.relativePath.split('/'))
+      const relativeTarget = relative(root, filePath)
+      if (!relativeTarget || relativeTarget.startsWith(`..${sep}`) || relativeTarget === '..') {
+        throw new Error('This quality artifact is outside the skill')
+      }
+      let cursor = root
+      for (const segment of params.relativePath.split('/')) {
+        cursor = join(cursor, segment)
+        let metadata
+        try {
+          metadata = lstatSync(cursor)
+        } catch {
+          throw new Error('This quality artifact is no longer available locally')
+        }
+        if (metadata.isSymbolicLink()) throw new Error('Linked quality artifacts cannot be revealed')
+      }
+      if (!lstatSync(filePath).isFile()) throw new Error('This quality artifact is not a regular file')
+      platform.showItemInFolder(filePath)
+    },
+    skill_quality_eval_preview: async (params: SkillQualityEvalPreviewRequestJson): Promise<SkillQualityEvalPlanJson> => {
+      if (!/^[a-f0-9]{16}$/.test(params.qualityId)) throw new Error('Invalid quality item identity')
+      const skill = scanAllSkills(loadDetectedAgents('skill_quality_eval_preview')).find(
+        (candidate) => skillQualityIdentity(candidate) === params.qualityId,
+      )
+      if (!skill) throw new Error('This skill is no longer available locally')
+      const image = params.sandboxImage?.trim() || 'skillet-eval'
+      const inspection = await inspectLocalDockerImage(image)
+      const credentialInspection = inspectLocalCredentialProfile(params.credentialProfile ?? 'none')
+      return createSkillQualityEvalPlan(skill, params, inspection, credentialInspection)
+    },
+    skill_quality_dry_start: async (params: {
+      request: SkillQualityEvalPreviewRequestJson
+      expectedPlanId: string
+    }): Promise<SkillQualityDryRunReportJson> => {
+      if (params.request.mode !== 'dry') throw new Error('Only dry-check plans can use this runner')
+      if (!/^[a-f0-9]{64}$/.test(params.expectedPlanId)) throw new Error('Invalid reviewed plan identity')
+      const skill = scanAllSkills(loadDetectedAgents('skill_quality_dry_start')).find(
+        (candidate) => skillQualityIdentity(candidate) === params.request.qualityId,
+      )
+      if (!skill) throw new Error('This skill is no longer available locally')
+      const image = params.request.sandboxImage?.trim() || 'skillet-eval'
+      const inspection = await inspectLocalDockerImage(image)
+      const credentialInspection = inspectLocalCredentialProfile(params.request.credentialProfile ?? 'none')
+      const plan = createSkillQualityEvalPlan(skill, params.request, inspection, credentialInspection)
+      if (plan.plan_id !== params.expectedPlanId) {
+        throw new Error('The skill, eval artifacts, sandbox image, or review policy changed. Review a fresh plan before running.')
+      }
+      return runSkillQualityDryPlan({ skill, plan })
+    },
+    skill_quality_measured_start: async (params: {
+      request: SkillQualityEvalPreviewRequestJson
+      expectedPlanId: string
+    }): Promise<SkillQualityMeasuredReportJson> => {
+      if (params.request.mode !== 'measured') throw new Error('Only measured plans can use this runner')
+      if (!/^[a-f0-9]{64}$/.test(params.expectedPlanId)) throw new Error('Invalid reviewed plan identity')
+      const skill = scanAllSkills(loadDetectedAgents('skill_quality_measured_start')).find(
+        (candidate) => skillQualityIdentity(candidate) === params.request.qualityId,
+      )
+      if (!skill) throw new Error('This skill is no longer available locally')
+      const image = params.request.sandboxImage?.trim() || 'skillet-eval'
+      const inspection = await inspectLocalDockerImage(image)
+      const credentialInspection = inspectLocalCredentialProfile(params.request.credentialProfile ?? 'none')
+      const plan = createSkillQualityEvalPlan(skill, params.request, inspection, credentialInspection)
+      if (plan.plan_id !== params.expectedPlanId) {
+        throw new Error('The skill, eval artifacts, sandbox image, credentials, or review policy changed. Review a fresh plan before running.')
+      }
+      return runSkillQualityMeasuredPlan({ skill, plan })
+    },
     list_sync_profiles: async (): Promise<SyncProfileStatusJson[]> => listSyncProfiles(),
 	refresh_sync_profiles: async (): Promise<SyncProfileStatusJson[]> => listSyncProfiles(true),
+	sync_remote_trust_preview: async (params: { profileId: string; minimumReleaseAgeMinutes?: number }): Promise<SyncRemoteTrustPreviewJson> => {
+	  assertSyncStableId(params.profileId)
+	  if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
+	  const plan = await planSyncWorkspaceRemoteTrust(
+	    syncWorkspacePath(params.profileId),
+	    params.minimumReleaseAgeMinutes ?? DEFAULT_MINIMUM_RELEASE_AGE_MINUTES,
+	  )
+	  return {
+	    plan_id: plan.planId,
+	    remote_identity: plan.remoteIdentity,
+	    minimum_release_age_minutes: plan.sourcePolicy.minimum_release_age_minutes,
+	  }
+	},
+	sync_remote_trust_apply: async (params: { profileId: string; planId: string; minimumReleaseAgeMinutes: number }): Promise<void> => {
+	  assertSyncStableId(params.profileId)
+	  if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
+	  await applySyncWorkspaceRemoteTrust(
+	    syncWorkspacePath(params.profileId),
+	    params.planId,
+	    params.minimumReleaseAgeMinutes,
+	  )
+	},
     scan_sync_inventory: async (): Promise<SyncInventoryJson> => syncInventoryToJson(),
 		get_sync_skill_preview: async (params: { skillId: string }): Promise<SyncSkillPreviewJson> => syncSkillPreviewToJson(params.skillId),
-    sync_center_publish_preview: async (params?: { selectedKeys?: string[]; decisions?: ImportDecision[]; mode?: 'private' | 'public' }): Promise<SyncPublishPreviewJson> => {
-      const result = await createSyncCenterPublishPlan(params?.selectedKeys, params?.mode ?? 'private', params?.decisions)
-      return syncPublishPlanToJson(result.plan, result.unresolvedSources, result.decisions)
+    sync_history: async (params: { profileId: string }): Promise<SyncHistoryEntryJson[]> => {
+      assertSyncStableId(params.profileId)
+      if (!hasSyncWorkspace(params.profileId)) return []
+      return listOperationHistory(syncWorkspacePath(params.profileId)).map((record) => ({
+        id: record.id,
+        operation: record.operation,
+        source_plan_id: record.source_plan_id,
+        completed_at: record.completed_at,
+        undo_available: record.undo_available,
+        changes: record.changes.map((change) => ({ path: change.path, item_kind: change.itemKind })),
+      }))
+    },
+    sync_undo_preview: async (params: { profileId: string; historyId: string }): Promise<SyncUndoPreviewJson> => {
+      assertSyncStableId(params.profileId)
+      if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
+      const plan = planOperationUndo(syncWorkspacePath(params.profileId), params.historyId)
+      return {
+        plan_id: plan.planId,
+        history_id: plan.historyId,
+        source_plan_id: plan.sourcePlanId,
+        has_conflicts: plan.hasConflicts,
+        changes: plan.changes.map((change) => ({
+          path: change.path,
+          item_kind: change.itemKind,
+          action: change.inverse.kind === 'absent' ? 'remove-created' : 'restore-previous',
+          ...(change.reason ? { reason: change.reason } : {}),
+        })),
+      }
+    },
+    sync_undo_apply: async (params: { profileId: string; historyId: string; planId: string }): Promise<{ restored: string[] }> => {
+      assertSyncStableId(params.profileId)
+      if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
+      const plan = planOperationUndo(syncWorkspacePath(params.profileId), params.historyId)
+      if (plan.planId !== params.planId) throw new Error('Library content changed after Undo review. Review it again.')
+      return { restored: applyOperationUndo(syncWorkspacePath(params.profileId), plan).restored }
+    },
+    dotagents_resource_overview: async (params: { profileId: string }): Promise<DotagentsResourceOverviewJson> => {
+      assertSyncStableId(params.profileId)
+      if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
+      const workspace = syncWorkspacePath(params.profileId)
+      if (!isCanonicalSyncLibrary(workspace)) throw new Error('Upgrade this legacy library before managing agent resources')
+      const [manifest, status] = await Promise.all([
+        Promise.resolve(readSyncManifestFromWorkspace(workspace)),
+        getSyncWorkspaceStatus(workspace),
+      ])
+      return readResourceLibraryOverview({
+        workspace,
+        profileId: params.profileId,
+        mode: manifest.profile.mode,
+        changed: status.changed,
+      })
+    },
+    dotagents_library_health: async (params: { profileId: string }): Promise<DotagentsLibraryHealthJson> => {
+      assertSyncStableId(params.profileId)
+      if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
+      const workspace = syncWorkspacePath(params.profileId)
+      if (!isCanonicalSyncLibrary(workspace)) throw new Error('Upgrade this legacy library before reviewing its health')
+      return libraryRepairSession.health(workspace, params.profileId)
+    },
+    dotagents_library_repair_preview: async (params: { profileId: string; selectedCodes: string[] }): Promise<DotagentsLibraryRepairPreviewJson> => {
+      assertSyncStableId(params.profileId)
+      if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
+      const workspace = syncWorkspacePath(params.profileId)
+      if (!isCanonicalSyncLibrary(workspace)) throw new Error('Upgrade this legacy library before repairing it')
+      return libraryRepairSession.preview({ workspace, profileId: params.profileId, selectedCodes: params.selectedCodes })
+    },
+    dotagents_library_repair_apply: async (params: { profileId: string; planId: string }): Promise<{ history_id: string }> => {
+      assertSyncStableId(params.profileId)
+      if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
+      const workspace = syncWorkspacePath(params.profileId)
+      if (!isCanonicalSyncLibrary(workspace)) throw new Error('Upgrade this legacy library before repairing it')
+      return libraryRepairSession.apply({ workspace, profileId: params.profileId, planId: params.planId })
+    },
+    dotagents_scope_overview: async (): Promise<DotagentsScopeOverviewJson> => {
+      return scopeCompositionSession.overview(await scopeProfileReferences())
+    },
+    dotagents_scope_migration_preview: async (params: { profileId: string; scope: 'personal' | 'project' }): Promise<DotagentsScopeMigrationPreviewJson> => {
+      assertSyncStableId(params.profileId)
+      if (!['personal', 'project'].includes(params.scope)) throw new Error('Choose Personal or Project')
+      if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
+      if (!isCanonicalSyncLibrary(syncWorkspacePath(params.profileId))) throw new Error('Upgrade this legacy library before assigning a scope')
+      return scopeCompositionSession.previewMigration(params)
+    },
+    dotagents_scope_migration_apply: async (params: { profileId: string; planId: string }): Promise<{ history_id: string }> => {
+      assertSyncStableId(params.profileId)
+      if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
+      if (!isCanonicalSyncLibrary(syncWorkspacePath(params.profileId))) throw new Error('Upgrade this legacy library before assigning a scope')
+      return scopeCompositionSession.applyMigration(params)
+    },
+    dotagents_scope_composition_preview: async (params: {
+      personalProfileId: string | null
+      projectProfileId: string | null
+      exclusions: string[]
+    }): Promise<DotagentsScopeCompositionPreviewJson> => {
+      if (params.personalProfileId) assertSyncStableId(params.personalProfileId)
+      if (params.projectProfileId) assertSyncStableId(params.projectProfileId)
+      return scopeCompositionSession.previewComposition({ profiles: await scopeProfileReferences(), ...params })
+    },
+    dotagents_scope_composition_apply: async (params: { planId: string }): Promise<DotagentsScopeCompositionPreviewJson> => {
+      return scopeCompositionSession.applyComposition(params.planId, await scopeProfileReferences())
+    },
+    dotagents_scope_composition_undo_preview: async (): Promise<DotagentsScopeCompositionUndoPreviewJson | null> => {
+      return scopeCompositionSession.previewCompositionUndo(await scopeProfileReferences())
+    },
+    dotagents_scope_composition_undo_apply: async (params: { planId: string }): Promise<DotagentsScopeCompositionPreviewJson | null> => {
+      return scopeCompositionSession.applyCompositionUndo(params.planId, await scopeProfileReferences())
+    },
+    dotagents_resource_pick_source: async (params: { kind: 'skill' | 'instruction' | 'command' | 'subagent' }): Promise<DotagentsResourceSelectionJson | null> => {
+      if (!['skill', 'instruction', 'command', 'subagent'].includes(params.kind)) throw new Error('Unsupported resource kind')
+      const selected = params.kind === 'skill'
+        ? await platform.pickFolder({ title: 'Choose the skill folder to bring into your library' })
+        : await platform.pickFile({ title: `Choose the ${params.kind} file to bring into your library` })
+      return selected ? resourceAdoptionSession.registerSelection(selected, params.kind) : null
+    },
+    dotagents_resource_adopt_preview: async (params: DotagentsResourceAdoptionRequestJson): Promise<DotagentsResourceAdoptionPreviewJson> => {
+      assertSyncStableId(params.profileId)
+      if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
+      const workspace = syncWorkspacePath(params.profileId)
+      if (!isCanonicalSyncLibrary(workspace)) throw new Error('Upgrade this legacy library before managing agent resources')
+      const manifest = readSyncManifestFromWorkspace(workspace)
+      return resourceAdoptionSession.preview({ workspace, profileId: params.profileId, mode: manifest.profile.mode, request: params })
+    },
+    dotagents_resource_adopt_apply: async (params: { planId: string }): Promise<{ history_id: string; resource_key: string }> => {
+      return resourceAdoptionSession.apply(params.planId)
+    },
+    sync_center_publish_preview: async (params?: { selectedKeys?: string[]; decisions?: ImportDecision[]; mode?: 'private' | 'public'; minimumReleaseAgeMinutes?: number }): Promise<SyncPublishPreviewJson> => {
+      const result = await createSyncCenterPublishPlan(
+        params?.selectedKeys,
+        params?.mode ?? 'private',
+        params?.decisions,
+        params?.minimumReleaseAgeMinutes ?? DEFAULT_MINIMUM_RELEASE_AGE_MINUTES,
+      )
+      return syncPublishPlanToJson(
+        result.plan,
+        result.reviewPlanId,
+        result.sourceAuthorizationId,
+        result.sourcePolicy,
+        result.unresolvedSources,
+        result.decisions,
+        result.sourceTrust,
+        result.sourceAges,
+      )
     },
     sync_center_publish: async (params: {
       remoteUrl: string
@@ -1037,33 +1556,52 @@ export function createRequestHandlers(ctx: {
       mode: 'private' | 'public'
       license?: SyncCenterLicense
       planId: string
+      sourceAuthorizationId: string
+      minimumReleaseAgeMinutes: number
     }) => {
       const remoteUrl = params.remoteUrl.trim()
       if (!remoteUrl) throw new Error('A Git remote is required')
       assertCredentialFreeGitRemote(remoteUrl)
+	  const librarySourcePolicy = reviewedRemoteSourcePolicy(remoteUrl, params.minimumReleaseAgeMinutes)
 	  const license = syncCenterPublicLicense(params.mode, params.license)
       const profileId = 'agent-library'
       const workspace = syncWorkspacePath(profileId)
       const existingWorkspace = hasSyncWorkspace(profileId)
-		const publishPlan = await createSyncCenterPublishPlan(params.selectedKeys, params.mode, params.decisions)
-		assertReviewedPublishPlan(params.planId, publishPlan.plan.planId)
+		const publishPlan = await createSyncCenterPublishPlan(
+        params.selectedKeys,
+        params.mode,
+        params.decisions,
+        params.minimumReleaseAgeMinutes,
+        params.sourceAuthorizationId,
+		)
+		assertReviewedPublishPlan(params.planId, publishPlan.reviewPlanId)
+      if (publishPlan.plan.manifest.skills.length === 0) {
+        throw new Error('No reviewed skill can be included yet. Adjust the cooling-off period or reconnect the affected Git sources.')
+      }
+      const canonical = !existingWorkspace || isCanonicalSyncLibrary(workspace)
+        ? await planCanonicalSyncLibrary(workspace, publishPlan.plan, {
+            license,
+            sourcePolicy: publishPlan.sourcePolicy,
+            cacheRoot: join(syncProfilesDirectory(), '.source-cache', 'git'),
+          })
+        : null
       if (existingWorkspace) {
         const status = await getSyncWorkspaceStatus(workspace)
         if (status.changed) throw new Error('Sync workspace has uncommitted changes; resolve them before publishing')
 			if (status.remoteUrl && status.remoteUrl !== remoteUrl) throw new Error('This library already uses a different remote')
-        if (!status.remoteUrl) await setSyncWorkspaceRemote(workspace, remoteUrl)
+		if (!status.remoteUrl) await setSyncWorkspaceRemote(workspace, remoteUrl, librarySourcePolicy)
       }
 		if (existingWorkspace && !isCanonicalSyncLibrary(workspace)) {
 			// Existing libraries retain their versioned legacy format until the user
-			// explicitly migrates; newly created libraries are canonical dotagent.
+			// explicitly migrates; newly created libraries are canonical dotagents.
 			applySyncPublishPlan(workspace, publishPlan.plan)
 		} else {
-			const canonical = await planCanonicalSyncLibrary(workspace, publishPlan.plan, { license })
-			applySyncPublishFiles(workspace, publishPlan.plan, canonical.portableFiles)
-			if (!existingWorkspace) await initializeSyncWorkspace(workspace, remoteUrl)
+			applySyncPublishFiles(workspace, publishPlan.plan, canonical!.portableFiles)
+			if (!existingWorkspace) await initializeSyncWorkspace(workspace, remoteUrl, librarySourcePolicy)
 		}
+		  if (isCanonicalSyncLibrary(workspace)) writeLocalSyncSourceSecurityPolicy(workspace, librarySourcePolicy)
 		  const commit = await commitSyncWorkspace(workspace, 'Skiller sync: update skill library')
-      await pushSyncWorkspace(workspace)
+      await pushSyncWorkspace(workspace, librarySourcePolicy)
       writeSyncLedgerAt(
         syncLedgerPath(profileId),
         makeSyncLedger(profileId, publishPlan.plan.manifest.skills
@@ -1150,11 +1688,11 @@ export function createRequestHandlers(ctx: {
       const published = recoverLibraryUpdate(libraryUpdateJournalPath(syncWorkspacePath(params.profileId)))
       return { recovered: restored || published }
     },
-    sync_center_connect_preview: async (params: { remoteUrl: string; agentSlugs: string[] }): Promise<SyncConnectPreviewJson> => {
+    sync_center_connect_preview: async (params: { remoteUrl: string; agentSlugs: string[]; minimumReleaseAgeMinutes: number }): Promise<SyncConnectPreviewJson> => {
       const { clone_plan_id: _clonePlanId, ...preview } = await planSyncCenterConnection(params)
       return preview
     },
-    sync_center_connect: async (params: { profileId: string; remoteUrl: string; agentSlugs: string[]; planId: string }): Promise<SyncProfileStatusJson> => {
+    sync_center_connect: async (params: { profileId: string; remoteUrl: string; agentSlugs: string[]; planId: string; minimumReleaseAgeMinutes: number }): Promise<SyncProfileStatusJson> => {
       const reviewed = await planSyncCenterConnection(params)
       if (reviewed.plan_id !== params.planId) {
         throw new Error('Repository, destination, or selected agents changed after review. Review the connection again.')
@@ -1164,6 +1702,7 @@ export function createRequestHandlers(ctx: {
         remoteUrl: params.remoteUrl,
         agentSlugs: reviewed.agent_slugs,
         clonePlanId: reviewed.clone_plan_id,
+        minimumReleaseAgeMinutes: params.minimumReleaseAgeMinutes,
       })
     },
     sync_github_create_repo_preview: async (params: { repository: string; visibility: 'private' | 'public' }): Promise<SyncGitHubRepositoryPreviewJson> => {
@@ -1195,7 +1734,11 @@ export function createRequestHandlers(ctx: {
             rel,
             targetAgents,
             agents,
-            'git'
+            'git',
+            undefined,
+            undefined,
+            undefined,
+            exactSourceSecurityPolicy([src.repo_url]),
           )
           return
         }
@@ -1207,14 +1750,28 @@ export function createRequestHandlers(ctx: {
             '.',
             targetAgents,
             agents,
-            'skills.sh'
+            'skills.sh',
+            undefined,
+            undefined,
+            undefined,
+            exactSourceSecurityPolicy([repo]),
           )
           return
         }
         case 'ClawHub': {
           const repo = src.repository?.trim()
           if (!repo) throw new Error('repository url is required')
-          await installSkillFromGit(repo, '.', targetAgents, agents, 'clawhub')
+          await installSkillFromGit(
+			repo,
+			'.',
+			targetAgents,
+			agents,
+			'clawhub',
+			undefined,
+			undefined,
+			undefined,
+			exactSourceSecurityPolicy([repo]),
+		  )
           return
         }
         case 'Unknown':
@@ -1364,13 +1921,19 @@ export function createRequestHandlers(ctx: {
     },
     update_skill: async (params: { skillId: string }) => {
       const { skillId } = params
-      await updateSingleSkill(skillId, loadDetectedAgents())
+	  const repository = readProvenance()[skillId]?.repository?.trim()
+      await updateSingleSkill(
+		skillId,
+		loadDetectedAgents(),
+		exactSourceSecurityPolicy(repository ? [repository] : []),
+	  )
     },
     update_all_skills: async () => {
       const agents = loadDetectedAgents()
+	  const repositories = Object.values(readProvenance()).flatMap((entry) => entry.repository?.trim() ? [entry.repository.trim()] : [])
       const result = await updateAll(agents, (p) => {
         rpc.send('skill_update_progress', p)
-      })
+	  }, exactSourceSecurityPolicy(repositories))
       const out: UpdateAllResultJson = {
         updated: result.updated,
         failed: result.failed,
@@ -1399,7 +1962,11 @@ export function createRequestHandlers(ctx: {
         skillRelativePath,
         targetAgents,
         loadDetectedAgents(),
-        'git'
+        'git',
+        undefined,
+        undefined,
+        undefined,
+        exactSourceSecurityPolicy([repoUrl]),
       )
     },
     fetch_remote_skill_content: async (params: {
@@ -1454,7 +2021,8 @@ export function createRequestHandlers(ctx: {
       await installFromMarketplace(
         internal,
         params.targetAgents,
-        loadDetectedAgents()
+		loadDetectedAgents(),
+		exactSourceSecurityPolicy(internal.repository ? [internal.repository] : []),
       )
     },
     shell_runtime: async () => {
@@ -1509,7 +2077,7 @@ export function createRequestHandlers(ctx: {
     add_skill_repo: async (params: { repoUrl: string }) => {
       const { repo, skills } = await addSkillRepo(params.repoUrl, (p) => {
         rpc.send('repo_progress', p)
-      })
+	  }, exactSourceSecurityPolicy([normalizeSkillRepoUrl(params.repoUrl)]))
       return {
         repo: {
           id: repo.id,
@@ -1553,9 +2121,11 @@ export function createRequestHandlers(ctx: {
       }))
     },
     sync_skill_repo: async (params: { repoIdParam: string }) => {
+	  const current = listSkillRepos().find((repo) => repo.id === params.repoIdParam)
+	  if (!current?.repo_url) throw new Error('Repository has no reviewed remote source')
       const repo = await syncSkillRepo(params.repoIdParam, (p) => {
         rpc.send('repo_progress', p)
-      })
+	  }, exactSourceSecurityPolicy([current.repo_url]))
       return {
         id: repo.id,
         name: repo.name,
@@ -1654,14 +2224,20 @@ export function createRequestHandlers(ctx: {
           return
         case 'GitRepository': {
           const rel = src.skill_path?.trim() || '.'
-          await installSkillToProjectFromGit(src.repo_url, rel, projectPath)
+		  await installSkillToProjectFromGit(
+			src.repo_url,
+			rel,
+			projectPath,
+			undefined,
+			exactSourceSecurityPolicy([src.repo_url]),
+		  )
           return
         }
         case 'SkillsSh':
         case 'ClawHub': {
           const repo = src.repository?.trim()
           if (!repo) throw new Error('repository url is required')
-          await installSkillToProjectFromGit(repo, '.', projectPath)
+		  await installSkillToProjectFromGit(repo, '.', projectPath, undefined, exactSourceSecurityPolicy([repo]))
           return
         }
         case 'Unknown':
@@ -1692,7 +2268,11 @@ export function createRequestHandlers(ctx: {
         installs: s.installs ?? null,
         source: s.source,
       }
-      await installMarketplaceSkillToProject(internal, params.projectPath)
+	  await installMarketplaceSkillToProject(
+		internal,
+		params.projectPath,
+		exactSourceSecurityPolicy(internal.repository ? [internal.repository] : []),
+	  )
     },
     uninstall_project_skill: async (params: {
       projectPath: string

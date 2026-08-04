@@ -1,18 +1,18 @@
-import type { DoctorReport } from "@beautyfree/dotagent/doctor";
-import type { MaterializationStatus } from "@beautyfree/dotagent/status";
-import type { LibraryAuditReport } from "@beautyfree/dotagent/audit";
-import type { ImportCandidate, ImportPlan } from "@beautyfree/dotagent/import";
-import type { SkillDiscoveryReport } from "@beautyfree/dotagent/discovery";
+import type { DoctorReport } from "dotagents/doctor";
+import type { MaterializationStatus } from "dotagents/status";
+import type { LibraryAuditReport } from "dotagents/audit";
+import type { ImportCandidate, ImportPlan } from "dotagents/import";
+import type { SkillDiscoveryReport } from "dotagents/discovery";
 import type {
-	DotagentAuditJson,
-	DotagentDoctorJson,
-	DotagentMachineInventoryJson,
-	DotagentMaterializationStatusJson,
-	DotagentSkillDiscoveryJson,
-	DotagentImportPlanJson,
+	DotagentsAuditJson,
+	DotagentsDoctorJson,
+	DotagentsMachineInventoryJson,
+	DotagentsMaterializationStatusJson,
+	DotagentsSkillDiscoveryJson,
+	DotagentsImportPlanJson,
 } from "../shared/rpc-schema";
 
-export function dotagentMachineToJson(machine: NonNullable<DoctorReport["machine"]>): DotagentMachineInventoryJson {
+export function dotagentsMachineToJson(machine: NonNullable<DoctorReport["machine"]>): DotagentsMachineInventoryJson {
 	return {
 		platform: machine.platform,
 		detected_slugs: machine.detectedSlugs,
@@ -26,7 +26,7 @@ export function dotagentMachineToJson(machine: NonNullable<DoctorReport["machine
 }
 
 /** Removes absolute paths and safe causes before data crosses Electron IPC. */
-export function dotagentDoctorToJson(report: DoctorReport): DotagentDoctorJson {
+export function dotagentsDoctorToJson(report: DoctorReport): DotagentsDoctorJson {
 	return {
 		ok: report.ok,
 		library: report.library ? {
@@ -36,7 +36,7 @@ export function dotagentDoctorToJson(report: DoctorReport): DotagentDoctorJson {
 			dependency_count: report.library.dependencyCount,
 			locked: report.library.locked,
 		} : null,
-		machine: report.machine ? dotagentMachineToJson(report.machine) : null,
+		machine: report.machine ? dotagentsMachineToJson(report.machine) : null,
 		issues: report.issues.map((issue) => ({
 			code: issue.code,
 			severity: issue.severity ?? "error",
@@ -47,7 +47,7 @@ export function dotagentDoctorToJson(report: DoctorReport): DotagentDoctorJson {
 	};
 }
 
-export function dotagentStatusToJson(status: MaterializationStatus): DotagentMaterializationStatusJson {
+export function dotagentsStatusToJson(status: MaterializationStatus): DotagentsMaterializationStatusJson {
 	return {
 		targets: status.targets.map((target) => ({
 			agent_slug: target.agent,
@@ -58,7 +58,7 @@ export function dotagentStatusToJson(status: MaterializationStatus): DotagentMat
 	};
 }
 
-export function dotagentDiscoveryToJson(report: SkillDiscoveryReport, suggestions: ImportCandidate[]): DotagentSkillDiscoveryJson {
+export function dotagentsDiscoveryToJson(report: SkillDiscoveryReport, suggestions: ImportCandidate[]): DotagentsSkillDiscoveryJson {
 	const bySkill = new Map(suggestions.map((candidate) => [candidate.skill, candidate]));
 	return {
 		skills: report.skills.map((skill) => {
@@ -86,7 +86,7 @@ export function dotagentDiscoveryToJson(report: SkillDiscoveryReport, suggestion
 	};
 }
 
-export function dotagentAuditToJson(report: LibraryAuditReport): DotagentAuditJson {
+export function dotagentsAuditToJson(report: LibraryAuditReport): DotagentsAuditJson {
 	return {
 		ok: report.ok,
 		public_ready: report.publicReady,
@@ -106,7 +106,7 @@ export function dotagentAuditToJson(report: LibraryAuditReport): DotagentAuditJs
 	};
 }
 
-export function dotagentImportPlanToJson(plan: ImportPlan): DotagentImportPlanJson {
+export function dotagentsImportPlanToJson(plan: ImportPlan): DotagentsImportPlanJson {
 	return {
 		plan_id: plan.planId,
 		has_conflicts: plan.hasConflicts,

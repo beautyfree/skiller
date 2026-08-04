@@ -41,6 +41,8 @@ export interface AppPlatform {
 	showItemInFolder(path: string): void;
 	/** Single-folder picker. Resolves to absolute path or `null` if cancelled. */
 	pickFolder(opts?: FileDialogOpts): Promise<string | null>;
+	/** Single-file picker. Resolves to absolute path or `null` if cancelled. */
+	pickFile(opts?: FileDialogOpts): Promise<string | null>;
 	getMainWindow(): PlatformWindow;
 	/**
 	 * After settings change (theme, blur). macOS: re-syncs NSWindow appearance

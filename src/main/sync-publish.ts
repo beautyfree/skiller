@@ -7,12 +7,12 @@ import {
 	type SkillerSyncPublishCandidate,
 	type SkillerSyncPublishPlan,
 	type SkillerVendoredPublishCandidate,
-} from "@beautyfree/dotagent/adapters/skiller";
+} from "dotagents/adapters/skiller";
 import {
 	applyLibraryUpdatePlan,
 	planLibraryUpdate,
 	type LibraryUpdatePlan,
-} from "@beautyfree/dotagent/library-update";
+} from "dotagents/library-update";
 import {
 	stringifySyncManifest,
 	type SyncManifest,
@@ -60,7 +60,7 @@ export function applySyncPublishPlan(workspacePath: string, plan: SyncPublishPla
 
 /**
  * Applies reviewed skill bundles plus an explicit set of portable root files.
- * Canonical dotagent publication uses this with skills.json/skills.lock/config;
+ * Canonical dotagents publication uses this with skills.json/skills.lock/config;
  * the legacy wrapper above remains read/write compatible for existing profiles.
  */
 export function applySyncPublishFiles(
@@ -72,7 +72,7 @@ export function applySyncPublishFiles(
 	applyLibraryUpdatePlan(update, { portableFiles });
 }
 
-/** Provider/UI adapter for dotagent's shared transactional workspace update. */
+/** Provider/UI adapter for dotagents's shared transactional workspace update. */
 export function createSyncPublishWorkspacePlan(
 	workspacePath: string,
 	plan: SyncPublishPlan,

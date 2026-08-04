@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import simpleGit from "simple-git";
 import { planBundledSkillExport } from "./sync-export";
+import { prepareGitSkillInstall } from "./install";
 
 const tempDirs: string[] = [];
 
@@ -37,6 +38,7 @@ function installInCleanHome(options: { repository: string; commit: string; hash:
 import { installSkillFromGit } from ${JSON.stringify(installModule)};
 import { readProvenance } from ${JSON.stringify(provenanceModule)};
 import { defaultAgentConfig } from ${JSON.stringify(typesModule)};
+import { exactSourceSecurityPolicy } from "dotagents/source-policy";
 import { join } from "node:path";
 const agentSkillRoot = join(process.env.HOME, ".skiller-test-agent", "skills");
 const agent = defaultAgentConfig({
@@ -45,6 +47,7 @@ const agent = defaultAgentConfig({
 const installed = await installSkillFromGit(
   ${JSON.stringify(options.repository)}, ".", [agent.slug], [agent], "sync-reference",
   ${JSON.stringify(options.commit)}, "portable-test", ${JSON.stringify(options.hash)},
+  exactSourceSecurityPolicy([${JSON.stringify(options.repository)}]),
 );
 console.log(JSON.stringify({ installed, agentSkillRoot, provenance: readProvenance()["portable-test"] }));
 `;
@@ -58,6 +61,13 @@ console.log(JSON.stringify({ installed, agentSkillRoot, provenance: readProvenan
 }
 
 describe("pinned Git skill restore", () => {
+	test("rejects a source without device trust before cloning it", async () => {
+		const source = await createPinnedSkillSource();
+		await expect(
+			prepareGitSkillInstall(source.repository, ".", source.commit, "portable-test", source.hash),
+		).rejects.toThrow(/explicit allow_local|allowlist|not trusted/i);
+	});
+
 	test("reproduces a verified external skill in an isolated second-device home", async () => {
 		const source = await createPinnedSkillSource();
 		const secondHome = mkdtempSync(join(tmpdir(), "skiller-second-device-"));

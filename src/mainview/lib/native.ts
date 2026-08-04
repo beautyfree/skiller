@@ -37,6 +37,7 @@ export type BunPushMessage = keyof AppRPCSchema['bun']['messages']
 
 const DEFAULT_TRPC_URL = 'http://127.0.0.1:17888'
 const ELECTRON_PUSH_CHANNEL = 'skiller:push'
+const ELECTRON_TRPC_ENDPOINT_CHANNEL = 'skiller:trpc-endpoint'
 
 /** WKWebView can time out localhost requests around 60s; keep signal long-lived. */
 const TRPC_FETCH_MAX_MS = 600_000
@@ -104,6 +105,7 @@ type PushListener = (payload: unknown) => void
 const g = globalThis as typeof globalThis & {
   __skillerPushHub?: Map<string, Set<PushListener>>
   __skillerPushBooted?: boolean
+  __skillerElectronTrpcBaseUrl?: Promise<string>
 }
 
 function getHub(): Map<string, Set<PushListener>> {
@@ -160,22 +162,67 @@ async function bootPushTransport(): Promise<void> {
   })
 }
 
-// Fire-and-forget — any `listen()` call races with this; missed events during
-// boot are extremely unlikely in practice because main waits for renderer to
-// signal ready before sending, but we queue nothing explicitly.
+// Fire-and-forget for later push events. The first Electron `invoke()` also
+// pulls the endpoint over IPC, so queries cannot race this listener or fall
+// through to another Skiller process that owns the preferred HTTP port.
 void bootPushTransport()
 
 /** ------------------------------------------------------------------
  * tRPC base URL resolution + request helper.
  * ------------------------------------------------------------------ */
 
-function trpcBaseUrl(): string {
+export function parseElectronTrpcEndpoint(payload: unknown): string {
+  const baseUrl =
+    payload && typeof payload === 'object' && 'baseUrl' in payload
+      ? (payload as { baseUrl?: unknown }).baseUrl
+      : undefined
+  if (typeof baseUrl !== 'string') {
+    throw new Error('Skiller could not connect to its local service.')
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(baseUrl)
+  } catch {
+    throw new Error('Skiller could not connect to its local service.')
+  }
+  if (
+    parsed.protocol !== 'http:' ||
+    parsed.hostname !== '127.0.0.1' ||
+    !parsed.port ||
+    parsed.username ||
+    parsed.password ||
+    parsed.pathname !== '/' ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw new Error('Skiller could not connect to its local service.')
+  }
+  return parsed.origin
+}
+
+async function trpcBaseUrl(): Promise<string> {
   const override = parseTrpcPortOverride()
   if (override !== null) {
     return `http://127.0.0.1:${override}`
   }
   if (typeof window !== 'undefined' && window.__SKILLER_TRPC_BASE_URL__) {
     return window.__SKILLER_TRPC_BASE_URL__
+  }
+  if (isElectronHost()) {
+    if (!g.__skillerElectronTrpcBaseUrl) {
+      g.__skillerElectronTrpcBaseUrl = window.api!
+        .invoke(ELECTRON_TRPC_ENDPOINT_CHANNEL)
+        .then((payload) => {
+          const baseUrl = parseElectronTrpcEndpoint(payload)
+          window.__SKILLER_TRPC_BASE_URL__ = baseUrl
+          return baseUrl
+        })
+        .catch((error) => {
+          g.__skillerElectronTrpcBaseUrl = undefined
+          throw error
+        })
+    }
+    return g.__skillerElectronTrpcBaseUrl
   }
   if (isBundledSkillerView()) {
     return DEFAULT_TRPC_URL
@@ -190,12 +237,26 @@ type TrpcSingleResponse<T> =
   | { result: { data?: T } }
   | { error: { message?: string; code?: number; data?: unknown } }
 
+/** Keep server stacks and transport metadata out of user-facing errors. */
+export function readableTrpcError(name: string, response: unknown, status: number): string {
+  if (response && typeof response === 'object' && 'error' in response) {
+    const error = (response as { error?: unknown }).error
+    if (error && typeof error === 'object' && 'message' in error) {
+      const message = (error as { message?: unknown }).message
+      if (typeof message === 'string' && message.trim()) {
+        return (message.split(/\n\s*at\s/)[0] ?? message).replace(/\s+/g, ' ').trim().slice(0, 600)
+      }
+    }
+  }
+  return `${name.replace(/_/g, ' ')} failed (HTTP ${status})`
+}
+
 async function callTrpcProcedure<T>(
   name: string,
   input: unknown,
   isQuery: boolean,
 ): Promise<T> {
-  const base = trpcBaseUrl()
+  const base = await trpcBaseUrl()
   let url = `${base}/trpc/${name}`
   const init: RequestInit = {
     method: isQuery ? 'GET' : 'POST',
@@ -214,11 +275,7 @@ async function callTrpcProcedure<T>(
   const res = await trpcFetch(url, init)
   const payload = (await res.json()) as TrpcSingleResponse<T>
   if (!res.ok || ('error' in payload && payload.error)) {
-    const detail =
-      payload && typeof payload === 'object' && 'error' in payload && payload.error
-        ? JSON.stringify(payload.error)
-        : `HTTP ${res.status}`
-    throw new Error(`tRPC ${name} failed: ${detail}`)
+    throw new Error(readableTrpcError(name, payload, res.status))
   }
   const data = 'result' in payload ? payload.result.data : undefined
   return data as T

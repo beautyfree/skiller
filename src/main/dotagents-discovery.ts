@@ -4,10 +4,10 @@ import {
 	type DiscoveredProvenance,
 	type SkillDiscoveryReport,
 	type SkillDiscoveryRoot,
-} from "@beautyfree/dotagent/discovery";
-import { skillsCliLockToProvenance, type SkillsCliLock } from "@beautyfree/dotagent/adapters/skills-cli";
-import type { ImportCandidate } from "@beautyfree/dotagent/import";
-import { planImport, type ImportPlan } from "@beautyfree/dotagent/import";
+} from "dotagents/discovery";
+import { skillsCliLockToProvenance, type SkillsCliLock } from "dotagents/adapters/skills-cli";
+import type { ImportCandidate } from "dotagents/import";
+import { planImport, type ImportPlan } from "dotagents/import";
 import { readSkillsCliLock } from "./skills-cli-lock";
 import { readProvenance, type ProvenanceEntry } from "./provenance";
 import { sharedSkillsDir } from "./shared-skills";
@@ -35,7 +35,7 @@ function legacyProvenance(entries: Record<string, ProvenanceEntry>): DiscoveredP
 	});
 }
 
-export function dotagentDiscoveryRoots(configs: AgentConfig[], sharedRoot = sharedSkillsDir()): SkillDiscoveryRoot[] {
+export function dotagentsDiscoveryRoots(configs: AgentConfig[], sharedRoot = sharedSkillsDir()): SkillDiscoveryRoot[] {
 	const roots: SkillDiscoveryRoot[] = [{ path: sharedRoot, kind: "shared" }];
 	for (const agent of configs.filter((config) => config.detected)) {
 		for (const root of agent.global_paths) roots.push({ path: root, agent: agent.slug, kind: "agent-local" });
@@ -46,7 +46,7 @@ export function dotagentDiscoveryRoots(configs: AgentConfig[], sharedRoot = shar
 	return roots;
 }
 
-export async function scanDotagentSkillDiscovery(
+export async function scanDotagentsSkillDiscovery(
 	configs: AgentConfig[],
 	options: {
 		sharedRoot?: string;
@@ -54,7 +54,7 @@ export async function scanDotagentSkillDiscovery(
 		provenance?: Record<string, ProvenanceEntry>;
 	} = {},
 ): Promise<{ report: SkillDiscoveryReport; suggestions: ImportCandidate[]; skippedSources: { skill: string; reason: string }[] }> {
-	const report = await discoverSkills(dotagentDiscoveryRoots(configs, options.sharedRoot));
+	const report = await discoverSkills(dotagentsDiscoveryRoots(configs, options.sharedRoot));
 	const skillsCli = options.skillsCliLock === undefined ? readSkillsCliLock() : options.skillsCliLock;
 	const adapted = skillsCli ? skillsCliLockToProvenance(skillsCli) : { provenance: [], skipped: [] };
 	const provenance = options.provenance ?? readProvenance();
@@ -65,20 +65,20 @@ export async function scanDotagentSkillDiscovery(
 	};
 }
 
-export type DotagentImportDecision = {
+export type DotagentsImportDecision = {
 	candidateKey: string;
 	disposition: "suggested" | "owned" | "dependency" | "local-only" | "excluded";
 	reason?: string;
 };
 
 /** Rebuilds discovery before planning so renderer choices never carry trusted filesystem paths. */
-export async function planDotagentImportFromDiscovery(
+export async function planDotagentsImportFromDiscovery(
 	libraryRoot: string,
 	configs: AgentConfig[],
-	decisions: DotagentImportDecision[],
-	options: Parameters<typeof scanDotagentSkillDiscovery>[1] = {},
+	decisions: DotagentsImportDecision[],
+	options: Parameters<typeof scanDotagentsSkillDiscovery>[1] = {},
 ): Promise<ImportPlan> {
-	const discovery = await scanDotagentSkillDiscovery(configs, options);
+	const discovery = await scanDotagentsSkillDiscovery(configs, options);
 	const byKey = new Map(discovery.report.skills.map((skill, index) => [skill.candidateKey, { skill, suggestion: discovery.suggestions[index]! }]));
 	const seen = new Set<string>();
 	const candidates: ImportCandidate[] = decisions.map((decision) => {

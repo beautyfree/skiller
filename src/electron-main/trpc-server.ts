@@ -34,7 +34,7 @@ export async function startTrpcHttpServer(
 			const handle = await bindServerOnce(router, port);
 			if (handle.port !== preferredPort) {
 				console.warn(
-					`[tRPC] Port ${preferredPort} in use; bound to ${handle.port}. Renderer gets the URL via webContents.send('trpc_endpoint').`,
+					`[tRPC] Port ${preferredPort} in use; bound to ${handle.port}. Renderer resolves the owned endpoint through Electron IPC.`,
 				);
 			}
 			return handle;

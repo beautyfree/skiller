@@ -15,6 +15,8 @@ import Marketplace from './pages/Marketplace'
 import ProjectsPage from './pages/Projects'
 import SettingsPage from './pages/Settings'
 import SyncCenter from './pages/SyncCenter'
+import QualityCenter from './pages/QualityCenter'
+import ResourceLibrary from './pages/ResourceLibrary'
 import OnboardingWizard from './components/OnboardingWizard'
 import { useTheme } from './hooks/useTheme'
 import CloseConfirmDialog from './components/CloseConfirmDialog'
@@ -352,6 +354,8 @@ function AppInner() {
           <Route path="marketplace" element={<Marketplace />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="sync" element={<SyncCenter />} />
+          <Route path="quality" element={<QualityCenter />} />
+          <Route path="library" element={<ResourceLibrary />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>

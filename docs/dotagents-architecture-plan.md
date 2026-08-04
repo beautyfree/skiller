@@ -1,16 +1,20 @@
-# beautyfree/dotagent — architecture and delivery plan
+# beautyfree/dotagents — architecture and delivery plan
 
 > Status: active implementation plan  
 > Created: 2026-08-03  
-> Owners: beautyfree/dotagent core and Skiller integration  
+> Owners: beautyfree/dotagents core and Skiller integration  
 > Decision rule: update this document whenever the format, package boundary, migration order, or acceptance criteria changes.
 
 Requirement-by-requirement evidence and the current interface-quality findings
-are recorded in [`dotagent-completion-audit.md`](./dotagent-completion-audit.md).
+are recorded in [`dotagents-completion-audit.md`](./dotagents-completion-audit.md).
+
+The post-v1 platform expansion, including source trust, scopes, reversible
+operations, additional resource kinds, and Skill Quality Center, is governed by
+[`dotagents-platform-evolution-rfc.md`](./dotagents-platform-evolution-rfc.md).
 
 ## 1. Outcome
 
-`beautyfree/dotagent` is a TypeScript library and headless CLI for maintaining one canonical agent library, normally cloned at `~/.agents`, and materializing reviewed views into the native locations of supported agents.
+`beautyfree/dotagents` is a TypeScript library and headless CLI for maintaining one canonical agent library, normally cloned at `~/.agents`, and materializing reviewed views into the native locations of supported agents.
 
 Skiller remains the desktop product. It imports the same core package used by the CLI and adds discovery UX, review, Git provider setup, conflict resolution, background status, and release integration. Skiller must not keep a second implementation of manifest parsing, source resolution, secret scanning, reconciliation, or materialization planning.
 
@@ -27,14 +31,14 @@ The first useful release must support this complete story:
 
 | Surface | Name |
 | --- | --- |
-| GitHub repository | `beautyfree/dotagent` |
-| npm package | `@beautyfree/dotagent` |
-| JavaScript import | `import { ... } from '@beautyfree/dotagent'` |
-| Initial collision-free binary | `beautyfree-dotagent` |
+| GitHub repository | `beautyfree/dotagents` |
+| npm package | `dotagents` |
+| JavaScript import | `import { ... } from 'dotagents'` |
+| Initial collision-free binary | `dotagents` |
 | Canonical library directory | `~/.agents` by default; configurable |
 | Product UI | Skiller Sync Center / Library |
 
-The unscoped npm package `dotagent` already exists. The scoped package is mandatory. A short binary alias may be reconsidered later, but v1 must not unexpectedly shadow another installed command.
+The unscoped npm package `dotagents` already exists. The scoped package is mandatory. A short binary alias may be reconsidered later, but v1 must not unexpectedly shadow another installed command.
 
 ## 3. Product model
 
@@ -98,8 +102,8 @@ An external skill never becomes `owned` silently. Vendoring is explicit because 
 ~/.agents/                     # repository root
 ├── skills.json                # Agent Skills package/distribution manifest
 ├── skills.lock                # resolved commits and content integrity
-├── dotagent.yaml              # portable materialization policy and feature config
-├── dotagent.local.yaml        # machine/private overlay; gitignored
+├── dotagents.yaml              # portable materialization policy and feature config
+├── dotagents.local.yaml        # machine/private overlay; gitignored
 ├── skills/
 │   ├── review-checklist/
 │   │   ├── SKILL.md
@@ -110,7 +114,7 @@ An external skill never becomes `owned` silently. Vendoring is explicit because 
 ├── hooks/                     # future portable hooks; not required for v1
 ├── README.md
 ├── LICENSE
-└── .dotagent/                 # local state/cache; gitignored
+└── .dotagents/                 # local state/cache; gitignored
     ├── state.json
     ├── journal.json
     ├── import-journal.json
@@ -128,7 +132,7 @@ Follow Agent Skills discussion #210 where stable and additive:
 - no agent-specific paths;
 - no commands, credentials, or installation state.
 
-The RFC is not yet treated as an immutable external standard. dotagent owns a versioned parser and can read compatible RFC shapes through adapters. Unknown fields are preserved when safe; unknown schema versions fail with an actionable error instead of being guessed.
+The RFC is not yet treated as an immutable external standard. dotagents owns a versioned parser and can read compatible RFC shapes through adapters. Unknown fields are preserved when safe; unknown schema versions fail with an actionable error instead of being guessed.
 
 ### 4.2 `skills.lock`
 
@@ -144,7 +148,7 @@ The lockfile pins:
 
 Branches and tags are inputs. Agents are only materialized from an immutable commit. Moving tags do not update an existing lock without an explicit update operation.
 
-### 4.3 `dotagent.yaml`
+### 4.3 `dotagents.yaml`
 
 This file contains only portable policy not covered by the package RFC:
 
@@ -152,11 +156,11 @@ This file contains only portable policy not covered by the package RFC:
 - portable agent targeting by stable slug, when the author deliberately limits a skill;
 - dependency selection and optional explicit vendoring strategy;
 - verified feature declarations for roles, MCP, and hooks in later versions;
-- minimum compatible dotagent schema version.
+- minimum compatible dotagents schema version.
 
 Agent paths never appear here. A public library may omit agent targeting entirely, allowing the consumer to choose compatible targets.
 
-### 4.4 `dotagent.local.yaml`
+### 4.4 `dotagents.local.yaml`
 
 The local overlay may replace or add:
 
@@ -174,13 +178,13 @@ Overlay merge is keyed and deterministic. Every merged field records whether it 
 The first package is one npm package, not a premature monorepo. It exposes stable subpath exports while sharing one implementation:
 
 ```text
-@beautyfree/dotagent
-@beautyfree/dotagent/schema
-@beautyfree/dotagent/library
-@beautyfree/dotagent/sources
-@beautyfree/dotagent/materialize
-@beautyfree/dotagent/audit
-@beautyfree/dotagent/adapters/skills-cli
+dotagents
+dotagents/schema
+dotagents/library
+dotagents/sources
+dotagents/materialize
+dotagents/audit
+dotagents/adapters/skills-cli
 ```
 
 Core API rules:
@@ -196,8 +200,8 @@ Core API rules:
 Initial API sketch:
 
 ```ts
-parseLibraryManifest(input): Result<LibraryManifest, DotagentIssue[]>
-parseLibraryLock(input): Result<LibraryLock, DotagentIssue[]>
+parseLibraryManifest(input): Result<LibraryManifest, DotagentsIssue[]>
+parseLibraryLock(input): Result<LibraryLock, DotagentsIssue[]>
 loadLibrary(options): Promise<LibrarySnapshot>
 scanLibrary(options): Promise<LibraryInventory>
 scanMachine(options): Promise<MachineInventory>
@@ -240,7 +244,7 @@ Rules:
 - per-agent links are created per skill, never by replacing an entire unmanaged skills directory;
 - Windows uses directory junctions or copies where symlink privilege is unavailable;
 - unsupported capability surfaces remain unsupported instead of receiving invented compatibility files;
-- agent descriptors and aliases are data shipped by dotagent and reused by Skiller.
+- agent descriptors and aliases are data shipped by dotagents and reused by Skiller.
 
 `config-path` is deliberately not part of the shipped v1 union. It can be added
 only with a concrete data-only patch schema, a validated agent that requires it,
@@ -287,19 +291,19 @@ Actions are `create`, `unchanged`, `update`, `remove-managed`, `keep-local`, `ad
 Initial commands:
 
 ```text
-beautyfree-dotagent init [path]
-beautyfree-dotagent inspect [--json]
-beautyfree-dotagent import [path] --owned skill=path [--candidate-file candidates.json] --out plan.json
-beautyfree-dotagent resolve [path] --out plan.json
-beautyfree-dotagent plan [--agents ...] [--json]
-beautyfree-dotagent apply <plan-file> --yes
-beautyfree-dotagent git-init [path] [--remote url] --out plan.json
-beautyfree-dotagent clone <url> <path> --out plan.json
-beautyfree-dotagent commit [path] --message text --out plan.json
-beautyfree-dotagent sync [path] --pull|--push --out plan.json
-beautyfree-dotagent status [--json]
-beautyfree-dotagent doctor [--json]
-beautyfree-dotagent recover [path] --yes
+dotagents init [path]
+dotagents inspect [--json]
+dotagents import [path] --owned skill=path [--candidate-file candidates.json] --out plan.json
+dotagents resolve [path] --out plan.json
+dotagents plan [--agents ...] [--json]
+dotagents apply <plan-file> --yes
+dotagents git-init [path] [--remote url] --out plan.json
+dotagents clone <url> <path> --out plan.json
+dotagents commit [path] --message text --out plan.json
+dotagents sync [path] --pull|--push --out plan.json
+dotagents status [--json]
+dotagents doctor [--json]
+dotagents recover [path] --yes
 ```
 
 DX requirements:
@@ -313,11 +317,11 @@ DX requirements:
 
 ## 9. Skiller boundary and migration map
 
-Move to dotagent in this order:
+Move to dotagents in this order:
 
 | Skiller area | Destination | Migration rule |
 | --- | --- | --- |
-| manifest schemas and source unions | `schema` | dotagent reads existing Skiller manifest versions through an adapter |
+| manifest schemas and source unions | `schema` | dotagents reads existing Skiller manifest versions through an adapter |
 | `skills.sh` lock parsing | `adapters/skills-cli` | preserve defensive versioned parsing; unknown versions remain unsupported |
 | secret scanning | `audit` | keep findings value-free and source-relative |
 | external Git identity/pin/integrity | `sources` | Skiller delegates resolve and verification |
@@ -335,7 +339,7 @@ Remain in Skiller:
 - app settings, updates, telemetry, marketplace, and release notes;
 - background scheduling and user notifications.
 
-During migration, Skiller may use adapter modules that re-export dotagent types. Delete the original implementation only after golden tests prove identical plans for the same fixture.
+During migration, Skiller may use adapter modules that re-export dotagents types. Delete the original implementation only after golden tests prove identical plans for the same fixture.
 
 ## 10. Prior art decisions
 
@@ -350,7 +354,7 @@ During migration, Skiller may use adapter modules that re-export dotagent types.
 - pinned external dependencies, deliberate updates, audits, and optional materialization;
 - `status` and `doctor` as first-class operations.
 
-### Improve for dotagent
+### Improve for dotagents
 
 - cross-platform Node runtime including Windows;
 - reusable typed library API instead of CLI-owned core;
@@ -394,7 +398,7 @@ Do not freeze unresolved RFC choices into an irreversible v1 API:
 - signatures and provenance format;
 - final manifest filename.
 
-The compatibility layer is versioned. dotagent's internal model must be richer than any one proposal and losslessly map the subset it claims to support.
+The compatibility layer is versioned. dotagents's internal model must be richer than any one proposal and losslessly map the subset it claims to support.
 
 ## 12. Delivery phases
 
@@ -410,16 +414,16 @@ Exit: fixtures explain every current Skiller source kind and expected no-write p
 
 ### Phase 1 — TypeScript foundation
 
-- [x] Create local and public `beautyfree/dotagent` source repository with scoped package metadata (`@beautyfree/dotagent`); npm publication remains intentionally deferred.
+- [x] Create local and public `beautyfree/dotagents` source repository with scoped package metadata (`dotagents`); npm publication remains intentionally deferred.
 - [x] Establish Node 20+ ESM TypeScript build, Bun tests, lint/format, package-content verification, and a guarded release workflow.
 - [x] Implement normalized portable paths, stable plan IDs, typed issues, `Result`, schema constants, and injectable machine/Git ports.
 - [x] Generalize Node filesystem boundaries only at demonstrated test seams. Machine and Git behavior use injectable ports; transactional filesystem code is exercised against isolated real filesystems on all supported OSes. No ceremonial all-purpose filesystem interface was added to pure planners.
-- [x] Implement `skills.json`, `skills.lock`, `dotagent.yaml`, and local-overlay parsing/validation.
-- [x] Review naming, then create the public `beautyfree/dotagent` source repository without publishing an npm package or stable release.
+- [x] Implement `skills.json`, `skills.lock`, `dotagents.yaml`, and local-overlay parsing/validation.
+- [x] Review naming, then create the public `beautyfree/dotagents` source repository without publishing an npm package or stable release.
 
 Exit: package builds on macOS/Linux/Windows CI and validates fixtures without touching user files.
 
-Current foundation evidence (2026-08-03): the public repository is `https://github.com/beautyfree/dotagent`. The current core commit is `96ef6ee`; its local release gate passes 114 tests with 399 assertions, generated-schema drift checks, a committed API-declaration snapshot for 30 typed exports, and package inspection for 160 files/33 export paths. CI run `30824101405` validates this exact commit successfully on Ubuntu, macOS, and Windows. The core includes the shared, runtime-validated import-decision contract (`owned`, `dependency`, `vendored`, `local-only`, `excluded`), deterministic transactional reconciliation, atomic multi-file library updates, identified Skiller compatibility publish plans, generic reviewed Git fast-forward plans, and stale-checked no-write recovery previews. CI uses a frozen install with lifecycle scripts disabled and also runs inspect/audit smoke checks.
+Current foundation evidence (2026-08-03): the public repository is `https://github.com/beautyfree/dotagents`. The current core commit is `96ef6ee`; its local release gate passes 114 tests with 399 assertions, generated-schema drift checks, a committed API-declaration snapshot for 30 typed exports, and package inspection for 160 files/33 export paths. CI run `30824101405` validates this exact commit successfully on Ubuntu, macOS, and Windows. The core includes the shared, runtime-validated import-decision contract (`owned`, `dependency`, `vendored`, `local-only`, `excluded`), deterministic transactional reconciliation, atomic multi-file library updates, identified Skiller compatibility publish plans, generic reviewed Git fast-forward plans, and stale-checked no-write recovery previews. CI uses a frozen install with lifecycle scripts disabled and also runs inspect/audit smoke checks.
 
 The release-artifact builder refuses dirty or mismatched source checkouts and produces a byte-reproducible tarball, CycloneDX SBOM, exact-version release notes, checksums, changelog, migration/RFC guides, and a manifest binding npm integrity to the exact Git commit. The verifier rejects tampering, missing files, non-file entries, and every unexpected asset. The publication step is retry-safe: an existing npm version must have identical integrity, an existing tag must resolve to the reviewed commit, GitHub Release remains draft until the exact allowlist is uploaded, and publication verifies the final tag plus asset names and sizes. Non-publishing release workflow run `30824175165` independently rebuilt, verified, and uploaded artifact `8860103162` with archive digest `sha256:4a6d014193041d4accca308ad0503255b20ceb816e97af5583234bbd721faaee`; the publish job was intentionally skipped. npm publication remains blocked by `private: true` and the placeholder version until an explicitly reviewed release commit.
 
@@ -437,7 +441,7 @@ Exit: a public fixture repository resolves reproducibly; tampered content, movin
 
 ### Phase 3 — agent catalog and materialization
 
-- [x] Define capability descriptors and migrate bundled agent definitions. dotagent owns the provider-neutral catalog for all 49 bundled slugs; Skiller TOML retains install/docs/UI metadata and has exact capability parity coverage. Explicit custom TOML entries use the compatibility adapter.
+- [x] Define capability descriptors and migrate bundled agent definitions. dotagents owns the provider-neutral catalog for all 49 bundled slugs; Skiller TOML retains install/docs/UI metadata and has exact capability parity coverage. Explicit custom TOML entries use the compatibility adapter.
 - [x] Implement native-shared, per-skill symlink, Windows junction, and reviewed copy strategies.
 - [x] Refuse to advertise `config-path` until a real agent integration supplies a validated minimal-patch contract and round-trip fixtures.
 - [x] Implement machine scan without treating `.agents/skills` or a skills-only marker as installation evidence.
@@ -449,25 +453,25 @@ Exit: clean-machine fixtures materialize to representative agents on all three O
 
 ### Phase 4 — Skiller extraction and integration
 
-- [x] Add `@beautyfree/dotagent` as an explicit dependency, first locally and then as an immutable Git commit with committed build artifacts until npm publication.
-- [x] Replace Skiller manifest parsing with adapter-backed dotagent parsing while preserving v1/v2/v3 behavior.
+- [x] Add `dotagents` as an explicit dependency, first locally and then as an immutable Git commit with committed build artifacts until npm publication.
+- [x] Replace Skiller manifest parsing with adapter-backed dotagents parsing while preserving v1/v2/v3 behavior.
 - [x] Replace secret/source/integrity logic in vertical slices, one subsystem at a time. Secret scanning, safe export policy, three-way classification, immutable dependency resolution, canonical Git workspace operations, publish-manifest planning/merge, bundled restore reconciliation, and atomic publish writes are shared; Skiller retains product discovery and provider/UI mapping.
-- [x] Map dotagent plans/issues to existing tRPC JSON without exposing internal classes. Machine inventory, doctor, audit, shared discovery suggestions, managed status, import, publish, connection, and reconciliation use explicit renderer JSON contracts; tests cover path redaction, and remote review exposes only safe identities plus deterministic plan IDs, never core paths, secret values, or journal internals.
+- [x] Map dotagents plans/issues to existing tRPC JSON without exposing internal classes. Machine inventory, doctor, audit, shared discovery suggestions, managed status, import, publish, connection, and reconciliation use explicit renderer JSON contracts; tests cover path redaction, and remote review exposes only safe identities plus deterministic plan IDs, never core paths, secret values, or journal internals.
 - [x] Compare old/new outputs on golden fixtures before retiring the migration kill switch. All configured slugs project uniquely, the skills-only detector invariant has parity coverage, canonical owned/dependency publish-clone-restore fixtures pass, and the restore matrix fixes the previous create/unchanged/conflict contract for absent, equal, changed, file, and symlink targets. Secret, integrity, unmanaged, ledger-conflict, stale-plan, rollback, and old-journal recovery cases are covered separately. This integration branch was not released with the legacy engine, so fixture parity plus native dev-app review is the applicable pre-release removal gate; there is no installed-user cohort that could produce meaningful engine telemetry.
 - [x] Remove duplicated Skiller implementations after parity and live UX checks. The alternate restore writer, environment kill switch, hidden Settings setup UI, and parallel legacy setup RPCs are gone. Versioned manifest adapters and old interrupted-journal recovery remain intentionally as data compatibility boundaries.
 
 Exit: CLI and Skiller produce the same plan hash for the same library/machine fixture.
 
-Current integration evidence (2026-08-03): dotagent owns the legacy Skiller schemas, migrations, portable-path checks, duplicate detection, credential-free remote validation, identified publish-manifest planning/merge, bundled-library reconciliation, the multi-target publish transaction, and generic Git clone/fast-forward review/apply. Skiller retains versioned data adapters so existing imports and repositories do not change, while restore maps the local ledger directly into the single shared three-way engine. Publish maps local discovery into shared candidates, then delegates source inspection, manifest construction, reviewed granular merge, atomic writes, rollback, and durable recovery to dotagent. Remote review now fetches metadata but inspects the exact remote commit in a disposable detached worktree: the managed library remains byte-for-byte on its current commit until the user applies both the reviewed Git workspace plan and the path-redacted reconciliation plan. Repository connection and GitHub creation also have separate no-write review contracts; changing the remote, local destination, selected agents, repository name, or visibility invalidates confirmation. The hidden Settings-era sync UI and its parallel publish/clone/pull/restore RPC routes, alternate restore writer, and reconciliation environment kill switch have been removed, leaving Sync Center and dotagent as the single product and engine paths. Every remaining Sync Center publish, restore, conflict, adoption, keep-local, connection, and repository-creation mutation must present the exact reviewed ID or explicit recovery journal state. Focused golden-contract, deterministic-plan, ledger-conflict, stale-preview, no-write clone/remote review, atomic publish, and old/new journal recovery tests pass. A locally packaged arm64 application now passes the first native package gate; notarized installers and published cross-platform artifacts remain release-time gates.
+Current integration evidence (2026-08-03): dotagents owns the legacy Skiller schemas, migrations, portable-path checks, duplicate detection, credential-free remote validation, identified publish-manifest planning/merge, bundled-library reconciliation, the multi-target publish transaction, and generic Git clone/fast-forward review/apply. Skiller retains versioned data adapters so existing imports and repositories do not change, while restore maps the local ledger directly into the single shared three-way engine. Publish maps local discovery into shared candidates, then delegates source inspection, manifest construction, reviewed granular merge, atomic writes, rollback, and durable recovery to dotagents. Remote review now fetches metadata but inspects the exact remote commit in a disposable detached worktree: the managed library remains byte-for-byte on its current commit until the user applies both the reviewed Git workspace plan and the path-redacted reconciliation plan. Repository connection and GitHub creation also have separate no-write review contracts; changing the remote, local destination, selected agents, repository name, or visibility invalidates confirmation. The hidden Settings-era sync UI and its parallel publish/clone/pull/restore RPC routes, alternate restore writer, and reconciliation environment kill switch have been removed, leaving Sync Center and dotagents as the single product and engine paths. Every remaining Sync Center publish, restore, conflict, adoption, keep-local, connection, and repository-creation mutation must present the exact reviewed ID or explicit recovery journal state. Focused golden-contract, deterministic-plan, ledger-conflict, stale-preview, no-write clone/remote review, atomic publish, and old/new journal recovery tests pass. A locally packaged arm64 application now passes the first native package gate; notarized installers and published cross-platform artifacts remain release-time gates.
 
-Latest runtime evidence (2026-08-03): Skiller pins dotagent commit `96ef6ee`, including the authoritative 49-agent catalog, versioned schemas/fixtures, dependency audit deltas, shared portable-plus-local agent routing, reviewed clone/init/resolve/reconcile/library-update/Git-fast-forward/recovery plans, shared owned-skill export policy, identified Skiller publish planning/merge, shared import decisions, third-party conformance fixtures, the public API snapshot gate, and the permanent verified release boundary. Newly created Sync Center repositories use canonical `skills.json`, `skills.lock`, `dotagent.yaml`, and `skills/` content and delegate canonical Git operations, atomic publish writes, publish-manifest planning, bundled restore reconciliation, and remote clone/fast-forward review to dotagent; existing `skiller-sync.yaml` repositories remain readable and writable through versioned adapters. The Skiller adapter tests prove serialized import-plan equality, the fixed restore contract across filesystem target kinds, deterministic publish and remote-workspace plan mapping, stable path-redacted reconciliation IDs, preservation of untouched remote skills during granular updates, no managed-worktree change before explicit apply, stale clone refusal, and reviewed GitHub name/visibility. After removal of the alternate restore engine, the full 108-test suite with 386 assertions, typecheck, and production Electron/Vite build pass. A native dev-app review against the exact current Electron checkout confirmed that an existing remote first produces a safe connection summary with the managed local name and a no-agent-write guarantee, editing the remote invalidates that confirmation, and the final clone action remains separate. The same live review confirmed that the removed Settings-era sync fields and actions are absent while the current Settings sections remain. Earlier renderer review also covered the three-step Sync Center, per-skill outcome controls, vendored-license disclosure, and license-gated continuation. A locally packaged `0.2.26` arm64 `.app`, built from this checkout and signed with the configured Developer ID, passes `codesign --verify --deep --strict` and a live exact-path review of Dashboard, Sync Center, and the existing-library connection screen without visible RPC failure. The packaged copy preserves the public/private repository explanation and the no-agent-write-before-review guarantee. This unpacked local package intentionally has no updater metadata; notarization, DMG/installer behavior, and published macOS/Linux/Windows artifacts remain separate release gates.
+Latest runtime evidence (2026-08-03): Skiller pins dotagents commit `96ef6ee`, including the authoritative 49-agent catalog, versioned schemas/fixtures, dependency audit deltas, shared portable-plus-local agent routing, reviewed clone/init/resolve/reconcile/library-update/Git-fast-forward/recovery plans, shared owned-skill export policy, identified Skiller publish planning/merge, shared import decisions, third-party conformance fixtures, the public API snapshot gate, and the permanent verified release boundary. Newly created Sync Center repositories use canonical `skills.json`, `skills.lock`, `dotagents.yaml`, and `skills/` content and delegate canonical Git operations, atomic publish writes, publish-manifest planning, bundled restore reconciliation, and remote clone/fast-forward review to dotagents; existing `skiller-sync.yaml` repositories remain readable and writable through versioned adapters. The Skiller adapter tests prove serialized import-plan equality, the fixed restore contract across filesystem target kinds, deterministic publish and remote-workspace plan mapping, stable path-redacted reconciliation IDs, preservation of untouched remote skills during granular updates, no managed-worktree change before explicit apply, stale clone refusal, and reviewed GitHub name/visibility. After removal of the alternate restore engine, the full 108-test suite with 386 assertions, typecheck, and production Electron/Vite build pass. A native dev-app review against the exact current Electron checkout confirmed that an existing remote first produces a safe connection summary with the managed local name and a no-agent-write guarantee, editing the remote invalidates that confirmation, and the final clone action remains separate. The same live review confirmed that the removed Settings-era sync fields and actions are absent while the current Settings sections remain. Earlier renderer review also covered the three-step Sync Center, per-skill outcome controls, vendored-license disclosure, and license-gated continuation. A locally packaged `0.2.26` arm64 `.app`, built from this checkout and signed with the configured Developer ID, passes `codesign --verify --deep --strict` and a live exact-path review of Dashboard, Sync Center, and the existing-library connection screen without visible RPC failure. The packaged copy preserves the public/private repository explanation and the no-agent-write-before-review guarantee. This unpacked local package intentionally has no updater metadata; notarization, DMG/installer behavior, and published macOS/Linux/Windows artifacts remain separate release gates.
 
 ### Phase 5 — public/private library UX
 
 - [x] Create/connect a private-by-default GitHub or custom Git library repository; custom remotes remain provider-neutral.
 - [x] Explain the repository model and exact owned/reference/excluded outcomes before creation.
 - [x] Preview included files, immutable dependency references, exclusions, secret blockers, and destination before commit/push.
-- [x] Import an existing public or private canonical library from Sync Center and choose detected agents through a private `dotagent.local.yaml` overlay. The managed clone is reviewed before any agent folder changes.
+- [x] Import an existing public or private canonical library from Sync Center and choose detected agents through a private `dotagents.local.yaml` overlay. The managed clone is reviewed before any agent folder changes.
 - [x] Show immutable dependency update/audit diffs, including old/new commit, license change, and selected skills added or removed.
 - [x] Support explicit owned/dependency/vendored/local-only transitions. The per-skill review defaults to owned for local skills and immutable dependencies for external skills, while exposing deliberate vendoring, ownership conversion, and local-only outcomes; vendoring requires upstream license metadata and preserves commit/integrity provenance.
 - [x] Complete three-way conflict and adopt-local UX. Conflicts start without a selected winner and offer explicit use-library, publish/adopt-local, or keep-local actions; converting an external dependency to owned requires the dedicated adopt-local mutation and cannot happen through the normal publish path.
@@ -570,7 +574,7 @@ The schemas reserve no fake fields for deferred surfaces. Add them through expli
 
 ## 16. Acceptance criteria
 
-- [x] `@beautyfree/dotagent` can be imported by Skiller without Electron or UI dependencies.
+- [x] `dotagents` can be imported by Skiller without Electron or UI dependencies.
 - [x] CLI core and Skiller generate byte-equivalent serialized import plans and plan IDs from the same discovery fixture.
 - [x] A repository with owned skills can be public and cloned without exposing local state.
 - [x] External dependencies are pinned to immutable commits and verified by content integrity.
@@ -580,15 +584,15 @@ The schemas reserve no fake fields for deferred surfaces. Add them through expli
 - [x] Secret values, credentials, and absolute user paths cannot enter portable outputs.
 - [x] Windows, Linux, and macOS behavior is tested before stable release.
 - [x] Existing Skiller libraries migrate through versioned adapters without silent format rewriting.
-- [x] Existing Skills CLI locks are input adapters, not dotagent's source of truth.
+- [x] Existing Skills CLI locks are input adapters, not dotagents's source of truth.
 - [x] Public library authors can choose dependency references or explicit vendoring with origin/license visibility.
-- [x] Every library-mutating Sync Center and dotagent CLI flow has a no-write preview and actionable failure state. Apply paths require the reviewed plan ID or serialized plan; interrupted import/materialization recovery now exposes a value-redacted preview and rejects missing or stale recovery IDs.
+- [x] Every library-mutating Sync Center and dotagents CLI flow has a no-write preview and actionable failure state. Apply paths require the reviewed plan ID or serialized plan; interrupted import/materialization recovery now exposes a value-redacted preview and rejects missing or stale recovery IDs.
 
 ## 17. Decision log
 
 | Date | Decision | Rationale |
 | --- | --- | --- |
-| 2026-08-03 | Repository is `beautyfree/dotagent`; npm is `@beautyfree/dotagent` | preserves requested product name while avoiding occupied unscoped npm name |
+| 2026-08-03 | Repository is `beautyfree/dotagents`; npm is `dotagents` | preserves requested product name while avoiding occupied unscoped npm name |
 | 2026-08-03 | TypeScript/JavaScript implementation, Node 20+ runtime | reusable from Electron, CLI, CI, and all supported desktop platforms |
 | 2026-08-03 | One package with subpath exports before considering a monorepo | keeps API/core/CLI coherent and avoids premature package choreography |
 | 2026-08-03 | Skiller imports core APIs; it does not shell out for product behavior | shared types and plans remain exact; CLI is only another adapter |
@@ -598,21 +602,21 @@ The schemas reserve no fake fields for deferred surfaces. Add them through expli
 | 2026-08-03 | References are default; vendoring is explicit | preserves provenance and avoids accidental redistribution/license problems |
 | 2026-08-03 | Build from behavior and tests; attribute any literal upstream code | uses dotagents as prior art while keeping a maintainable TypeScript architecture |
 | 2026-08-03 | Canonical import is a reviewed journaled plan, not folder copying | preserves source provenance, keeps local-only content local, and makes crashes and stale previews recoverable |
-| 2026-08-03 | New Sync Center repositories are canonical dotagent; legacy Skiller repositories use a versioned compatibility path | stops producing a second portable format without silently rewriting existing user repositories |
-| 2026-08-03 | Git workspace/authentication are separate layers | dotagent owns provider-neutral reviewed Git plans; Skiller retains GitHub CLI sign-in and repository-creation UX without receiving tokens |
-| 2026-08-03 | Bundled capability data is authoritative in dotagent | CLI and Skiller now share 49 agent roots, detection markers, shared-reader declarations, and project paths; Skiller keeps only product install/docs/UI metadata and explicit custom extensions |
-| 2026-08-03 | Portable per-skill routes and private machine selection are intersected in dotagent | a public library can express intended routing while each computer restricts it without publishing local preferences or inventing unsupported targets |
+| 2026-08-03 | New Sync Center repositories are canonical dotagents; legacy Skiller repositories use a versioned compatibility path | stops producing a second portable format without silently rewriting existing user repositories |
+| 2026-08-03 | Git workspace/authentication are separate layers | dotagents owns provider-neutral reviewed Git plans; Skiller retains GitHub CLI sign-in and repository-creation UX without receiving tokens |
+| 2026-08-03 | Bundled capability data is authoritative in dotagents | CLI and Skiller now share 49 agent roots, detection markers, shared-reader declarations, and project paths; Skiller keeps only product install/docs/UI metadata and explicit custom extensions |
+| 2026-08-03 | Portable per-skill routes and private machine selection are intersected in dotagents | a public library can express intended routing while each computer restricts it without publishing local preferences or inventing unsupported targets |
 | 2026-08-03 | Public library creation requires an explicit license | public audit remains enforceable and Skiller never silently licenses a user's work |
 | 2026-08-03 | Clone is a serialized preview/apply operation | connecting an existing library cannot mutate a managed destination before the reviewed plan is revalidated |
-| 2026-08-03 | Owned-skill export policy lives in dotagent | Skiller and future CLI/UI consumers cannot diverge on excluded files, content limits, links, hashes, or secret locations |
+| 2026-08-03 | Owned-skill export policy lives in dotagents | Skiller and future CLI/UI consumers cannot diverge on excluded files, content limits, links, hashes, or secret locations |
 | 2026-08-03 | Agent delivery descriptors expose only verified roots | an unimplemented `config-path` variant would advertise unsafe behavior; it remains absent until backed by a real minimal-patch contract and round-trip fixture |
 | 2026-08-03 | Git identity normalization is a dependency-free leaf module | config, resolution, and workspace plans share one credential-free identity without importing higher-level source logic |
 | 2026-08-03 | Third-party layouts and public declarations are committed release fixtures | root-skill/multi-skill compatibility and package API changes now fail CI unless deliberately reviewed |
-| 2026-08-03 | Import outcomes are a shared dotagent contract | Skiller and the CLI/core use the same runtime-validated owned/dependency/vendored/local-only/excluded decisions instead of UI-only booleans |
+| 2026-08-03 | Import outcomes are a shared dotagents contract | Skiller and the CLI/core use the same runtime-validated owned/dependency/vendored/local-only/excluded decisions instead of UI-only booleans |
 | 2026-08-03 | Dependency-to-owned conversion is an explicit conflict action | normal publish rejects source conversion; only the reviewed adopt-local operation may turn an external skill into an owned canonical copy |
-| 2026-08-03 | Bundled restore reconciliation is a dotagent plan/apply transaction | Skiller and the CLI/core share deterministic three-way classification, stale-plan protection, explicit remote decisions, and durable recovery; Skiller retains only tRPC/UI mapping and a temporary legacy kill switch |
-| 2026-08-03 | Portable publish writes are one dotagent library-update transaction | every reviewed bundle and root file is staged before replacement, the complete set rolls back on failure, file bodies stay outside the serializable plan, and Skiller recovery covers both restore and publish journals |
-| 2026-08-03 | Skiller compatibility publish policy lives in dotagent | candidate normalization, source inspection, manifest construction, and reviewed granular merge are shared; Skiller retains only discovery, provider, tRPC, and UI mapping |
+| 2026-08-03 | Bundled restore reconciliation is a dotagents plan/apply transaction | Skiller and the CLI/core share deterministic three-way classification, stale-plan protection, explicit remote decisions, and durable recovery; Skiller retains only tRPC/UI mapping and a temporary legacy kill switch |
+| 2026-08-03 | Portable publish writes are one dotagents library-update transaction | every reviewed bundle and root file is staged before replacement, the complete set rolls back on failure, file bodies stay outside the serializable plan, and Skiller recovery covers both restore and publish journals |
+| 2026-08-03 | Skiller compatibility publish policy lives in dotagents | candidate normalization, source inspection, manifest construction, and reviewed granular merge are shared; Skiller retains only discovery, provider, tRPC, and UI mapping |
 | 2026-08-03 | Every Sync Center decision carries its reviewed plan ID | publish, restore, conflict, adopt, and keep-local actions reject stale source/target/remote state instead of silently rebuilding a different plan at mutation time |
 | 2026-08-03 | Remote review uses a disposable exact-commit checkout | fetching may update Git metadata, but preview never advances the managed library; apply requires both the reviewed fast-forward plan and the resulting reconciliation plan |
 | 2026-08-03 | Sync Center is the only library setup surface | the hidden Settings-era flow and its duplicate RPC routes were removed so new safety rules cannot be bypassed by stale product code |
@@ -620,7 +624,7 @@ The schemas reserve no fake fields for deferred surfaces. Add them through expli
 
 ## 18. Immediate implementation checklist
 
-- [x] Create the local and public `beautyfree/dotagent` repository workspace.
+- [x] Create the local and public `beautyfree/dotagents` repository workspace.
 - [x] Add package metadata, TypeScript build, Bun tests, and collision-free CLI binary.
 - [x] Add schema/types for manifest, lock, portable config, local overlay, issues, and current plans.
 - [x] Add parsers with coverage for valid, future-version, unsafe-path, duplicate-name, and root-skill cases.
@@ -632,8 +636,8 @@ The schemas reserve no fake fields for deferred surfaces. Add them through expli
 - [x] Verify full Skiller tests, typecheck, and production build after each pinned runtime slice.
 - [x] Add explicit dependency/vendored/owned/local-only review outcomes and preserve vendored origin, integrity, and license in canonical repositories.
 - [x] Add explicit three-way conflict choices, including guarded dependency-to-owned adoption, without a default conflict winner.
-- [x] Migrate bundled restore preview/apply/recovery to the shared dotagent reconciliation contract with parity fixtures and a temporary kill switch.
-- [x] Migrate portable publish staging/replacement/recovery to the shared dotagent library-update contract.
+- [x] Migrate bundled restore preview/apply/recovery to the shared dotagents reconciliation contract with parity fixtures and a temporary kill switch.
+- [x] Migrate portable publish staging/replacement/recovery to the shared dotagents library-update contract.
 - [x] Migrate Skiller compatibility publish planning and granular manifest merge to the shared adapter.
 - [x] Bind Sync Center publish and reconciliation mutations to the exact reviewed plan ID.
 - [x] Keep remote review out of the managed worktree and reject apply when either the reviewed Git commit or reconciliation changes.

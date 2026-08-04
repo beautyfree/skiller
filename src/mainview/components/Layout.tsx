@@ -18,6 +18,8 @@ import {
   Trash2,
   ChevronRight,
   MessageCircle,
+  FlaskConical,
+  LibraryBig,
 } from 'lucide-react'
 import { AgentIcon } from '@/mainview/components/AgentIcon'
 import { Button } from '@/mainview/components/ui/button'
@@ -288,6 +290,16 @@ function LayoutInner({
                       )}
                     </NavLink>
 
+                    <NavLink to="/quality" className={navLinkClass}>
+                      <FlaskConical className="size-4" aria-hidden="true" />
+                      Quality
+                    </NavLink>
+
+                    <NavLink to="/library" className={navLinkClass}>
+                      <LibraryBig className="size-4" aria-hidden="true" />
+                      Agent Library
+                    </NavLink>
+
                   </div>
                 </div>
 
@@ -303,7 +315,9 @@ function LayoutInner({
                           const breakdown = skillBreakdownByAgent.get(
                             agent.slug,
                           ) ?? { direct: 0, inherited: 0 }
-                          const isActive = activeAgentSlug === agent.slug
+                          const isActive =
+                            location.pathname === '/skills' &&
+                            activeAgentSlug === agent.slug
                           const tooltip =
                             breakdown.inherited > 0
                               ? t('sidebar.agentSkillsTooltip', {
@@ -356,7 +370,7 @@ function LayoutInner({
         {/* Main column: inset rounded panel — separate from sidebar; footer stays on canvas */}
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <main className="main-workspace-panel relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-border bg-card shadow-(--ds-shadow-layered-subtle) select-none">
-            <InsetScrollArea className="min-h-0 flex-1 pr-0" scroll={location.pathname !== '/sync'}>
+            <InsetScrollArea className="min-h-0 flex-1 pr-0" scroll={!['/sync', '/quality', '/library'].includes(location.pathname)}>
               {loading ? (
                 <div className="space-y-4 px-6 py-6 animate-pulse">
                   <div className="grid grid-cols-3 gap-4">

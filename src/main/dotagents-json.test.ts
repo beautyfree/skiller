@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { dotagentAuditToJson, dotagentDiscoveryToJson, dotagentDoctorToJson, dotagentImportPlanToJson, dotagentStatusToJson } from "./dotagent-json";
+import { dotagentsAuditToJson, dotagentsDiscoveryToJson, dotagentsDoctorToJson, dotagentsImportPlanToJson, dotagentsStatusToJson } from "./dotagents-json";
 
-describe("dotagent renderer JSON mapping", () => {
+describe("dotagents renderer JSON mapping", () => {
 	it("removes machine paths from doctor issues and detection evidence", () => {
-		const json = dotagentDoctorToJson({
+		const json = dotagentsDoctorToJson({
 			ok: false,
 			root: "/private/library",
 			library: null,
@@ -12,7 +12,7 @@ describe("dotagent renderer JSON mapping", () => {
 				detectedSlugs: ["codex"],
 				agents: [{ slug: "codex", displayName: "Codex", detected: true, reason: "marker", evidence: "/Users/private/.codex" }],
 			},
-			issues: [{ code: "invalid-config", severity: "error", message: "Invalid config", remediation: "Fix it", path: "/private/library/dotagent.yaml" }],
+			issues: [{ code: "invalid-config", severity: "error", message: "Invalid config", remediation: "Fix it", path: "/private/library/dotagents.yaml" }],
 		});
 		expect(JSON.stringify(json)).not.toContain("/private");
 		expect(JSON.stringify(json)).not.toContain("/Users/private");
@@ -20,7 +20,7 @@ describe("dotagent renderer JSON mapping", () => {
 	});
 
 	it("maps managed status without target or source paths", () => {
-		const json = dotagentStatusToJson({
+		const json = dotagentsStatusToJson({
 			library: "/private/library",
 			byAgent: {},
 			targets: [{ target: "/private/agent/writing", agent: "codex", skill: "writing", mode: "copy", health: "locally-modified", source: "/private/library/skills/writing", sourceIntegrity: "hash", currentIntegrity: "local" }],
@@ -30,7 +30,7 @@ describe("dotagent renderer JSON mapping", () => {
 	});
 
 	it("maps discovery suggestions without exposing source or issue paths", () => {
-		const json = dotagentDiscoveryToJson({
+		const json = dotagentsDiscoveryToJson({
 			skills: [{ candidateKey: "writing", name: "writing", description: "Writes", whenToUse: null, integrity: "sha256-safe", fileCount: 2, bytes: 42, sourcePath: "/Users/private/.agents/skills/writing", locations: [{ kind: "shared" }, { kind: "agent-local", agent: "codex" }], metadataValid: true }],
 			collisions: [],
 			issues: [{ code: "unsafe-link", severity: "warning", message: "Linked file skipped", remediation: "Keep it local", path: "/Users/private/linked" }],
@@ -42,7 +42,7 @@ describe("dotagent renderer JSON mapping", () => {
 	});
 
 	it("maps audit findings without library roots", () => {
-		const json = dotagentAuditToJson({
+		const json = dotagentsAuditToJson({
 			ok: false,
 			publicReady: false,
 			library: { root: "/private/library", name: "personal", version: "1.0.0", ownedSkills: [], dependencyCount: 1, locked: true },
@@ -53,7 +53,7 @@ describe("dotagent renderer JSON mapping", () => {
 	});
 
 	it("maps an import plan without source or target paths", () => {
-		const json = dotagentImportPlanToJson({
+		const json = dotagentsImportPlanToJson({
 			kind: "import", schemaVersion: 1, planId: "plan", library: "/private/library", baseManifestHash: "base", baseConfigHash: "config",
 			nextManifest: { schema_version: 1, name: "personal", version: "1.0.0", skills: ["skills/writing"], dependencies: {} },
 			nextConfig: { schema_version: 1, defaults: { include: "all" }, skills: { writing: { include: true } } },

@@ -8,7 +8,7 @@ const cleanup: string[] = [];
 afterEach(() => cleanup.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true })));
 
 describe("sync restore journal", () => {
-	it("recognizes and cleans up a completed dotagent reconciliation journal", () => {
+	it("recognizes and cleans up a completed dotagents reconciliation journal", () => {
 		const root = mkdtempSync(join(tmpdir(), "skiller-journal-"));
 		cleanup.push(root);
 		const journalPath = join(root, "journal.json");

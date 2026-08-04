@@ -2,7 +2,7 @@ import {
 	planSkillExport,
 	type SkillExportFile,
 	type SkillExportFinding,
-} from "@beautyfree/dotagent/export-policy";
+} from "dotagents/export-policy";
 
 export type SyncExportFile = SkillExportFile;
 export type SyncExportFinding = SkillExportFinding;
@@ -17,7 +17,7 @@ export type BundledSkillExportPlan = {
 	secretFindings: SyncExportFinding[];
 };
 
-/** Compatibility facade over dotagent's canonical, read-only export policy. */
+/** Compatibility facade over dotagents's canonical, read-only export policy. */
 export function planBundledSkillExport(id: string, sourcePath: string): BundledSkillExportPlan {
 	const plan = planSkillExport(id, sourcePath);
 	return {

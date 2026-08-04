@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { parse as parseToml } from "@iarna/toml";
-import { builtinAgentCatalogEntry } from "@beautyfree/dotagent/catalog";
+import { builtinAgentCatalogEntry } from "dotagents/catalog";
 import which from "which";
 import { expandHome } from "./fsutil";
 import type { AgentConfig, ReadablePath } from "./types";

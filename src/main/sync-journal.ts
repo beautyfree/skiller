@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { recoverLibraryReconciliation } from "@beautyfree/dotagent/reconcile";
+import { recoverLibraryReconciliation } from "dotagents/reconcile";
 import { appDataRootPath } from "./settings";
 
 export type RestoreJournalEntry = {

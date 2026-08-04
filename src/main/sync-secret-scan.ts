@@ -1,3 +1,3 @@
-/** Value-free secret findings are produced by the shared dotagent audit core. */
-export { scanTextForSecrets } from "@beautyfree/dotagent/audit";
-export type { SecretFinding as SyncSecretFinding } from "@beautyfree/dotagent/audit";
+/** Value-free secret findings are produced by the shared dotagents audit core. */
+export { scanTextForSecrets } from "dotagents/audit";
+export type { SecretFinding as SyncSecretFinding } from "dotagents/audit";

@@ -71,6 +71,16 @@ export function createElectronPlatform(
 			if (result.canceled) return null;
 			return result.filePaths[0] ?? null;
 		},
+		pickFile: async (opts?: FileDialogOpts) => {
+			const parent = getWindow();
+			const result = await dialog.showOpenDialog(parent, {
+				title: opts?.title,
+				properties: ["openFile"],
+				defaultPath: expandStartingFolder(opts?.startingFolder ?? "~/"),
+			});
+			if (result.canceled) return null;
+			return result.filePaths[0] ?? null;
+		},
 		getMainWindow: () => wrapElectronWindow(getWindow()),
 		syncMacOSChromeFromSettings: () => {
 			applyMacOSChromeSync();

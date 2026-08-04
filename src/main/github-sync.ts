@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { computePlanId } from "@beautyfree/dotagent";
+import { computePlanId } from "dotagents";
 
 const execFileAsync = promisify(execFile);
 

@@ -3,10 +3,10 @@ import {
 	planLibraryReconciliation,
 	type LibraryReconciliationPlan,
 	type ThreeWayAction,
-} from "@beautyfree/dotagent/reconcile";
-import { computePlanId } from "@beautyfree/dotagent";
+} from "dotagents/reconcile";
+import { computePlanId } from "dotagents";
 import type { SyncLedger } from "./sync-ledger";
-import { readSyncManifestFromWorkspace } from "./sync-dotagent";
+import { readSyncManifestFromWorkspace } from "./sync-dotagents";
 import { syncJournalPath } from "./sync-journal";
 import type { SyncManifest } from "./sync-profile";
 import type { SyncExportFinding } from "./sync-export";
@@ -27,7 +27,7 @@ export type SyncRestoreEntry = {
 export type SyncRestoreFinding = SyncExportFinding & { skillId: string };
 
 export type SyncRestorePlan = {
-	engine: "dotagent";
+	engine: "dotagents";
 	manifest: SyncManifest;
 	entries: SyncRestoreEntry[];
 	secretFindings: SyncRestoreFinding[];
@@ -72,7 +72,7 @@ function ledgerBase(ledger?: SyncLedger): Record<string, { baseIntegrity: string
 
 /**
  * Compatibility adapter from legacy/canonical Skiller manifests to the shared
- * dotagent reconciliation module.
+ * dotagents reconciliation module.
  */
 export function createSyncRestorePlan(
 	workspacePath: string,
@@ -90,7 +90,7 @@ export function createSyncRestorePlan(
 		...(base ? { base } : {}),
 	});
 	return {
-		engine: "dotagent",
+		engine: "dotagents",
 		manifest,
 		corePlan,
 		entries: corePlan.operations.map((entry) => ({

@@ -1,72 +1,98 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { planBundledSkillExport } from "./sync-export";
 import {
-	applySyncPublishPlan,
-	createSyncPublishPlan,
-	createSyncPublishWorkspacePlan,
-	mergeBundledUpdateIntoManifest,
+  applySyncPublishPlan,
+  createSyncPublishPlan,
+  createSyncPublishWorkspacePlan,
+  mergeBundledUpdateIntoManifest,
 } from "./sync-publish";
-import { applySyncRestorePlan, createSyncRestorePlan, syncRestorePlanId } from "./sync-restore";
+import {
+  applySyncRestorePlan,
+  createSyncRestorePlan,
+  syncRestorePlanId,
+} from "./sync-restore";
 import { makeSyncLedger } from "./sync-ledger";
 import {
-	assertPortableRelativePath,
-	createSyncManifest,
-	parseSyncManifest,
-	syncProfileIdFromRemote,
-	stringifySyncManifest,
+  assertPortableRelativePath,
+  createSyncManifest,
+  parseSyncManifest,
+  syncProfileIdFromRemote,
+  stringifySyncManifest,
 } from "./sync-profile";
 import { scanTextForSecrets } from "./sync-secret-scan";
+import { exactSourceSecurityPolicy } from "dotagents/source-policy";
 import {
-	cloneSyncWorkspace,
-	commitSyncWorkspace,
-	applyReviewedSyncWorkspaceFastForward,
-	getSyncWorkspaceStatus,
-	initializeSyncWorkspace,
-	inspectSyncWorkspaceFastForward,
-	planSyncWorkspaceClone,
-	planSyncWorkspaceFastForward,
-	pushSyncWorkspace,
-	refreshSyncWorkspaceStatus,
-	resolveGitReferenceToCommit,
+  cloneSyncWorkspace,
+  commitSyncWorkspace,
+  applyReviewedSyncWorkspaceFastForward,
+  applySyncWorkspaceRemoteTrust,
+  getSyncWorkspaceStatus,
+  initializeSyncWorkspace,
+  inspectSyncWorkspaceRemoteTrust,
+  inspectSyncWorkspaceFastForward,
+  planSyncWorkspaceClone,
+  planSyncWorkspaceFastForward,
+  planSyncWorkspaceRemoteTrust,
+  pushSyncWorkspace,
+  refreshSyncWorkspaceStatus,
+  resolveGitReferenceToCommit,
 } from "./sync-workspace";
 import simpleGit from "simple-git";
 
 const tempDirs: string[] = [];
 
 afterEach(() => {
-	for (const directory of tempDirs.splice(0)) rmSync(directory, { recursive: true, force: true });
+  for (const directory of tempDirs.splice(0))
+    rmSync(directory, { recursive: true, force: true });
 });
 
 function makeSkill(files: Record<string, string>): string {
-	const root = mkdtempSync(join(tmpdir(), "skiller-sync-"));
-	tempDirs.push(root);
-	for (const [path, content] of Object.entries(files)) {
-		const destination = join(root, path);
-		mkdirSync(join(destination, ".."), { recursive: true });
-		writeFileSync(destination, content);
-	}
-	return root;
+  const root = mkdtempSync(join(tmpdir(), "skiller-sync-"));
+  tempDirs.push(root);
+  for (const [path, content] of Object.entries(files)) {
+    const destination = join(root, path);
+    mkdirSync(join(destination, ".."), { recursive: true });
+    writeFileSync(destination, content);
+  }
+  return root;
 }
 
 describe("sync profile manifest", () => {
-	it("derives a stable private workspace id from HTTPS and SSH remotes", () => {
-		expect(syncProfileIdFromRemote("https://github.com/beautyfree/My Agent Library.git")).toBe("my-agent-library");
-		expect(syncProfileIdFromRemote("git@github.com:beautyfree/dotagents.git")).toBe("dotagents");
-	});
+  it("derives a stable private workspace id from HTTPS and SSH remotes", () => {
+    expect(
+      syncProfileIdFromRemote(
+        "https://github.com/beautyfree/My Agent Library.git",
+      ),
+    ).toBe("my-agent-library");
+    expect(
+      syncProfileIdFromRemote("git@github.com:beautyfree/dotagents.git"),
+    ).toBe("dotagents");
+  });
 
-	it("round-trips a portable private profile", () => {
-		const manifest = createSyncManifest("personal-backup", "private", {
-			mode: "selected",
-			agent_slugs: ["claude-code", "codex"],
-		});
-		expect(parseSyncManifest(stringifySyncManifest(manifest))).toEqual(manifest);
-	});
+  it("round-trips a portable private profile", () => {
+    const manifest = createSyncManifest("personal-backup", "private", {
+      mode: "selected",
+      agent_slugs: ["claude-code", "codex"],
+    });
+    expect(parseSyncManifest(stringifySyncManifest(manifest))).toEqual(
+      manifest,
+    );
+  });
 
-	it("accepts bundled and pinned reference skills", () => {
-		const manifest = parseSyncManifest(`schema_version: 1
+  it("accepts bundled and pinned reference skills", () => {
+    const manifest = parseSyncManifest(`schema_version: 1
 profile:
   id: personal-backup
   mode: private
@@ -84,452 +110,821 @@ skills:
     ref: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
     skill_path: skills/upstream-skill
 `);
-		expect(manifest.skills).toHaveLength(2);
-		expect(manifest.schema_version).toBe(3);
-	});
+    expect(manifest.skills).toHaveLength(2);
+    expect(manifest.schema_version).toBe(3);
+  });
 
-	it("records a pinned skills.sh dependency without vendoring its files", () => {
-		const manifest = parseSyncManifest(`schema_version: 3
+  it("records a pinned skills.sh dependency without vendoring its files", () => {
+    const manifest = parseSyncManifest(`schema_version: 3
 profile: { id: personal-backup, mode: private }
 agent_policy: { mode: detected }
 skills:
   - { id: frontend-design, kind: skills_sh, source_url: https://github.com/vercel-labs/agent-skills, ref: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, skill_path: skills/frontend-design, installations: [codex] }
 `);
-		expect(manifest.skills).toEqual([expect.objectContaining({
-			id: "frontend-design",
-			kind: "skills_sh",
-			installations: ["codex"],
-		})]);
-	});
+    expect(manifest.skills).toEqual([
+      expect.objectContaining({
+        id: "frontend-design",
+        kind: "skills_sh",
+        installations: ["codex"],
+      }),
+    ]);
+  });
 
-	it("allows a skills.sh skill at the root of its source repository", () => {
-		const manifest = parseSyncManifest(`schema_version: 3
+  it("allows a skills.sh skill at the root of its source repository", () => {
+    const manifest = parseSyncManifest(`schema_version: 3
 profile: { id: personal-backup, mode: private }
 agent_policy: { mode: detected }
 skills:
   - { id: root-skill, kind: skills_sh, source_url: https://github.com/example/root-skill, ref: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, skill_path: . }
 `);
-		expect(manifest.skills[0]).toMatchObject({ kind: "skills_sh", skill_path: "." });
-	});
+    expect(manifest.skills[0]).toMatchObject({
+      kind: "skills_sh",
+      skill_path: ".",
+    });
+  });
 
-	it("reads a v1 profile without changing it until a reviewed v3 publish", () => {
-		const legacy = parseSyncManifest(`schema_version: 1
+  it("reads a v1 profile without changing it until a reviewed v3 publish", () => {
+    const legacy = parseSyncManifest(`schema_version: 1
 profile: { id: personal, mode: private }
 agent_policy: { mode: detected }
 skills:
   - { id: writing, kind: bundled, path: skills/writing, sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa }
 `);
-		expect(legacy).toMatchObject({ schema_version: 3, skills: [{ id: "writing" }] });
-		expect(stringifySyncManifest(legacy)).toContain("schema_version: 3");
-	});
+    expect(legacy).toMatchObject({
+      schema_version: 3,
+      skills: [{ id: "writing" }],
+    });
+    expect(stringifySyncManifest(legacy)).toContain("schema_version: 3");
+  });
 
-	it("rejects traversal and duplicate ids", () => {
-		expect(() => assertPortableRelativePath("skills/../secret")).toThrow("traversal");
-		expect(() => parseSyncManifest(`schema_version: 1
+  it("rejects traversal and duplicate ids", () => {
+    expect(() => assertPortableRelativePath("skills/../secret")).toThrow(
+      "traversal",
+    );
+    expect(() =>
+      parseSyncManifest(`schema_version: 1
 profile: { id: private, mode: private }
 agent_policy: { mode: detected }
 skills:
   - { id: same, kind: bundled, path: skills/same, sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa }
   - { id: same, kind: reference, repository: https://user:password@example.test/repo.git, ref: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, skill_path: skills/same }
-`)).toThrow("Duplicate sync skill id");
-	});
+`),
+    ).toThrow("Duplicate sync skill id");
+  });
 
-	it("rejects remote URLs with embedded credentials", () => {
-		expect(() => parseSyncManifest(`schema_version: 1
+  it("rejects remote URLs with embedded credentials", () => {
+    expect(() =>
+      parseSyncManifest(`schema_version: 1
 profile: { id: private, mode: private }
 agent_policy: { mode: detected }
 skills:
   - { id: remote, kind: reference, repository: https://user:password@example.test/repo.git, ref: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, skill_path: skills/remote }
-`)).toThrow("must not embed credentials");
-	});
+`),
+    ).toThrow("must not embed credentials");
+  });
 });
 
 describe("sync secret scanner", () => {
-	it("reports locations without returning the secret value", () => {
-		const text = "name: demo\nGITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz123456\n";
-		const findings = scanTextForSecrets(text);
-		expect(findings).toContainEqual({ rule: "github-token", line: 2, column: 14 });
-		expect(JSON.stringify(findings)).not.toContain("ghp_");
-	});
+  it("reports locations without returning the secret value", () => {
+    const text =
+      "name: demo\nGITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz123456\n";
+    const findings = scanTextForSecrets(text);
+    expect(findings).toContainEqual({
+      rule: "github-token",
+      line: 2,
+      column: 14,
+    });
+    expect(JSON.stringify(findings)).not.toContain("ghp_");
+  });
 
-	it("detects private keys and connection strings", () => {
-		expect(scanTextForSecrets("-----BEGIN PRIVATE KEY-----\n")[0]?.rule).toBe("private-key");
-		expect(scanTextForSecrets("DATABASE_URL=postgres://user:password@db.example/app\n").map((finding) => finding.rule))
-			.toContain("connection-string");
-	});
+  it("detects private keys and connection strings", () => {
+    expect(scanTextForSecrets("-----BEGIN PRIVATE KEY-----\n")[0]?.rule).toBe(
+      "private-key",
+    );
+    expect(
+      scanTextForSecrets(
+        "DATABASE_URL=postgres://user:password@db.example/app\n",
+      ).map((finding) => finding.rule),
+    ).toContain("connection-string");
+  });
 
-	it("does not block documentation examples that merely assign credential-shaped names", () => {
-		expect(scanTextForSecrets("API_KEY=your_key_here\nTOKEN=replace_me\n")).toEqual([]);
-	});
+  it("does not block documentation examples that merely assign credential-shaped names", () => {
+    expect(
+      scanTextForSecrets("API_KEY=your_key_here\nTOKEN=replace_me\n"),
+    ).toEqual([]);
+  });
 
-	it("does not block an explicitly labelled connection-string placeholder", () => {
-		expect(scanTextForSecrets("Build-time placeholder: DATABASE_URL=postgres://postgres:postgres@localhost:5432/app\n")).toEqual([]);
-	});
+  it("does not block an explicitly labelled connection-string placeholder", () => {
+    expect(
+      scanTextForSecrets(
+        "Build-time placeholder: DATABASE_URL=postgres://postgres:postgres@localhost:5432/app\n",
+      ),
+    ).toEqual([]);
+  });
 
-	it("does not block a connection string used in an e.g. documentation example", () => {
-		expect(scanTextForSecrets("Use e.g. DATABASE_URL=postgres://postgres:postgres@localhost:5432/app\n")).toEqual([]);
-	});
+  it("does not block a connection string used in an e.g. documentation example", () => {
+    expect(
+      scanTextForSecrets(
+        "Use e.g. DATABASE_URL=postgres://postgres:postgres@localhost:5432/app\n",
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe("bundled skill export plan", () => {
-	it("builds a stable, allowlisted file plan and skips repository/build directories", () => {
-		const root = makeSkill({
-			"SKILL.md": "# Writing\n",
-			"references/tone.md": "Be concise.\n",
-			".git/config": "not exported",
-			"node_modules/example.js": "not exported",
-		});
-		const plan = planBundledSkillExport("writing", root);
-		expect(plan.bundledPath).toBe("skills/writing");
-		expect(plan.files.map((file) => file.relativePath)).toEqual(["SKILL.md", "references/tone.md"]);
-		expect(plan.excludedPaths).toEqual([".git", "node_modules"]);
-		expect(plan.secretFindings).toEqual([]);
-		expect(plan.sha256).toHaveLength(64);
-	});
+  it("builds a stable, allowlisted file plan and skips repository/build directories", () => {
+    const root = makeSkill({
+      "SKILL.md": "# Writing\n",
+      "references/tone.md": "Be concise.\n",
+      ".git/config": "not exported",
+      "node_modules/example.js": "not exported",
+    });
+    const plan = planBundledSkillExport("writing", root);
+    expect(plan.bundledPath).toBe("skills/writing");
+    expect(plan.files.map((file) => file.relativePath)).toEqual([
+      "SKILL.md",
+      "references/tone.md",
+    ]);
+    expect(plan.excludedPaths).toEqual([".git", "node_modules"]);
+    expect(plan.secretFindings).toEqual([]);
+    expect(plan.sha256).toHaveLength(64);
+  });
 
-	it("reports secret locations and rejects symlinks before export", () => {
-		const root = makeSkill({
-			"SKILL.md": "# Private\nTOKEN=ghp_abcdefghijklmnopqrstuvwxyz123456\n",
-		});
-		const secretPlan = planBundledSkillExport("private", root);
-		expect(secretPlan.secretFindings).toContainEqual({
-			rule: "github-token",
-			line: 2,
-			column: 7,
-			relativePath: "SKILL.md",
-		});
+  it("reports secret locations and rejects symlinks before export", () => {
+    const root = makeSkill({
+      "SKILL.md": "# Private\nTOKEN=ghp_abcdefghijklmnopqrstuvwxyz123456\n",
+    });
+    const secretPlan = planBundledSkillExport("private", root);
+    expect(secretPlan.secretFindings).toContainEqual({
+      rule: "github-token",
+      line: 2,
+      column: 7,
+      relativePath: "SKILL.md",
+    });
 
-		const linked = makeSkill({ "SKILL.md": "# Linked\n" });
-		symlinkSync(join(root, "SKILL.md"), join(linked, "copied.md"));
-		expect(() => planBundledSkillExport("linked", linked)).toThrow("rejects symlink");
-	});
+    const linked = makeSkill({ "SKILL.md": "# Linked\n" });
+    symlinkSync(join(root, "SKILL.md"), join(linked, "copied.md"));
+    expect(() => planBundledSkillExport("linked", linked)).toThrow(
+      "rejects symlink",
+    );
+  });
 });
 
 describe("sync Git workspace", () => {
-	it("publishes and restores through a generic local Git remote without a personal identity", async () => {
-		const root = mkdtempSync(join(tmpdir(), "skiller-sync-git-"));
-		tempDirs.push(root);
-		const remote = join(root, "remote.git");
-		const publisher = join(root, "publisher");
-		const restore = join(root, "restore");
-		await simpleGit().raw(["init", "--bare", remote]);
+  it("rejects an untrusted clone before creating a destination or invoking Git", async () => {
+    const root = mkdtempSync(join(tmpdir(), "skiller-sync-trust-"));
+    tempDirs.push(root);
+    const destination = join(root, "library");
+    await expect(
+      cloneSyncWorkspace(
+        "https://example.invalid/untrusted/library.git",
+        destination,
+        {},
+      ),
+    ).rejects.toThrow("blocked because no device trust decision");
+    expect(existsSync(destination)).toBe(false);
+  });
 
-		await initializeSyncWorkspace(publisher, remote);
-		writeFileSync(join(publisher, "skiller-sync.yaml"), "schema_version: 1\n");
-		expect(await commitSyncWorkspace(publisher, "Skiller sync: publish profile")).toMatch(/^[a-f0-9]{40}$/);
-		await pushSyncWorkspace(publisher);
-		expect(await getSyncWorkspaceStatus(publisher)).toMatchObject({ changed: false, ahead: 0, remoteUrl: remote });
+  it("publishes and restores through a generic local Git remote without a personal identity", async () => {
+    const root = mkdtempSync(join(tmpdir(), "skiller-sync-git-"));
+    tempDirs.push(root);
+    const remote = join(root, "remote.git");
+    const publisher = join(root, "publisher");
+    const restore = join(root, "restore");
+    await simpleGit().raw(["init", "--bare", remote]);
 
-		const wrongDestinationPlan = await planSyncWorkspaceClone(remote, join(root, "another-restore"));
-		await expect(cloneSyncWorkspace(remote, restore, wrongDestinationPlan.planId)).rejects.toThrow("changed after review");
-		expect(existsSync(restore)).toBe(false);
-		const clonePlan = await planSyncWorkspaceClone(remote, restore);
-		expect(clonePlan.planId).toMatch(/^[a-f0-9]{64}$/);
-		await cloneSyncWorkspace(remote, restore, clonePlan.planId);
-		expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe("schema_version: 1\n");
-		expect(await simpleGit(restore).raw(["config", "user.email"])).toBe("sync@skiller.local\n");
-	});
+    await initializeSyncWorkspace(
+      publisher,
+      remote,
+      exactSourceSecurityPolicy([remote]),
+    );
+    writeFileSync(join(publisher, "skiller-sync.yaml"), "schema_version: 1\n");
+    expect(
+      await commitSyncWorkspace(publisher, "Skiller sync: publish profile"),
+    ).toMatch(/^[a-f0-9]{40}$/);
+    await pushSyncWorkspace(publisher);
+    expect(await getSyncWorkspaceStatus(publisher)).toMatchObject({
+      changed: false,
+      ahead: 0,
+      remoteUrl: remote,
+    });
 
-	it("fast-forwards a clean restore workspace after fetching a reviewed remote", async () => {
-		const root = mkdtempSync(join(tmpdir(), "skiller-sync-git-"));
-		tempDirs.push(root);
-		const remote = join(root, "remote.git");
-		const publisher = join(root, "publisher");
-		const restore = join(root, "restore");
-		await simpleGit().raw(["init", "--bare", remote]);
-		await initializeSyncWorkspace(publisher, remote);
-		writeFileSync(join(publisher, "skiller-sync.yaml"), "first\n");
-		await commitSyncWorkspace(publisher, "first");
-		await pushSyncWorkspace(publisher);
-		await cloneSyncWorkspace(remote, restore);
+    const sourcePolicy = exactSourceSecurityPolicy([remote]);
+    const wrongDestinationPlan = await planSyncWorkspaceClone(
+      remote,
+      join(root, "another-restore"),
+      sourcePolicy,
+    );
+    await expect(
+      cloneSyncWorkspace(
+        remote,
+        restore,
+        sourcePolicy,
+        wrongDestinationPlan.planId,
+      ),
+    ).rejects.toThrow("changed after review");
+    expect(existsSync(restore)).toBe(false);
+    const clonePlan = await planSyncWorkspaceClone(
+      remote,
+      restore,
+      sourcePolicy,
+    );
+    expect(clonePlan.planId).toMatch(/^[a-f0-9]{64}$/);
+    await cloneSyncWorkspace(remote, restore, sourcePolicy, clonePlan.planId);
+    expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe(
+      "schema_version: 1\n",
+    );
+    expect(await simpleGit(restore).raw(["config", "user.email"])).toBe(
+      "sync@skiller.local\n",
+    );
+  });
 
-		writeFileSync(join(publisher, "skiller-sync.yaml"), "second\n");
-		await commitSyncWorkspace(publisher, "second");
-		await pushSyncWorkspace(publisher);
-		const plan = await planSyncWorkspaceFastForward(restore);
-		expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe("first\n");
-		expect(await inspectSyncWorkspaceFastForward(plan, (checkout) => readFileSync(join(checkout, "skiller-sync.yaml"), "utf8"))).toBe("second\n");
-		expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe("first\n");
-		await applyReviewedSyncWorkspaceFastForward(restore, plan.planId);
+  it("fast-forwards a clean restore workspace after fetching a reviewed remote", async () => {
+    const root = mkdtempSync(join(tmpdir(), "skiller-sync-git-"));
+    tempDirs.push(root);
+    const remote = join(root, "remote.git");
+    const publisher = join(root, "publisher");
+    const restore = join(root, "restore");
+    await simpleGit().raw(["init", "--bare", remote]);
+    await initializeSyncWorkspace(
+      publisher,
+      remote,
+      exactSourceSecurityPolicy([remote]),
+    );
+    writeFileSync(join(publisher, "skiller-sync.yaml"), "first\n");
+    await commitSyncWorkspace(publisher, "first");
+    await pushSyncWorkspace(publisher);
+    await cloneSyncWorkspace(
+      remote,
+      restore,
+      exactSourceSecurityPolicy([remote]),
+    );
 
-		expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe("second\n");
-	});
+    writeFileSync(join(publisher, "skiller-sync.yaml"), "second\n");
+    await commitSyncWorkspace(publisher, "second");
+    await pushSyncWorkspace(publisher);
+    const plan = await planSyncWorkspaceFastForward(restore);
+    expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe(
+      "first\n",
+    );
+    expect(
+      await inspectSyncWorkspaceFastForward(plan, (checkout) =>
+        readFileSync(join(checkout, "skiller-sync.yaml"), "utf8"),
+      ),
+    ).toBe("second\n");
+    expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe(
+      "first\n",
+    );
+    await applyReviewedSyncWorkspaceFastForward(restore, plan.planId);
 
-	it("checks remote metadata without merging a remote change into the managed checkout", async () => {
-		const root = mkdtempSync(join(tmpdir(), "skiller-sync-git-"));
-		tempDirs.push(root);
-		const remote = join(root, "remote.git");
-		const publisher = join(root, "publisher");
-		const observer = join(root, "observer");
-		await simpleGit().raw(["init", "--bare", remote]);
-		await initializeSyncWorkspace(publisher, remote);
-		writeFileSync(join(publisher, "skiller-sync.yaml"), "first\n");
-		await commitSyncWorkspace(publisher, "first");
-		await pushSyncWorkspace(publisher);
-		await cloneSyncWorkspace(remote, observer);
+    expect(readFileSync(join(restore, "skiller-sync.yaml"), "utf8")).toBe(
+      "second\n",
+    );
+  });
 
-		writeFileSync(join(publisher, "skiller-sync.yaml"), "second\n");
-		await commitSyncWorkspace(publisher, "second");
-		await pushSyncWorkspace(publisher);
-		await refreshSyncWorkspaceStatus(observer);
+  it("checks remote metadata without merging a remote change into the managed checkout", async () => {
+    const root = mkdtempSync(join(tmpdir(), "skiller-sync-git-"));
+    tempDirs.push(root);
+    const remote = join(root, "remote.git");
+    const publisher = join(root, "publisher");
+    const observer = join(root, "observer");
+    await simpleGit().raw(["init", "--bare", remote]);
+    await initializeSyncWorkspace(
+      publisher,
+      remote,
+      exactSourceSecurityPolicy([remote]),
+    );
+    writeFileSync(join(publisher, "skiller-sync.yaml"), "first\n");
+    await commitSyncWorkspace(publisher, "first");
+    await pushSyncWorkspace(publisher);
+    await cloneSyncWorkspace(
+      remote,
+      observer,
+      exactSourceSecurityPolicy([remote]),
+    );
 
-		expect(await getSyncWorkspaceStatus(observer)).toMatchObject({ behind: 1, changed: false });
-		expect(readFileSync(join(observer, "skiller-sync.yaml"), "utf8")).toBe("first\n");
-	});
+    writeFileSync(join(publisher, "skiller-sync.yaml"), "second\n");
+    await commitSyncWorkspace(publisher, "second");
+    await pushSyncWorkspace(publisher);
+    await refreshSyncWorkspaceStatus(observer);
 
-	it("pins a branch to the remote commit before it enters a portable manifest", async () => {
-		const root = mkdtempSync(join(tmpdir(), "skiller-sync-git-"));
-		tempDirs.push(root);
-		const remote = join(root, "remote.git");
-		const publisher = join(root, "publisher");
-		await simpleGit().raw(["init", "--bare", remote]);
-		await initializeSyncWorkspace(publisher, remote);
-		writeFileSync(join(publisher, "skiller-sync.yaml"), "first\n");
-		await commitSyncWorkspace(publisher, "first");
-		await pushSyncWorkspace(publisher);
-		const expected = (await simpleGit(publisher).revparse(["HEAD"])).trim();
-		await simpleGit(remote).raw(["symbolic-ref", "HEAD", "refs/heads/main"]);
+    expect(await getSyncWorkspaceStatus(observer)).toMatchObject({
+      behind: 1,
+      changed: false,
+    });
+    expect(readFileSync(join(observer, "skiller-sync.yaml"), "utf8")).toBe(
+      "first\n",
+    );
+  });
 
-		expect(await resolveGitReferenceToCommit(remote, "main")).toBe(expected);
-		expect(await resolveGitReferenceToCommit(remote, "HEAD")).toBe(expected);
-	});
+  it("keeps legacy profiles deny-by-default until their exact remote is reviewed on this device", async () => {
+    const root = mkdtempSync(join(tmpdir(), "skiller-sync-legacy-trust-"));
+    tempDirs.push(root);
+    const remote = join(root, "remote.git");
+    const publisher = join(root, "publisher");
+    const observer = join(root, "observer");
+    await simpleGit().raw(["init", "--bare", remote]);
+    await initializeSyncWorkspace(
+      publisher,
+      remote,
+      exactSourceSecurityPolicy([remote]),
+    );
+    writeFileSync(join(publisher, "skiller-sync.yaml"), "first\n");
+    await commitSyncWorkspace(publisher, "first");
+    await pushSyncWorkspace(publisher);
+    await cloneSyncWorkspace(
+      remote,
+      observer,
+      exactSourceSecurityPolicy([remote]),
+    );
+
+    // Simulate a profile created before device-only source policies existed.
+    rmSync(join(observer, ".git", "skiller-source-policy.json"), {
+      force: true,
+    });
+    expect(await inspectSyncWorkspaceRemoteTrust(observer)).toEqual({
+      required: true,
+      remoteIdentity: pathToFileURL(remote).href,
+    });
+    await expect(refreshSyncWorkspaceStatus(observer)).rejects.toThrow(
+      /explicit allow_local|no device trust decision/,
+    );
+
+    const review = await planSyncWorkspaceRemoteTrust(observer);
+    expect(review.planId).toMatch(/^[a-f0-9]{64}$/);
+    expect(review.remoteIdentity).toStartWith("file:");
+    expect(review.sourcePolicy).toMatchObject({
+      minimum_release_age_minutes: 7 * 24 * 60,
+      minimum_release_age_exclude: [],
+    });
+    await applySyncWorkspaceRemoteTrust(observer, review.planId);
+    expect(
+      JSON.parse(
+        readFileSync(
+          join(observer, ".git", "skiller-source-policy.json"),
+          "utf8",
+        ),
+      ),
+    ).toMatchObject({ minimum_release_age_minutes: 7 * 24 * 60 });
+    expect(await inspectSyncWorkspaceRemoteTrust(observer)).toEqual({
+      required: false,
+      remoteIdentity: pathToFileURL(remote).href,
+    });
+    await refreshSyncWorkspaceStatus(observer);
+  });
+
+  it("rejects a reviewed legacy trust decision when origin changes before apply", async () => {
+    const root = mkdtempSync(join(tmpdir(), "skiller-sync-stale-trust-"));
+    tempDirs.push(root);
+    const firstRemote = join(root, "first.git");
+    const secondRemote = join(root, "second.git");
+    const workspace = join(root, "workspace");
+    await simpleGit().raw(["init", "--bare", firstRemote]);
+    await simpleGit().raw(["init", "--bare", secondRemote]);
+    await initializeSyncWorkspace(
+      workspace,
+      firstRemote,
+      exactSourceSecurityPolicy([firstRemote]),
+    );
+    rmSync(join(workspace, ".git", "skiller-source-policy.json"), {
+      force: true,
+    });
+    const review = await planSyncWorkspaceRemoteTrust(workspace);
+    await simpleGit(workspace).remote(["set-url", "origin", secondRemote]);
+
+    await expect(
+      applySyncWorkspaceRemoteTrust(workspace, review.planId),
+    ).rejects.toThrow("changed after review");
+    expect(await inspectSyncWorkspaceRemoteTrust(workspace)).toEqual({
+      required: true,
+      remoteIdentity: secondRemote,
+    });
+    expect(
+      existsSync(join(workspace, ".git", "skiller-source-policy.json")),
+    ).toBe(false);
+  });
+
+  it("pins a branch, HEAD, or annotated tag to the commit before it enters a portable manifest", async () => {
+    const root = mkdtempSync(join(tmpdir(), "skiller-sync-git-"));
+    tempDirs.push(root);
+    const remote = join(root, "remote.git");
+    const publisher = join(root, "publisher");
+    await simpleGit().raw(["init", "--bare", remote]);
+    await initializeSyncWorkspace(
+      publisher,
+      remote,
+      exactSourceSecurityPolicy([remote]),
+    );
+    writeFileSync(join(publisher, "skiller-sync.yaml"), "first\n");
+    await commitSyncWorkspace(publisher, "first");
+    await pushSyncWorkspace(publisher);
+    const expected = (await simpleGit(publisher).revparse(["HEAD"])).trim();
+    await simpleGit(remote).raw(["symbolic-ref", "HEAD", "refs/heads/main"]);
+    await simpleGit(publisher).raw(["tag", "-a", "v1", "-m", "Version 1"]);
+    await simpleGit(publisher).push(["origin", "refs/tags/v1"]);
+
+    const policy = exactSourceSecurityPolicy([remote]);
+    expect(await resolveGitReferenceToCommit(remote, "main", policy)).toBe(
+      expected,
+    );
+    expect(await resolveGitReferenceToCommit(remote, "HEAD", policy)).toBe(
+      expected,
+    );
+    expect(await resolveGitReferenceToCommit(remote, "v1", policy)).toBe(
+      expected,
+    );
+  });
 });
 
 describe("sync publish plan", () => {
-	it("records an immutable Git reference without copying its skill files", () => {
-		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
-		tempDirs.push(workspace);
-		const plan = createSyncPublishPlan("personal", "team", [{
-			kind: "reference",
-			id: "upstream",
-			repository: "https://github.com/example/skills.git",
-			ref: "a".repeat(40),
-			skillPath: "skills/upstream",
-		}]);
-		expect(plan.bundledSkills).toEqual([]);
-		applySyncPublishPlan(workspace, plan);
-		expect(existsSync(join(workspace, "skills", "upstream"))).toBe(false);
-		expect(parseSyncManifest(readFileSync(join(workspace, "skiller-sync.yaml"), "utf8")).skills).toEqual([{
-			id: "upstream",
-			kind: "reference",
-			repository: "https://github.com/example/skills.git",
-			ref: "a".repeat(40),
-			skill_path: "skills/upstream",
-		}]);
-	});
+  it("records an immutable Git reference without copying its skill files", () => {
+    const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+    tempDirs.push(workspace);
+    const plan = createSyncPublishPlan("personal", "team", [
+      {
+        kind: "reference",
+        id: "upstream",
+        repository: "https://github.com/example/skills.git",
+        ref: "a".repeat(40),
+        skillPath: "skills/upstream",
+      },
+    ]);
+    expect(plan.bundledSkills).toEqual([]);
+    applySyncPublishPlan(workspace, plan);
+    expect(existsSync(join(workspace, "skills", "upstream"))).toBe(false);
+    expect(
+      parseSyncManifest(
+        readFileSync(join(workspace, "skiller-sync.yaml"), "utf8"),
+      ).skills,
+    ).toEqual([
+      {
+        id: "upstream",
+        kind: "reference",
+        repository: "https://github.com/example/skills.git",
+        ref: "a".repeat(40),
+        skill_path: "skills/upstream",
+      },
+    ]);
+  });
 
-	it("records a pinned skills.sh dependency without copying its skill files", () => {
-		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
-		tempDirs.push(workspace);
-		const plan = createSyncPublishPlan("personal", "private", [{
-			kind: "skills_sh",
-			id: "frontend-design",
-			sourceUrl: "https://github.com/vercel-labs/agent-skills",
-			ref: "a".repeat(40),
-			skillPath: "skills/frontend-design",
-			installationAgentSlugs: ["codex"],
-		}]);
-		expect(plan.bundledSkills).toEqual([]);
-		applySyncPublishPlan(workspace, plan);
-		expect(existsSync(join(workspace, "skills", "frontend-design"))).toBe(false);
-		expect(parseSyncManifest(readFileSync(join(workspace, "skiller-sync.yaml"), "utf8")).skills).toEqual([{
-			id: "frontend-design",
-			kind: "skills_sh",
-			source_url: "https://github.com/vercel-labs/agent-skills",
-			ref: "a".repeat(40),
-			skill_path: "skills/frontend-design",
-			installations: ["codex"],
-		}]);
-	});
+  it("records a pinned skills.sh dependency without copying its skill files", () => {
+    const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+    tempDirs.push(workspace);
+    const plan = createSyncPublishPlan("personal", "private", [
+      {
+        kind: "skills_sh",
+        id: "frontend-design",
+        sourceUrl: "https://github.com/vercel-labs/agent-skills",
+        ref: "a".repeat(40),
+        skillPath: "skills/frontend-design",
+        installationAgentSlugs: ["codex"],
+      },
+    ]);
+    expect(plan.bundledSkills).toEqual([]);
+    applySyncPublishPlan(workspace, plan);
+    expect(existsSync(join(workspace, "skills", "frontend-design"))).toBe(
+      false,
+    );
+    expect(
+      parseSyncManifest(
+        readFileSync(join(workspace, "skiller-sync.yaml"), "utf8"),
+      ).skills,
+    ).toEqual([
+      {
+        id: "frontend-design",
+        kind: "skills_sh",
+        source_url: "https://github.com/vercel-labs/agent-skills",
+        ref: "a".repeat(40),
+        skill_path: "skills/frontend-design",
+        installations: ["codex"],
+      },
+    ]);
+  });
 
-	it("preserves a reviewed external content hash for future conflict detection", () => {
-		const plan = createSyncPublishPlan("personal", "private", [{
-			kind: "reference",
-			id: "upstream",
-			repository: "https://github.com/example/skills.git",
-			ref: "a".repeat(40),
-			skillPath: "skills/upstream",
-			contentHash: "b".repeat(64),
-		}]);
-		expect(plan.manifest.skills).toContainEqual(expect.objectContaining({
-			id: "upstream",
-			kind: "reference",
-			sha256: "b".repeat(64),
-		}));
-	});
+  it("preserves a reviewed external content hash for future conflict detection", () => {
+    const plan = createSyncPublishPlan("personal", "private", [
+      {
+        kind: "reference",
+        id: "upstream",
+        repository: "https://github.com/example/skills.git",
+        ref: "a".repeat(40),
+        skillPath: "skills/upstream",
+        contentHash: "b".repeat(64),
+      },
+    ]);
+    expect(plan.manifest.skills).toContainEqual(
+      expect.objectContaining({
+        id: "upstream",
+        kind: "reference",
+        sha256: "b".repeat(64),
+      }),
+    );
+  });
 
-	it("requires a clean reviewed plan before writing a bundled skill and manifest", () => {
-		const root = makeSkill({ "SKILL.md": "# Writing\n", "references/style.md": "Short sentences.\n" });
-		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
-		tempDirs.push(workspace);
-		const plan = createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: root }]);
-		const portableFiles = { "skiller-sync.yaml": stringifySyncManifest(plan.manifest) };
-		const update = createSyncPublishWorkspacePlan(workspace, plan, portableFiles);
-		expect(update.planId).toBe(createSyncPublishWorkspacePlan(workspace, plan, portableFiles).planId);
-		expect(update.operations.map((operation) => operation.path)).toEqual(["skiller-sync.yaml", "skills/writing"]);
-		expect(existsSync(join(workspace, "skiller-sync.yaml"))).toBe(false);
-		applySyncPublishPlan(workspace, plan);
-		expect(readFileSync(join(workspace, "skills/writing/SKILL.md"), "utf8")).toBe("# Writing\n");
-		expect(parseSyncManifest(readFileSync(join(workspace, "skiller-sync.yaml"), "utf8"))).toMatchObject({
-			profile: { id: "personal", mode: "private" },
-			skills: [{ id: "writing", path: "skills/writing" }],
-		});
-	});
+  it("requires a clean reviewed plan before writing a bundled skill and manifest", () => {
+    const root = makeSkill({
+      "SKILL.md": "# Writing\n",
+      "references/style.md": "Short sentences.\n",
+    });
+    const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+    tempDirs.push(workspace);
+    const plan = createSyncPublishPlan("personal", "private", [
+      { id: "writing", sourcePath: root },
+    ]);
+    const portableFiles = {
+      "skiller-sync.yaml": stringifySyncManifest(plan.manifest),
+    };
+    const update = createSyncPublishWorkspacePlan(
+      workspace,
+      plan,
+      portableFiles,
+    );
+    expect(update.planId).toBe(
+      createSyncPublishWorkspacePlan(workspace, plan, portableFiles).planId,
+    );
+    expect(update.operations.map((operation) => operation.path)).toEqual([
+      "skiller-sync.yaml",
+      "skills/writing",
+    ]);
+    expect(existsSync(join(workspace, "skiller-sync.yaml"))).toBe(false);
+    applySyncPublishPlan(workspace, plan);
+    expect(
+      readFileSync(join(workspace, "skills/writing/SKILL.md"), "utf8"),
+    ).toBe("# Writing\n");
+    expect(
+      parseSyncManifest(
+        readFileSync(join(workspace, "skiller-sync.yaml"), "utf8"),
+      ),
+    ).toMatchObject({
+      profile: { id: "personal", mode: "private" },
+      skills: [{ id: "writing", path: "skills/writing" }],
+    });
+  });
 
-	it("stores portable agent routing without storing local agent paths", () => {
-		const root = makeSkill({ "SKILL.md": "# Writing\n" });
-		const plan = createSyncPublishPlan("personal", "private", [{
-			id: "writing",
-			sourcePath: root,
-			installationAgentSlugs: ["codex", "claude-code", "codex"],
-		}]);
-		expect(plan.manifest.skills).toContainEqual(expect.objectContaining({
-			id: "writing",
-			installations: ["claude-code", "codex"],
-		}));
-		expect(stringifySyncManifest(plan.manifest)).not.toContain(root);
-	});
+  it("stores portable agent routing without storing local agent paths", () => {
+    const root = makeSkill({ "SKILL.md": "# Writing\n" });
+    const plan = createSyncPublishPlan("personal", "private", [
+      {
+        id: "writing",
+        sourcePath: root,
+        installationAgentSlugs: ["codex", "claude-code", "codex"],
+      },
+    ]);
+    expect(plan.manifest.skills).toContainEqual(
+      expect.objectContaining({
+        id: "writing",
+        installations: ["claude-code", "codex"],
+      }),
+    );
+    expect(stringifySyncManifest(plan.manifest)).not.toContain(root);
+  });
 
-	it("keeps unrelated remote skills when publishing one reviewed local change", () => {
-		const first = makeSkill({ "SKILL.md": "# First\n" });
-		const second = makeSkill({ "SKILL.md": "# Second\n" });
-		const changed = makeSkill({ "SKILL.md": "# First, local revision\n" });
-		const base = createSyncPublishPlan("personal", "private", [
-			{ id: "first", sourcePath: first },
-			{ id: "second", sourcePath: second },
-		]);
-		const update = createSyncPublishPlan("personal", "private", [{ id: "first", sourcePath: changed }]);
-		const merged = mergeBundledUpdateIntoManifest(base.manifest, update);
-		expect(merged.manifest.skills.map((skill) => skill.id)).toEqual(["first", "second"]);
-		expect(merged.manifest.skills.find((skill) => skill.id === "second")).toEqual(base.manifest.skills[1]);
-	});
+  it("keeps unrelated remote skills when publishing one reviewed local change", () => {
+    const first = makeSkill({ "SKILL.md": "# First\n" });
+    const second = makeSkill({ "SKILL.md": "# Second\n" });
+    const changed = makeSkill({ "SKILL.md": "# First, local revision\n" });
+    const base = createSyncPublishPlan("personal", "private", [
+      { id: "first", sourcePath: first },
+      { id: "second", sourcePath: second },
+    ]);
+    const update = createSyncPublishPlan("personal", "private", [
+      { id: "first", sourcePath: changed },
+    ]);
+    const merged = mergeBundledUpdateIntoManifest(base.manifest, update);
+    expect(merged.manifest.skills.map((skill) => skill.id)).toEqual([
+      "first",
+      "second",
+    ]);
+    expect(
+      merged.manifest.skills.find((skill) => skill.id === "second"),
+    ).toEqual(base.manifest.skills[1]);
+  });
 
-	it("requires an explicit adoption decision before replacing a dependency with an owned local skill", () => {
-		const local = makeSkill({ "SKILL.md": "# Local fork\n" });
-		const base = createSyncPublishPlan("personal", "private", [{
-			kind: "reference",
-			id: "review",
-			repository: "https://github.com/example/review",
-			ref: "a".repeat(40),
-			skillPath: "skills/review",
-		}]);
-		const owned = createSyncPublishPlan("personal", "private", [{ id: "review", sourcePath: local }]);
-		expect(() => mergeBundledUpdateIntoManifest(base.manifest, owned)).toThrow("not a known bundled skill");
-		const adopted = mergeBundledUpdateIntoManifest(base.manifest, owned, { allowSourceConversion: true });
-		expect(adopted.manifest.skills).toMatchObject([{ id: "review", kind: "bundled" }]);
-	});
+  it("requires an explicit adoption decision before replacing a dependency with an owned local skill", () => {
+    const local = makeSkill({ "SKILL.md": "# Local fork\n" });
+    const base = createSyncPublishPlan("personal", "private", [
+      {
+        kind: "reference",
+        id: "review",
+        repository: "https://github.com/example/review",
+        ref: "a".repeat(40),
+        skillPath: "skills/review",
+      },
+    ]);
+    const owned = createSyncPublishPlan("personal", "private", [
+      { id: "review", sourcePath: local },
+    ]);
+    expect(() => mergeBundledUpdateIntoManifest(base.manifest, owned)).toThrow(
+      "not a known bundled skill",
+    );
+    const adopted = mergeBundledUpdateIntoManifest(base.manifest, owned, {
+      allowSourceConversion: true,
+    });
+    expect(adopted.manifest.skills).toMatchObject([
+      { id: "review", kind: "bundled" },
+    ]);
+  });
 
-	it("blocks writes when the reviewed skill contains a secret", () => {
-		const root = makeSkill({ "SKILL.md": "TOKEN=ghp_abcdefghijklmnopqrstuvwxyz123456\n" });
-		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
-		tempDirs.push(workspace);
-		const plan = createSyncPublishPlan("personal", "private", [{ id: "private", sourcePath: root }]);
-		expect(() => applySyncPublishPlan(workspace, plan)).toThrow("blocked");
-		expect(existsSync(join(workspace, "skiller-sync.yaml"))).toBe(false);
-	});
+  it("blocks writes when the reviewed skill contains a secret", () => {
+    const root = makeSkill({
+      "SKILL.md": "TOKEN=ghp_abcdefghijklmnopqrstuvwxyz123456\n",
+    });
+    const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+    tempDirs.push(workspace);
+    const plan = createSyncPublishPlan("personal", "private", [
+      { id: "private", sourcePath: root },
+    ]);
+    expect(() => applySyncPublishPlan(workspace, plan)).toThrow("blocked");
+    expect(existsSync(join(workspace, "skiller-sync.yaml"))).toBe(false);
+  });
 });
 
 describe("sync restore preview", () => {
-	it("preserves the golden restore contract across absent, equal, changed, file, and symlink targets", () => {
-		const source = makeSkill({ "SKILL.md": "# Writing\n" });
-		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
-		const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
-		tempDirs.push(workspace, canonical);
-		applySyncPublishPlan(workspace, createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: source }]));
+  it("preserves the golden restore contract across absent, equal, changed, file, and symlink targets", () => {
+    const source = makeSkill({ "SKILL.md": "# Writing\n" });
+    const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+    const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
+    tempDirs.push(workspace, canonical);
+    applySyncPublishPlan(
+      workspace,
+      createSyncPublishPlan("personal", "private", [
+        { id: "writing", sourcePath: source },
+      ]),
+    );
 
-		const first = createSyncRestorePlan(workspace, canonical);
-		expect(first).toMatchObject({
-			engine: "dotagent",
-			entries: [{ id: "writing", action: "create", threeWayAction: "take-remote", localSha256: null }],
-		});
-		const repeated = createSyncRestorePlan(workspace, canonical);
-		expect(first.corePlan.planId).toBe(repeated.corePlan.planId);
-		expect(syncRestorePlanId(first)).toBe(syncRestorePlanId(repeated));
-		expect(syncRestorePlanId(first)).toMatch(/^[a-f0-9]{64}$/);
+    const first = createSyncRestorePlan(workspace, canonical);
+    expect(first).toMatchObject({
+      engine: "dotagents",
+      entries: [
+        {
+          id: "writing",
+          action: "create",
+          threeWayAction: "take-remote",
+          localSha256: null,
+        },
+      ],
+    });
+    const repeated = createSyncRestorePlan(workspace, canonical);
+    expect(first.corePlan.planId).toBe(repeated.corePlan.planId);
+    expect(syncRestorePlanId(first)).toBe(syncRestorePlanId(repeated));
+    expect(syncRestorePlanId(first)).toMatch(/^[a-f0-9]{64}$/);
 
-		mkdirSync(join(canonical, "writing"));
-		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Local\n");
-		expect(createSyncRestorePlan(workspace, canonical)).toMatchObject({
-			entries: [{ id: "writing", action: "conflict", threeWayAction: "unmanaged" }],
-		});
-		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Writing\n");
-		expect(createSyncRestorePlan(workspace, canonical)).toMatchObject({
-			entries: [{ id: "writing", action: "unchanged", threeWayAction: "unchanged" }],
-		});
+    mkdirSync(join(canonical, "writing"));
+    writeFileSync(join(canonical, "writing", "SKILL.md"), "# Local\n");
+    expect(createSyncRestorePlan(workspace, canonical)).toMatchObject({
+      entries: [
+        { id: "writing", action: "conflict", threeWayAction: "unmanaged" },
+      ],
+    });
+    writeFileSync(join(canonical, "writing", "SKILL.md"), "# Writing\n");
+    expect(createSyncRestorePlan(workspace, canonical)).toMatchObject({
+      entries: [
+        { id: "writing", action: "unchanged", threeWayAction: "unchanged" },
+      ],
+    });
 
-		rmSync(join(canonical, "writing"), { recursive: true });
-		writeFileSync(join(canonical, "writing"), "not a skill directory\n");
-		expect(createSyncRestorePlan(workspace, canonical)).toMatchObject({
-			entries: [{ id: "writing", action: "conflict", threeWayAction: "conflict", reason: expect.stringContaining("file") }],
-		});
+    rmSync(join(canonical, "writing"), { recursive: true });
+    writeFileSync(join(canonical, "writing"), "not a skill directory\n");
+    expect(createSyncRestorePlan(workspace, canonical)).toMatchObject({
+      entries: [
+        {
+          id: "writing",
+          action: "conflict",
+          threeWayAction: "conflict",
+          reason: expect.stringContaining("file"),
+        },
+      ],
+    });
 
-		rmSync(join(canonical, "writing"));
-		const linkedTarget = makeSkill({ "SKILL.md": "# Linked local\n" });
-		symlinkSync(linkedTarget, join(canonical, "writing"), "dir");
-		expect(createSyncRestorePlan(workspace, canonical)).toMatchObject({
-			entries: [{ id: "writing", action: "conflict", threeWayAction: "conflict", reason: expect.stringContaining("symlink") }],
-		});
-	});
+    rmSync(join(canonical, "writing"));
+    const linkedTarget = makeSkill({ "SKILL.md": "# Linked local\n" });
+    symlinkSync(linkedTarget, join(canonical, "writing"), "dir");
+    expect(createSyncRestorePlan(workspace, canonical)).toMatchObject({
+      entries: [
+        {
+          id: "writing",
+          action: "conflict",
+          threeWayAction: "conflict",
+          reason: expect.stringContaining("symlink"),
+        },
+      ],
+    });
+  });
 
-	it("maps ledger state into the shared three-way plan", () => {
-		const source = makeSkill({ "SKILL.md": "# Base\n" });
-		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
-		const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
-		tempDirs.push(workspace, canonical);
-		applySyncPublishPlan(workspace, createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: source }]));
-		mkdirSync(join(canonical, "writing"));
-		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Base\n");
-		const basePlan = createSyncRestorePlan(workspace, canonical);
-		const base = basePlan.entries[0].remoteSha256;
-		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Local\n");
-		writeFileSync(join(source, "SKILL.md"), "# Remote\n");
-		applySyncPublishPlan(workspace, createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: source }]));
-		const plan = createSyncRestorePlan(workspace, canonical, makeSyncLedger("personal", [{ id: "writing", sha256: base }]));
-		expect(plan.entries).toMatchObject([{ id: "writing", threeWayAction: "conflict" }]);
-	});
+  it("maps ledger state into the shared three-way plan", () => {
+    const source = makeSkill({ "SKILL.md": "# Base\n" });
+    const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+    const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
+    tempDirs.push(workspace, canonical);
+    applySyncPublishPlan(
+      workspace,
+      createSyncPublishPlan("personal", "private", [
+        { id: "writing", sourcePath: source },
+      ]),
+    );
+    mkdirSync(join(canonical, "writing"));
+    writeFileSync(join(canonical, "writing", "SKILL.md"), "# Base\n");
+    const basePlan = createSyncRestorePlan(workspace, canonical);
+    const base = basePlan.entries[0].remoteSha256;
+    writeFileSync(join(canonical, "writing", "SKILL.md"), "# Local\n");
+    writeFileSync(join(source, "SKILL.md"), "# Remote\n");
+    applySyncPublishPlan(
+      workspace,
+      createSyncPublishPlan("personal", "private", [
+        { id: "writing", sourcePath: source },
+      ]),
+    );
+    const plan = createSyncRestorePlan(
+      workspace,
+      canonical,
+      makeSyncLedger("personal", [{ id: "writing", sha256: base }]),
+    );
+    expect(plan.entries).toMatchObject([
+      { id: "writing", threeWayAction: "conflict" },
+    ]);
+  });
 
-	it("classifies bundled skills before restoring them", () => {
-		const source = makeSkill({ "SKILL.md": "# Writing\n" });
-		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
-		const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
-		tempDirs.push(workspace, canonical);
-		applySyncPublishPlan(workspace, createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: source }]));
+  it("classifies bundled skills before restoring them", () => {
+    const source = makeSkill({ "SKILL.md": "# Writing\n" });
+    const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+    const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
+    tempDirs.push(workspace, canonical);
+    applySyncPublishPlan(
+      workspace,
+      createSyncPublishPlan("personal", "private", [
+        { id: "writing", sourcePath: source },
+      ]),
+    );
 
-		expect(createSyncRestorePlan(workspace, canonical).entries).toMatchObject([{ id: "writing", action: "create" }]);
-		mkdirSync(join(canonical, "writing"));
-		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Local change\n");
-		expect(createSyncRestorePlan(workspace, canonical).entries).toMatchObject([{ id: "writing", action: "conflict" }]);
-		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Writing\n");
-		expect(createSyncRestorePlan(workspace, canonical).entries).toMatchObject([{ id: "writing", action: "unchanged" }]);
-	});
+    expect(createSyncRestorePlan(workspace, canonical).entries).toMatchObject([
+      { id: "writing", action: "create" },
+    ]);
+    mkdirSync(join(canonical, "writing"));
+    writeFileSync(join(canonical, "writing", "SKILL.md"), "# Local change\n");
+    expect(createSyncRestorePlan(workspace, canonical).entries).toMatchObject([
+      { id: "writing", action: "conflict" },
+    ]);
+    writeFileSync(join(canonical, "writing", "SKILL.md"), "# Writing\n");
+    expect(createSyncRestorePlan(workspace, canonical).entries).toMatchObject([
+      { id: "writing", action: "unchanged" },
+    ]);
+  });
 
-	it("rejects a remote bundle whose contents no longer match its manifest", () => {
-		const source = makeSkill({ "SKILL.md": "# Writing\n" });
-		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
-		const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
-		tempDirs.push(workspace, canonical);
-		applySyncPublishPlan(workspace, createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: source }]));
-		writeFileSync(join(workspace, "skills", "writing", "SKILL.md"), "# Tampered\n");
-		expect(() => createSyncRestorePlan(workspace, canonical)).toThrow("integrity mismatch");
-	});
+  it("rejects a remote bundle whose contents no longer match its manifest", () => {
+    const source = makeSkill({ "SKILL.md": "# Writing\n" });
+    const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+    const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
+    tempDirs.push(workspace, canonical);
+    applySyncPublishPlan(
+      workspace,
+      createSyncPublishPlan("personal", "private", [
+        { id: "writing", sourcePath: source },
+      ]),
+    );
+    writeFileSync(
+      join(workspace, "skills", "writing", "SKILL.md"),
+      "# Tampered\n",
+    );
+    expect(() => createSyncRestorePlan(workspace, canonical)).toThrow(
+      "integrity mismatch",
+    );
+  });
 
-	it("restores only explicitly selected entries and protects a changed local skill", () => {
-		const source = makeSkill({ "SKILL.md": "# Remote\n" });
-		const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
-		const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
-		tempDirs.push(workspace, canonical);
-		applySyncPublishPlan(workspace, createSyncPublishPlan("personal", "private", [{ id: "writing", sourcePath: source }]));
+  it("restores only explicitly selected entries and protects a changed local skill", () => {
+    const source = makeSkill({ "SKILL.md": "# Remote\n" });
+    const workspace = mkdtempSync(join(tmpdir(), "skiller-sync-workspace-"));
+    const canonical = mkdtempSync(join(tmpdir(), "skiller-sync-canonical-"));
+    tempDirs.push(workspace, canonical);
+    applySyncPublishPlan(
+      workspace,
+      createSyncPublishPlan("personal", "private", [
+        { id: "writing", sourcePath: source },
+      ]),
+    );
 
-		const createPlan = createSyncRestorePlan(workspace, canonical);
-		applySyncRestorePlan(createPlan, ["writing"]);
-		expect(readFileSync(join(canonical, "writing", "SKILL.md"), "utf8")).toBe("# Remote\n");
-		applySyncRestorePlan(createSyncRestorePlan(workspace, canonical), ["writing"]);
-		expect(readFileSync(join(canonical, "writing", "SKILL.md"), "utf8")).toBe("# Remote\n");
+    const createPlan = createSyncRestorePlan(workspace, canonical);
+    applySyncRestorePlan(createPlan, ["writing"]);
+    expect(readFileSync(join(canonical, "writing", "SKILL.md"), "utf8")).toBe(
+      "# Remote\n",
+    );
+    applySyncRestorePlan(createSyncRestorePlan(workspace, canonical), [
+      "writing",
+    ]);
+    expect(readFileSync(join(canonical, "writing", "SKILL.md"), "utf8")).toBe(
+      "# Remote\n",
+    );
 
-		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Local\n");
-		const conflictPlan = createSyncRestorePlan(workspace, canonical);
-		writeFileSync(join(canonical, "writing", "SKILL.md"), "# Changed after preview\n");
-		expect(() => applySyncRestorePlan(conflictPlan, ["writing"])).toThrow("changed after review");
-		expect(readFileSync(join(canonical, "writing", "SKILL.md"), "utf8")).toBe("# Changed after preview\n");
-	});
+    writeFileSync(join(canonical, "writing", "SKILL.md"), "# Local\n");
+    const conflictPlan = createSyncRestorePlan(workspace, canonical);
+    writeFileSync(
+      join(canonical, "writing", "SKILL.md"),
+      "# Changed after preview\n",
+    );
+    expect(() => applySyncRestorePlan(conflictPlan, ["writing"])).toThrow(
+      "changed after review",
+    );
+    expect(readFileSync(join(canonical, "writing", "SKILL.md"), "utf8")).toBe(
+      "# Changed after preview\n",
+    );
+  });
 });

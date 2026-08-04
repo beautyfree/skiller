@@ -15,4 +15,17 @@ describe("platform data paths", () => {
 	it("keeps the established macOS location", () => {
 		expect(appDataRootPathFor("darwin", "/Users/dev", {})).toBe("/Users/dev/.skiller");
 	});
+
+	it("supports an absolute isolated data root for packaged-app QA on every platform", () => {
+		const env = { SKILLER_TEST_DATA_ROOT: "/private/tmp/skiller-live-qa" };
+		expect(appDataRootPathFor("darwin", "/Users/dev", env)).toBe("/private/tmp/skiller-live-qa");
+		expect(appDataRootPathFor("linux", "/home/dev", env)).toBe("/private/tmp/skiller-live-qa");
+		expect(appDataRootPathFor("win32", "C:\\Users\\dev", env)).toBe("/private/tmp/skiller-live-qa");
+	});
+
+	it("rejects a relative isolated data root", () => {
+		expect(() => appDataRootPathFor("darwin", "/Users/dev", {
+			SKILLER_TEST_DATA_ROOT: "relative/live-qa",
+		})).toThrow("SKILLER_TEST_DATA_ROOT must be an absolute path");
+	});
 });

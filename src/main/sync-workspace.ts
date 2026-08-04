@@ -1,182 +1,380 @@
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
-import { execFile } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 import simpleGit from "simple-git";
 import {
-	applyLibraryCommit,
-	applyLibraryClone,
-	applyLibraryPull,
-	applyLibraryPush,
-	applyLibraryGitInitialization,
-	fetchLibrary,
-	getLibraryGitStatus,
-	planLibraryClone,
-	planLibraryGitInitialization,
-	planLibraryCommit,
-	planLibraryPull,
-	planLibraryPush,
-	type GitClonePlan,
-} from "@beautyfree/dotagent/git-workspace";
+  applyGitClonePlan,
+  applyLibraryCommit,
+  applyLibraryPull,
+  applyLibraryPush,
+  applyLibraryGitInitialization,
+  fetchLibrary,
+  getLibraryGitStatus,
+  planLibraryClone,
+  planGitCheckout,
+  planLibraryGitInitialization,
+  planLibraryCommit,
+  planLibraryPull,
+  planLibraryPush,
+  type GitClonePlan,
+} from "dotagents/git-workspace";
 import {
-	applyGitFastForwardPlan,
-	inspectGitFastForwardPlan,
-	planGitFastForward,
-	type GitFastForwardPlan,
-} from "@beautyfree/dotagent/git-fast-forward";
+  DENY_ALL_SOURCE_SECURITY_POLICY,
+  exactSourceSecurityPolicy,
+  parseSourceSecurityPolicy,
+  requireTrustedSource,
+  type SourceSecurityPolicy,
+  type SourceSecurityPolicyInput,
+} from "dotagents/source-policy";
+import { computePlanId } from "dotagents";
+import {
+  applyGitFastForwardPlan,
+  inspectGitFastForwardPlan,
+  planGitFastForward,
+  type GitFastForwardPlan,
+} from "dotagents/git-fast-forward";
 import { appDataRootPath } from "./settings";
-import { assertCredentialFreeGitRemote, assertSyncStableId } from "./sync-profile";
-import { isCanonicalSyncLibrary, readSyncManifestFromWorkspace } from "./sync-dotagent";
+import {
+  assertCredentialFreeGitRemote,
+  assertSyncStableId,
+} from "./sync-profile";
+import {
+  isCanonicalSyncLibrary,
+  readLocalSyncSourceSecurityPolicy,
+  readSyncManifestFromWorkspace,
+  writeLocalSyncSourceSecurityPolicy,
+} from "./sync-dotagents";
 
 const DEFAULT_BRANCH = "main";
 const SYNC_GIT_NAME = "Skiller Sync";
 const SYNC_GIT_EMAIL = "sync@skiller.local";
-const GIT_REFERENCE_RESOLUTION_TIMEOUT_MS = 12_000;
-const execFileAsync = promisify(execFile);
+const LEGACY_SOURCE_POLICY_FILE = "skiller-source-policy.json";
+export const SYNC_REMOTE_MINIMUM_RELEASE_AGE_MINUTES = 7 * 24 * 60;
 
 export type SyncWorkspaceStatus = {
-	branch: string;
-	changed: boolean;
-	ahead: number;
-	behind: number;
-	remoteUrl: string | null;
+  branch: string;
+  changed: boolean;
+  ahead: number;
+  behind: number;
+  remoteUrl: string | null;
+};
+
+export type SyncWorkspaceRemoteTrustStatus = {
+  required: boolean;
+  remoteIdentity: string | null;
+};
+
+export type SyncWorkspaceRemoteTrustPlan = {
+  kind: "sync-workspace-remote-trust";
+  schemaVersion: 1;
+  planId: string;
+  remoteIdentity: string;
+  sourcePolicy: SourceSecurityPolicy;
 };
 
 function gitAt(workspacePath: string) {
-	return simpleGit(workspacePath);
+  return simpleGit(workspacePath);
 }
 
 function hasGitDirectory(workspacePath: string): boolean {
-	return existsSync(join(workspacePath, ".git"));
+  return existsSync(join(workspacePath, ".git"));
+}
+
+function legacySourcePolicyPath(workspacePath: string): string {
+  return join(workspacePath, ".git", LEGACY_SOURCE_POLICY_FILE);
+}
+
+function readSyncWorkspaceSourcePolicy(
+  workspacePath: string,
+): SourceSecurityPolicy {
+  if (isCanonicalSyncLibrary(workspacePath))
+    return readLocalSyncSourceSecurityPolicy(workspacePath);
+  const policyPath = legacySourcePolicyPath(workspacePath);
+  if (!existsSync(policyPath)) return DENY_ALL_SOURCE_SECURITY_POLICY;
+  try {
+    return parseSourceSecurityPolicy(
+      JSON.parse(readFileSync(policyPath, "utf8")),
+    );
+  } catch {
+    return DENY_ALL_SOURCE_SECURITY_POLICY;
+  }
+}
+
+function writeLegacySyncSourceSecurityPolicy(
+  workspacePath: string,
+  sourcePolicy: SourceSecurityPolicyInput,
+): void {
+  const policyPath = legacySourcePolicyPath(workspacePath);
+  const temporary = `${policyPath}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(
+      temporary,
+      `${JSON.stringify(parseSourceSecurityPolicy(sourcePolicy), null, 2)}\n`,
+      { mode: 0o600 },
+    );
+    renameSync(temporary, policyPath);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+
+function writeSyncWorkspaceSourcePolicy(
+  workspacePath: string,
+  sourcePolicy: SourceSecurityPolicyInput,
+): void {
+  if (isCanonicalSyncLibrary(workspacePath)) {
+    writeLocalSyncSourceSecurityPolicy(workspacePath, sourcePolicy);
+    return;
+  }
+  writeLegacySyncSourceSecurityPolicy(workspacePath, sourcePolicy);
 }
 
 /** Managed worktrees are never renderer-provided paths. */
 export function syncProfilesDirectory(): string {
-	return join(appDataRootPath(), "sync");
+  return join(appDataRootPath(), "sync");
 }
 
 export function syncWorkspacePath(profileId: string): string {
-	assertSyncStableId(profileId);
-	return join(syncProfilesDirectory(), profileId);
+  assertSyncStableId(profileId);
+  return join(syncProfilesDirectory(), profileId);
 }
 
 export function hasSyncWorkspace(profileId: string): boolean {
-	return hasGitDirectory(syncWorkspacePath(profileId));
+  return hasGitDirectory(syncWorkspacePath(profileId));
 }
 
-export async function initializeSyncWorkspace(workspacePath: string, remoteUrl?: string | null): Promise<void> {
-	if (remoteUrl) assertCredentialFreeGitRemote(remoteUrl);
-	if (isCanonicalSyncLibrary(workspacePath)) {
-		await applyLibraryGitInitialization(
-			await planLibraryGitInitialization(workspacePath, remoteUrl ?? undefined),
-		);
-		return;
-	}
-	mkdirSync(workspacePath, { recursive: true });
-	if (!hasGitDirectory(workspacePath)) {
-		const entries = readdirSync(workspacePath);
-		if (entries.length > 0) throw new Error(`Sync workspace must be empty before initialization: ${workspacePath}`);
-		const git = gitAt(workspacePath);
-		await git.raw(["init", "--initial-branch", DEFAULT_BRANCH]);
-		// The identity is deliberately non-personal. A future profile may offer an
-		// explicit opt-in identity, but backup should not leak one by default.
-		await git.raw(["config", "user.name", SYNC_GIT_NAME]);
-		await git.raw(["config", "user.email", SYNC_GIT_EMAIL]);
-	}
-	if (remoteUrl) await setSyncWorkspaceRemote(workspacePath, remoteUrl);
+export async function initializeSyncWorkspace(
+  workspacePath: string,
+  remoteUrl?: string | null,
+  sourcePolicy: SourceSecurityPolicyInput = {},
+): Promise<void> {
+  if (remoteUrl) {
+    assertCredentialFreeGitRemote(remoteUrl);
+    requireTrustedSource(remoteUrl, sourcePolicy);
+  }
+  if (isCanonicalSyncLibrary(workspacePath)) {
+    await applyLibraryGitInitialization(
+      await planLibraryGitInitialization(workspacePath, remoteUrl ?? undefined),
+    );
+    if (remoteUrl)
+      writeLocalSyncSourceSecurityPolicy(workspacePath, sourcePolicy);
+    return;
+  }
+  mkdirSync(workspacePath, { recursive: true });
+  if (!hasGitDirectory(workspacePath)) {
+    const entries = readdirSync(workspacePath);
+    if (entries.length > 0)
+      throw new Error(
+        `Sync workspace must be empty before initialization: ${workspacePath}`,
+      );
+    const git = gitAt(workspacePath);
+    await git.raw(["init", "--initial-branch", DEFAULT_BRANCH]);
+    // The identity is deliberately non-personal. A future profile may offer an
+    // explicit opt-in identity, but backup should not leak one by default.
+    await git.raw(["config", "user.name", SYNC_GIT_NAME]);
+    await git.raw(["config", "user.email", SYNC_GIT_EMAIL]);
+  }
+  if (remoteUrl)
+    await setSyncWorkspaceRemote(workspacePath, remoteUrl, sourcePolicy);
 }
 
-export async function planSyncWorkspaceClone(remoteUrl: string, workspacePath: string): Promise<GitClonePlan> {
-	assertCredentialFreeGitRemote(remoteUrl);
-	const portableRemote = isAbsolute(remoteUrl) ? pathToFileURL(remoteUrl).href : remoteUrl;
-	return planLibraryClone(portableRemote, workspacePath);
+export async function planSyncWorkspaceClone(
+  remoteUrl: string,
+  workspacePath: string,
+  sourcePolicy: SourceSecurityPolicyInput,
+): Promise<GitClonePlan> {
+  assertCredentialFreeGitRemote(remoteUrl);
+  requireTrustedSource(remoteUrl, sourcePolicy);
+  const portableRemote = isAbsolute(remoteUrl)
+    ? pathToFileURL(remoteUrl).href
+    : remoteUrl;
+  return planLibraryClone(portableRemote, workspacePath, sourcePolicy);
 }
 
 export async function cloneSyncWorkspace(
-	remoteUrl: string,
-	workspacePath: string,
-	expectedPlanId?: string,
+  remoteUrl: string,
+  workspacePath: string,
+  sourcePolicy: SourceSecurityPolicyInput,
+  expectedPlanId?: string,
 ): Promise<void> {
-	assertCredentialFreeGitRemote(remoteUrl);
-	if (existsSync(workspacePath) && readdirSync(workspacePath).length > 0) {
-		throw new Error(`Sync workspace must be empty before clone: ${workspacePath}`);
-	}
-	const plan = await planSyncWorkspaceClone(remoteUrl, workspacePath);
-	if (expectedPlanId && plan.planId !== expectedPlanId) {
-		throw new Error("Clone destination or remote changed after review. Review the connection again.");
-	}
-	try {
-		await applyLibraryClone(plan);
-		return;
-	} catch {
-		// Existing Skiller profiles predate the canonical dotagent manifest. Fall
-		// back only to preserve those repositories; the caller still validates the
-		// legacy manifest before exposing the clone as a profile.
-	}
-	await simpleGit().clone(plan.remote, workspacePath);
-	const git = gitAt(workspacePath);
-	// A newly created bare/self-hosted remote can still advertise `master` as
-	// HEAD even after a client pushed `main`. Sync profiles always use main, so
-	// restore it explicitly instead of accepting an empty checkout.
-	await git.checkout(["-B", DEFAULT_BRANCH, `origin/${DEFAULT_BRANCH}`]);
-	await git.raw(["config", "user.name", SYNC_GIT_NAME]);
-	await git.raw(["config", "user.email", SYNC_GIT_EMAIL]);
+  assertCredentialFreeGitRemote(remoteUrl);
+  requireTrustedSource(remoteUrl, sourcePolicy);
+  if (existsSync(workspacePath) && readdirSync(workspacePath).length > 0) {
+    throw new Error(
+      `Sync workspace must be empty before clone: ${workspacePath}`,
+    );
+  }
+  const plan = await planSyncWorkspaceClone(
+    remoteUrl,
+    workspacePath,
+    sourcePolicy,
+  );
+  if (expectedPlanId && plan.planId !== expectedPlanId) {
+    throw new Error(
+      "Clone destination or remote changed after review. Review the connection again.",
+    );
+  }
+  try {
+    // The shared core checks out only the immutable commit resolved by the
+    // reviewed clone preview. Format validation stays in Skiller so canonical
+    // dotagents and legacy skiller-sync manifests use the same safe transport.
+    await applyGitClonePlan(plan);
+  } catch (error) {
+    rmSync(workspacePath, { recursive: true, force: true });
+    throw error;
+  }
+  const git = gitAt(workspacePath);
+  await git.raw(["config", "user.name", SYNC_GIT_NAME]);
+  await git.raw(["config", "user.email", SYNC_GIT_EMAIL]);
+  writeSyncWorkspaceSourcePolicy(workspacePath, sourcePolicy);
 }
 
-export async function setSyncWorkspaceRemote(workspacePath: string, remoteUrl: string): Promise<void> {
-	assertCredentialFreeGitRemote(remoteUrl);
-	if (isCanonicalSyncLibrary(workspacePath)) {
-		await applyLibraryGitInitialization(await planLibraryGitInitialization(workspacePath, remoteUrl));
-		return;
-	}
-	const git = gitAt(workspacePath);
-	const remotes = await git.getRemotes(true);
-	const origin = remotes.find((remote) => remote.name === "origin");
-	if (origin) {
-		await git.remote(["set-url", "origin", remoteUrl]);
-	} else {
-		await git.addRemote("origin", remoteUrl);
-	}
+export async function setSyncWorkspaceRemote(
+  workspacePath: string,
+  remoteUrl: string,
+  sourcePolicy: SourceSecurityPolicyInput = {},
+): Promise<void> {
+  assertCredentialFreeGitRemote(remoteUrl);
+  requireTrustedSource(remoteUrl, sourcePolicy);
+  if (isCanonicalSyncLibrary(workspacePath)) {
+    await applyLibraryGitInitialization(
+      await planLibraryGitInitialization(workspacePath, remoteUrl),
+    );
+    writeLocalSyncSourceSecurityPolicy(workspacePath, sourcePolicy);
+    return;
+  }
+  const git = gitAt(workspacePath);
+  const remotes = await git.getRemotes(true);
+  const origin = remotes.find((remote) => remote.name === "origin");
+  if (origin) {
+    await git.remote(["set-url", "origin", remoteUrl]);
+  } else {
+    await git.addRemote("origin", remoteUrl);
+  }
+  writeLegacySyncSourceSecurityPolicy(workspacePath, sourcePolicy);
 }
 
-export async function getSyncWorkspaceStatus(workspacePath: string): Promise<SyncWorkspaceStatus> {
-	if (isCanonicalSyncLibrary(workspacePath)) {
-		const status = await getLibraryGitStatus(workspacePath);
-		return { branch: status.branch, changed: status.changed, ahead: status.ahead, behind: status.behind, remoteUrl: status.remoteIdentity };
-	}
-	const git = gitAt(workspacePath);
-	const [status, remotes] = await Promise.all([git.status(), git.getRemotes(true)]);
-	const origin = remotes.find((remote) => remote.name === "origin");
-	return {
-		branch: status.current || DEFAULT_BRANCH,
-		changed: !status.isClean(),
-		ahead: status.ahead,
-		behind: status.behind,
-		remoteUrl: origin?.refs.fetch ?? null,
-	};
+export async function getSyncWorkspaceStatus(
+  workspacePath: string,
+): Promise<SyncWorkspaceStatus> {
+  if (isCanonicalSyncLibrary(workspacePath)) {
+    const status = await getLibraryGitStatus(workspacePath);
+    return {
+      branch: status.branch,
+      changed: status.changed,
+      ahead: status.ahead,
+      behind: status.behind,
+      remoteUrl: status.remoteIdentity,
+    };
+  }
+  const git = gitAt(workspacePath);
+  const [status, remotes] = await Promise.all([
+    git.status(),
+    git.getRemotes(true),
+  ]);
+  const origin = remotes.find((remote) => remote.name === "origin");
+  return {
+    branch: status.current || DEFAULT_BRANCH,
+    changed: !status.isClean(),
+    ahead: status.ahead,
+    behind: status.behind,
+    remoteUrl: origin?.refs.fetch ?? null,
+  };
 }
 
-export async function commitSyncWorkspace(workspacePath: string, message: string): Promise<string | null> {
-	if (isCanonicalSyncLibrary(workspacePath)) {
-		const visibility = readSyncManifestFromWorkspace(workspacePath).profile.mode;
-		const plan = await planLibraryCommit(workspacePath, message, visibility);
-		if (plan.hasBlockers) {
-			const detail = plan.secretFindings.length > 0
-				? `${plan.secretFindings.length} possible secret(s)`
-				: plan.unsafePaths.length > 0
-					? `unsafe portable paths: ${plan.unsafePaths.join(", ")}`
-					: plan.auditErrors.map((issue) => issue.message).join("; ");
-			throw new Error(`Canonical library commit is blocked: ${detail}`);
-		}
-		return applyLibraryCommit(plan);
-	}
-	const git = gitAt(workspacePath);
-	await git.add(["--all"]);
-	const status = await git.status();
-	if (status.isClean()) return null;
-	const result = await git.commit(message);
-	return result.commit;
+/** Inspect only local Git/config state. This function never contacts the remote. */
+export async function inspectSyncWorkspaceRemoteTrust(
+  workspacePath: string,
+): Promise<SyncWorkspaceRemoteTrustStatus> {
+  const remoteIdentity = (await getSyncWorkspaceStatus(workspacePath))
+    .remoteUrl;
+  if (!remoteIdentity) return { required: false, remoteIdentity: null };
+  try {
+    requireTrustedSource(
+      remoteIdentity,
+      readSyncWorkspaceSourcePolicy(workspacePath),
+    );
+    return { required: false, remoteIdentity };
+  } catch {
+    return { required: true, remoteIdentity };
+  }
+}
+
+/** Build a deterministic, network-free one-time review for an existing profile. */
+export async function planSyncWorkspaceRemoteTrust(
+  workspacePath: string,
+  minimumReleaseAgeMinutes = SYNC_REMOTE_MINIMUM_RELEASE_AGE_MINUTES,
+): Promise<SyncWorkspaceRemoteTrustPlan> {
+  const remoteIdentity = (await getSyncWorkspaceStatus(workspacePath))
+    .remoteUrl;
+  if (!remoteIdentity) throw new Error("Sync workspace has no origin remote");
+  assertCredentialFreeGitRemote(remoteIdentity);
+  const sourcePolicy = exactSourceSecurityPolicy([remoteIdentity], {
+    minimum_release_age_minutes: minimumReleaseAgeMinutes,
+  });
+  const trust = requireTrustedSource(remoteIdentity, sourcePolicy);
+  const payload = {
+    kind: "sync-workspace-remote-trust" as const,
+    schemaVersion: 1 as const,
+    remoteIdentity: trust.source,
+    sourcePolicy,
+  };
+  return { ...payload, planId: computePlanId(payload) };
+}
+
+/** Persist only the exact remote shown by the reviewed plan; no fetch occurs here. */
+export async function applySyncWorkspaceRemoteTrust(
+  workspacePath: string,
+  expectedPlanId: string,
+  minimumReleaseAgeMinutes = SYNC_REMOTE_MINIMUM_RELEASE_AGE_MINUTES,
+): Promise<void> {
+  const plan = await planSyncWorkspaceRemoteTrust(
+    workspacePath,
+    minimumReleaseAgeMinutes,
+  );
+  if (!expectedPlanId || plan.planId !== expectedPlanId) {
+    throw new Error(
+      "The library remote changed after review. Review it again before allowing network access.",
+    );
+  }
+  writeSyncWorkspaceSourcePolicy(workspacePath, plan.sourcePolicy);
+}
+
+export async function commitSyncWorkspace(
+  workspacePath: string,
+  message: string,
+): Promise<string | null> {
+  if (isCanonicalSyncLibrary(workspacePath)) {
+    const visibility =
+      readSyncManifestFromWorkspace(workspacePath).profile.mode;
+    const plan = await planLibraryCommit(workspacePath, message, visibility);
+    if (plan.hasBlockers) {
+      const detail =
+        plan.secretFindings.length > 0
+          ? `${plan.secretFindings.length} possible secret(s)`
+          : plan.unsafePaths.length > 0
+            ? `unsafe portable paths: ${plan.unsafePaths.join(", ")}`
+            : plan.auditErrors.map((issue) => issue.message).join("; ");
+      throw new Error(`Canonical library commit is blocked: ${detail}`);
+    }
+    return applyLibraryCommit(plan);
+  }
+  const git = gitAt(workspacePath);
+  await git.add(["--all"]);
+  const status = await git.status();
+  if (status.isClean()) return null;
+  const result = await git.commit(message);
+  return result.commit;
 }
 
 /**
@@ -185,58 +383,102 @@ export async function commitSyncWorkspace(workspacePath: string, message: string
  * Fetching updates only Git's remote-tracking metadata; it never merges,
  * writes a managed skill, commits, or pushes.
  */
-export async function refreshSyncWorkspaceStatus(workspacePath: string): Promise<void> {
-	if (isCanonicalSyncLibrary(workspacePath)) {
-		await fetchLibrary(workspacePath);
-		return;
-	}
-	const git = gitAt(workspacePath).env({ GIT_TERMINAL_PROMPT: "0" });
-	await git.raw(["-c", "credential.interactive=false", "fetch", "origin", "--prune", "--no-tags"]);
+export async function refreshSyncWorkspaceStatus(
+  workspacePath: string,
+): Promise<void> {
+  const sourcePolicy = readSyncWorkspaceSourcePolicy(workspacePath);
+  if (isCanonicalSyncLibrary(workspacePath)) {
+    await fetchLibrary(workspacePath, sourcePolicy);
+    return;
+  }
+  const git = gitAt(workspacePath).env({ GIT_TERMINAL_PROMPT: "0" });
+  const remote = await git.remote(["get-url", "origin"]);
+  if (typeof remote !== "string" || !remote.trim())
+    throw new Error("Sync workspace has no origin remote");
+  requireTrustedSource(remote, sourcePolicy);
+  await git.raw([
+    "-c",
+    "credential.interactive=false",
+    "fetch",
+    "origin",
+    "--prune",
+    "--no-tags",
+  ]);
 }
 
 /** Build a remote review without changing the managed checkout's files. */
-export async function planSyncWorkspaceFastForward(workspacePath: string): Promise<GitFastForwardPlan> {
-	return planGitFastForward(workspacePath);
+export async function planSyncWorkspaceFastForward(
+  workspacePath: string,
+): Promise<GitFastForwardPlan> {
+  return planGitFastForward(
+    workspacePath,
+    readSyncWorkspaceSourcePolicy(workspacePath),
+  );
 }
 
 /** Inspect the exact reviewed remote commit in a disposable detached worktree. */
 export async function inspectSyncWorkspaceFastForward<T>(
-	plan: GitFastForwardPlan,
-	inspect: (checkout: string) => T | Promise<T>,
+  plan: GitFastForwardPlan,
+  inspect: (checkout: string) => T | Promise<T>,
 ): Promise<T> {
-	return inspectGitFastForwardPlan(plan, inspect);
+  return inspectGitFastForwardPlan(plan, inspect);
 }
 
 /** Apply only the exact Git state shown by the previous remote review. */
 export async function applyReviewedSyncWorkspaceFastForward(
-	workspacePath: string,
-	expectedPlanId: string,
+  workspacePath: string,
+  expectedPlanId: string,
 ): Promise<string> {
-	const plan = await planGitFastForward(workspacePath);
-	if (!expectedPlanId || plan.planId !== expectedPlanId) {
-		throw new Error("Remote or local Git state changed after review. Review it again before applying changes.");
-	}
-	if (isCanonicalSyncLibrary(workspacePath)) {
-		const visibility = readSyncManifestFromWorkspace(workspacePath).profile.mode;
-		const canonical = await planLibraryPull(workspacePath, visibility);
-		if (canonical.baseHead !== plan.baseHead || canonical.remoteHead !== plan.remoteHead) {
-			throw new Error("Remote or local Git state changed after review. Review it again before applying changes.");
-		}
-		if (canonical.hasBlockers) throw new Error("Remote canonical library did not pass its safety review");
-		return applyLibraryPull(canonical);
-	}
-	return applyGitFastForwardPlan(plan);
+  const sourcePolicy = readSyncWorkspaceSourcePolicy(workspacePath);
+  const plan = await planGitFastForward(workspacePath, sourcePolicy);
+  if (!expectedPlanId || plan.planId !== expectedPlanId) {
+    throw new Error(
+      "Remote or local Git state changed after review. Review it again before applying changes.",
+    );
+  }
+  if (isCanonicalSyncLibrary(workspacePath)) {
+    const visibility =
+      readSyncManifestFromWorkspace(workspacePath).profile.mode;
+    const canonical = await planLibraryPull(
+      workspacePath,
+      visibility,
+      sourcePolicy,
+    );
+    if (
+      canonical.baseHead !== plan.baseHead ||
+      canonical.remoteHead !== plan.remoteHead
+    ) {
+      throw new Error(
+        "Remote or local Git state changed after review. Review it again before applying changes.",
+      );
+    }
+    if (canonical.hasBlockers)
+      throw new Error(
+        "Remote canonical library did not pass its safety review",
+      );
+    return applyLibraryPull(canonical);
+  }
+  return applyGitFastForwardPlan(plan);
 }
 
 /** Push is intentionally separate from commit; callers must show a reviewed plan first. */
-export async function pushSyncWorkspace(workspacePath: string): Promise<void> {
-	if (isCanonicalSyncLibrary(workspacePath)) {
-		await applyLibraryPush(await planLibraryPush(workspacePath));
-		return;
-	}
-	const git = gitAt(workspacePath);
-	const status = await git.status();
-	await git.push(["-u", "origin", `HEAD:${status.current || DEFAULT_BRANCH}`]);
+export async function pushSyncWorkspace(
+  workspacePath: string,
+  explicitSourcePolicy?: SourceSecurityPolicyInput,
+): Promise<void> {
+  const sourcePolicy =
+    explicitSourcePolicy ?? readSyncWorkspaceSourcePolicy(workspacePath);
+  if (isCanonicalSyncLibrary(workspacePath)) {
+    await applyLibraryPush(await planLibraryPush(workspacePath, sourcePolicy));
+    return;
+  }
+  const git = gitAt(workspacePath);
+  const remote = await git.remote(["get-url", "origin"]);
+  if (typeof remote !== "string" || !remote.trim())
+    throw new Error("Sync workspace has no origin remote");
+  requireTrustedSource(remote, sourcePolicy);
+  const status = await git.status();
+  await git.push(["-u", "origin", `HEAD:${status.current || DEFAULT_BRANCH}`]);
 }
 
 /**
@@ -245,36 +487,25 @@ export async function pushSyncWorkspace(workspacePath: string): Promise<void> {
  * Authentication stays in the user's normal Git credential flow; prompts are
  * explicitly disabled because this is called while preparing a UI preview.
  */
-export async function resolveGitReferenceToCommit(repository: string, ref: string): Promise<string> {
-	assertCredentialFreeGitRemote(repository);
-	const requested = ref.trim();
-	if (/^[a-f0-9]{40}$/i.test(requested)) return requested.toLowerCase();
-	if (!requested) throw new Error("An external skill source has no Git revision to pin");
-	let output: string;
-	try {
-		// --refs deliberately omits the symbolic HEAD pseudo-ref. Ask Git for
-		// it explicitly when a Skills CLI lock did not retain a branch/ref.
-		const args = requested === "HEAD"
-			? ["ls-remote", "--symref", repository, "HEAD"]
-			: ["ls-remote", "--refs", repository, requested];
-		const result = await execFileAsync("git", args, {
-			timeout: GIT_REFERENCE_RESOLUTION_TIMEOUT_MS,
-			maxBuffer: 1024 * 1024,
-			env: {
-				...process.env,
-				GIT_TERMINAL_PROMPT: "0",
-				GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o ConnectTimeout=10",
-			},
-		});
-		output = result.stdout;
-	} catch {
-		throw new Error(`Could not resolve ${requested} to an immutable commit. Connect or authenticate, then retry.`);
-	}
-	const commit = requested === "HEAD"
-		? output.match(/^([a-f0-9]{40})\s+HEAD\s*$/m)?.[1]
-		: output.match(/^([a-f0-9]{40})\s/m)?.[1];
-	if (!commit) {
-		throw new Error(`Could not resolve ${requested} to an immutable commit. Check that the source and revision still exist.`);
-	}
-	return commit.toLowerCase();
+export async function resolveGitReferenceToCommit(
+  repository: string,
+  ref: string,
+  sourcePolicy: SourceSecurityPolicyInput,
+): Promise<string> {
+  requireTrustedSource(repository, sourcePolicy);
+  assertCredentialFreeGitRemote(repository);
+  const requested = ref.trim();
+  if (!requested)
+    throw new Error("An external skill source has no Git revision to pin");
+  const unusedDestination = join(
+    tmpdir(),
+    `skiller-ref-review-${randomUUID()}`,
+  );
+  const plan = await planGitCheckout(
+    repository,
+    unusedDestination,
+    requested,
+    sourcePolicy,
+  );
+  return plan.resolvedCommit;
 }

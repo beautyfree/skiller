@@ -1,4 +1,4 @@
-import type { ImportDecision, ImportDisposition } from "@beautyfree/dotagent/decisions";
+import type { ImportDecision, ImportDisposition } from "dotagents/decisions";
 
 /** Shared JSON types — SkillSource uses Rust default (externally tagged enum) */
 export type SkillSourceJson =
@@ -84,8 +84,8 @@ export type RuntimeAgentJson = {
   source: "AI_AGENT" | "@vercel/detect-agent";
 } | null;
 
-/** Read-only dotagent detector output; no machine path evidence crosses IPC. */
-export type DotagentMachineInventoryJson = {
+/** Read-only dotagents detector output; no machine path evidence crosses IPC. */
+export type DotagentsMachineInventoryJson = {
   platform: "darwin" | "linux" | "win32";
   detected_slugs: string[];
   agents: {
@@ -96,7 +96,7 @@ export type DotagentMachineInventoryJson = {
   }[];
 };
 
-export type DotagentDoctorJson = {
+export type DotagentsDoctorJson = {
   ok: boolean;
   library: {
     name: string;
@@ -105,7 +105,7 @@ export type DotagentDoctorJson = {
     dependency_count: number;
     locked: boolean;
   } | null;
-  machine: DotagentMachineInventoryJson | null;
+  machine: DotagentsMachineInventoryJson | null;
   issues: {
     code: string;
     severity: "error" | "warning" | "info";
@@ -115,7 +115,7 @@ export type DotagentDoctorJson = {
   }[];
 };
 
-export type DotagentMaterializationStatusJson = {
+export type DotagentsMaterializationStatusJson = {
   targets: {
     agent_slug: string;
     skill_id: string;
@@ -124,8 +124,8 @@ export type DotagentMaterializationStatusJson = {
   }[];
 };
 
-/** Shared dotagent discovery output with every machine path removed. */
-export type DotagentSkillDiscoveryJson = {
+/** Shared dotagents discovery output with every machine path removed. */
+export type DotagentsSkillDiscoveryJson = {
   skills: {
     candidate_key: string;
     name: string;
@@ -148,14 +148,14 @@ export type DotagentSkillDiscoveryJson = {
   linked_aliases: number;
 };
 
-export type DotagentAuditJson = {
+export type DotagentsAuditJson = {
   ok: boolean;
   public_ready: boolean;
   library: { name: string; version: string; owned_skill_count: number; dependency_count: number } | null;
   issues: { code: string; severity: "error" | "warning" | "info"; message: string; remediation: string; field?: string }[];
 };
 
-export type DotagentImportPlanJson = {
+export type DotagentsImportPlanJson = {
   plan_id: string;
   has_conflicts: boolean;
   requires_resolve: boolean;
@@ -307,6 +307,8 @@ export type SyncSecretFindingJson = {
 export type SyncPublishPreviewJson = {
   /** Stable identifier of the exact source/manifest preview. */
   plan_id: string;
+  /** Pre-network authorization bound to the reviewed exact source set and policy. */
+  source_authorization_id: string;
   profile_id: string;
   mode: "private" | "team" | "public";
   skills: {
@@ -320,6 +322,23 @@ export type SyncPublishPreviewJson = {
   references: { id: string; repository: string; ref: string; skill_path: string }[];
   /** Dependencies installed through skills.sh, pinned before publication. */
   skills_sh: { id: string; source_url: string; ref: string; skill_path: string }[];
+  /** Exact device-reviewed sources contacted while building this preview. */
+  source_trust: {
+    source: string;
+    kind: "git" | "local";
+    rule: "allow-all" | "repository" | "host" | "github-organization" | "local-repository";
+  }[];
+  /** Device-only cooling-off policy and value-redacted commit-age evidence. */
+  source_security: {
+    minimum_release_age_minutes: number;
+    commit_ages: {
+      source: string;
+      committed_at: string;
+      age_minutes: number;
+      minimum_age_minutes: number;
+      excluded: boolean;
+    }[];
+  };
   decisions: {
     candidate_key: string;
     disposition: Exclude<ImportDisposition, "suggested">;
@@ -329,7 +348,13 @@ export type SyncPublishPreviewJson = {
    * External sources that could not be pinned for this attempt. They are
    * deliberately left out of the remote library and untouched locally.
    */
-  unresolved_sources?: { id: string; kind: "reference" | "skills_sh" }[];
+  unresolved_sources?: {
+    id: string;
+    kind: "reference" | "skills_sh";
+    reason: "unverified" | "too-new";
+    age_minutes?: number;
+    minimum_age_minutes?: number;
+  }[];
 };
 
 export type SyncLibraryDecisionJson = ImportDecision;
@@ -344,6 +369,9 @@ export type SyncConnectPreviewJson = {
   profile_id: string;
   plan_id: string;
   remote_identity: string;
+  resolved_commit: string;
+  committed_at: string;
+  minimum_release_age_minutes: number;
   agent_slugs: string[];
 };
 
@@ -366,6 +394,14 @@ export type SyncProfileStatusJson = {
 	last_checked_at: string | null;
 	/** Authentication/network problem from the last check, never credential text. */
 	check_error: string | null;
+	/** True when this device has not yet approved the profile's current remote. */
+	remote_trust_required: boolean;
+};
+
+export type SyncRemoteTrustPreviewJson = {
+	plan_id: string;
+	remote_identity: string;
+	minimum_release_age_minutes: number;
 };
 
 export type SyncInventoryJson = {
@@ -394,7 +430,7 @@ export type SyncThreeWayReviewJson = {
   workspace_plan_id: string;
   /** Stable identifier of the exact no-write reconciliation preview. */
   reconciliation_plan_id: string;
-  reconciliation_engine: "dotagent";
+  reconciliation_engine: "dotagents";
   dependency_changes: {
     dependency: string;
     action: "added" | "updated" | "removed";
@@ -412,6 +448,406 @@ export type SyncThreeWayReviewJson = {
 		/** Present for externally sourced skills so a conflict is actionable. */
 		source?: { repository: string; ref: string };
   }[];
+};
+
+export type SyncHistoryEntryJson = {
+  id: string;
+  operation: string;
+  source_plan_id: string;
+  completed_at: string;
+  undo_available: boolean;
+  changes: { path: string; item_kind: "file" | "skill" }[];
+};
+
+export type SyncUndoPreviewJson = {
+  plan_id: string;
+  history_id: string;
+  source_plan_id: string;
+  has_conflicts: boolean;
+  changes: {
+    path: string;
+    item_kind: "file" | "skill";
+    action: "remove-created" | "restore-previous";
+    reason?: string;
+  }[];
+};
+
+export type DotagentsResourceKindJson = "skill" | "instruction" | "command" | "subagent";
+
+export type DotagentsResourceOverviewJson = {
+  profile_id: string;
+  mode: "private" | "team" | "public";
+  changed: boolean;
+  resources: {
+    key: string;
+    kind: DotagentsResourceKindJson;
+    id: string;
+    path: string;
+    source: "skill-library" | "resource-v2";
+  }[];
+};
+
+export type DotagentsLibraryHealthJson = {
+  profile_id: string;
+  ok: boolean;
+  issues: {
+    code: string;
+    severity: "info" | "warning" | "error";
+    message: string;
+    remediation: string;
+    repairable: boolean;
+  }[];
+};
+
+export type DotagentsLibraryRepairPreviewJson = {
+  profile_id: string;
+  plan_id: string;
+  has_blockers: boolean;
+  actions: {
+    kind: "update-gitignore";
+    path: ".gitignore";
+    add: string[];
+  }[];
+  unsupported: { code: string; reason: string }[];
+};
+
+export type DotagentsScopeProfileJson = {
+  profile_id: string;
+  library: string;
+  scope: "personal" | "project" | null;
+  migration_required: boolean;
+  error: string | null;
+};
+
+export type DotagentsScopeCompositionPreviewJson = {
+  plan_id: string;
+  personal_profile_id: string | null;
+  project_profile_id: string | null;
+  exclusions: string[];
+  resources: {
+    key: string;
+    kind: DotagentsResourceKindJson;
+    id: string;
+    excluded_by_device: boolean;
+    origins: {
+      scope: "personal" | "project";
+      library: string;
+      kind: "owned" | "dependency";
+      resource_kind: DotagentsResourceKindJson;
+    }[];
+  }[];
+  conflicts: {
+    resource_key: string;
+    origins: {
+      scope: "personal" | "project";
+      library: string;
+      kind: "owned" | "dependency";
+      resource_kind: DotagentsResourceKindJson;
+    }[];
+  }[];
+  issues: {
+    code: string;
+    scope: "personal" | "project";
+    library: string;
+    resource_key: string;
+    message: string;
+  }[];
+  has_blockers: boolean;
+};
+
+export type DotagentsScopeCompositionUndoPreviewJson = {
+  plan_id: string;
+  history_id: string;
+  has_conflicts: boolean;
+  target: {
+    personal_profile_id: string | null;
+    project_profile_id: string | null;
+    exclusions: string[];
+  };
+  composition: DotagentsScopeCompositionPreviewJson | null;
+};
+
+export type DotagentsScopeOverviewJson = {
+  profiles: DotagentsScopeProfileJson[];
+  active: DotagentsScopeCompositionPreviewJson | null;
+  active_error: string | null;
+};
+
+export type DotagentsScopeMigrationPreviewJson = {
+  profile_id: string;
+  plan_id: string;
+  library: string;
+  scope: "personal" | "project";
+  file: "dotagents.scope.json";
+  content: { schema_version: 1; scope: "personal" | "project" };
+};
+
+export type DotagentsResourceSelectionJson = {
+  selection_id: string;
+  kind: DotagentsResourceKindJson;
+  name: string;
+  entry_type: "file" | "directory";
+};
+
+export type DotagentsResourceAdoptionRequestJson = {
+  profileId: string;
+  selectionId: string;
+  kind: DotagentsResourceKindJson;
+  id: string;
+  activation?: "always" | "conditional";
+  condition?: string;
+  invocation?: string;
+  role?: string;
+};
+
+export type DotagentsResourceAdoptionPreviewJson = {
+  plan_id: string;
+  profile_id: string;
+  source_name: string;
+  resource: { key: string; kind: DotagentsResourceKindJson; id: string; path: string };
+  files: number;
+  bytes: number;
+  license: { visibility: "private" | "team" | "public"; value: string | null; status: "private-only" | "reviewed" | "blocked" };
+  secret_findings: { rule: string; file: string; line: number; column: number }[];
+  blockers: { code: string; message: string }[];
+};
+
+export type SkillQualityIssueJson = {
+  area: "spec" | "skill" | "evals" | "coverage" | "safety";
+  severity: "error" | "warning" | "info";
+  code: string;
+  message: string;
+  hint?: string;
+  file?: string;
+  line?: number;
+  revealable?: boolean;
+};
+
+export type SkillQualityStatusJson = {
+  /** Opaque device-local identity for same-name skills from different roots. */
+  quality_id: string;
+  skill_id: string;
+  name: string;
+  description: string | null;
+  origin_label: string;
+  state: "ready" | "needs-spec" | "needs-skill" | "stale" | "needs-evals" | "blocked";
+  spec: {
+    present: boolean;
+    valid: boolean;
+    hash: string | null;
+    title: string | null;
+    behavior_count: number;
+    constraint_count: number;
+    behaviors: {
+      id: string;
+      name: string;
+      scenario_count: number;
+      covered_by: string[];
+    }[];
+  };
+  skill: {
+    present: boolean;
+    recorded_spec_hash: string | null;
+    stale: boolean | null;
+  };
+  evals: {
+    case_count: number;
+    covered_behavior_count: number;
+    deterministic_check_count: number;
+    judge_check_count: number;
+    shell_check_count: number;
+    setup_script_count: number;
+  };
+  issues: SkillQualityIssueJson[];
+};
+
+export type SkillQualityOverviewJson = {
+  scanned_at: string;
+  execution: {
+    mode: "structural-only";
+    agent_sessions_started: false;
+    shell_commands_started: false;
+    network_started: false;
+  };
+  summary: {
+    total: number;
+    ready: number;
+    needs_work: number;
+    covered_behaviors: number;
+    total_behaviors: number;
+  };
+  skills: SkillQualityStatusJson[];
+};
+
+export type SkillQualityEvalPreviewRequestJson = {
+  qualityId: string;
+  mode: "dry" | "measured";
+  harness?: "codex" | "claude";
+  model?: string;
+  effort?: "low" | "medium" | "high" | "xhigh";
+  baseline?: boolean;
+  trials?: number;
+  concurrency?: number;
+  sandboxImage?: string;
+  network?: boolean;
+  credentialProfile?: "none" | "codex" | "claude";
+  environmentNames?: string[];
+};
+
+export type SkillQualityEvalPlanJson = {
+  plan_id: string;
+  quality_id: string;
+  skill: { name: string; origin_label: string };
+  mode: "dry" | "measured";
+  artifacts: {
+    snapshot_sha256: string;
+    file_count: number;
+    total_bytes: number;
+    spec_hash: string | null;
+  };
+  cases: {
+    id: string;
+    behavior: string;
+    fixture: string | null;
+    trials: number;
+    timeout_seconds: number;
+    deterministic_checks: number;
+    judge_checks: number;
+    shell_checks: number;
+    has_setup: boolean;
+  }[];
+  harness: {
+    name: "none" | "codex" | "claude";
+    model: string | null;
+    effort: "low" | "medium" | "high" | "xhigh" | null;
+    baseline: boolean;
+    concurrency: number;
+  };
+  sandbox: {
+    kind: "docker";
+    image: string;
+    image_id: string | null;
+    available: boolean;
+    network: boolean;
+    credential_profile: "none" | "codex" | "claude";
+    environment_names: string[];
+    direct_host_fallback: false;
+  };
+  command_review: {
+    case_id: string;
+    kind: "setup" | "shell-check";
+    command: string;
+    file: string;
+  }[];
+  blockers: {
+    code: string;
+    message: string;
+    file?: string;
+    line?: number;
+  }[];
+  report: {
+    resume_id: string;
+    local_destination: string;
+    includes_baseline_lift: boolean;
+  };
+  ready_to_start: boolean;
+};
+
+export type SkillQualityDryRunReportJson = {
+  schema: 1;
+  report_id: string;
+  plan_id: string;
+  quality_id: string;
+  skill: { name: string; origin_label: string };
+  mode: "dry";
+  status: "completed" | "completed-with-findings" | "blocked";
+  started_at: string;
+  completed_at: string;
+  sandbox: {
+    image_id: string;
+    network: false;
+    direct_host_fallback: false;
+  };
+  summary: {
+    cases: number;
+    vacuous: number;
+    requires_action: number;
+    indeterminate: number;
+    errors: number;
+  };
+  cases: {
+    id: string;
+    behavior: string;
+    status: "vacuous" | "requires-action" | "indeterminate" | "error";
+    duration_ms: number;
+    resumed: boolean;
+    checks: {
+      kind: "file_exists" | "shell" | "judge" | "setup";
+      status: "pass" | "fail" | "skipped" | "error";
+      output?: string;
+      output_redacted?: boolean;
+    }[];
+  }[];
+  local_destination: string;
+};
+
+export type SkillQualityMeasuredReportJson = {
+  schema: 1;
+  report_id: string;
+  plan_id: string;
+  quality_id: string;
+  skill: { name: string; origin_label: string };
+  mode: "measured";
+  status: "completed" | "completed-with-failures" | "blocked";
+  started_at: string;
+  completed_at: string;
+  harness: {
+    name: "codex" | "claude";
+    model: string | null;
+    effort: "low" | "medium" | "high" | "xhigh";
+  };
+  sandbox: {
+    image_id: string;
+    network: true;
+    credential_profile: "codex" | "claude";
+    environment_names: string[];
+    direct_host_fallback: false;
+  };
+  summary: {
+    cases: number;
+    trials: number;
+    passed: number;
+    failed: number;
+    errored: number;
+  };
+  behaviors: {
+    behavior: string;
+    skill_pass_rate: number;
+    baseline_pass_rate: number | null;
+    lift: number | null;
+    trials: number;
+  }[];
+  cases: {
+    id: string;
+    behavior: string;
+    skill_pass_rate: number;
+    baseline_pass_rate: number | null;
+    lift: number | null;
+    trials: {
+      variant: "skill" | "baseline";
+      trial: number;
+      status: "pass" | "fail" | "error";
+      duration_ms: number;
+      resumed: boolean;
+      checks: {
+        kind: "file_exists" | "shell" | "judge" | "setup" | "harness";
+        status: "pass" | "fail" | "error";
+        output?: string;
+        output_redacted?: boolean;
+      }[];
+    }[];
+  }[];
+  local_destination: string;
 };
 
 export type SkillSourceParam =
@@ -433,28 +869,40 @@ export type AppRPCSchema = {
       list_agents: { params?: void; response: AgentConfigJson[] };
       detect_agents: { params?: void; response: AgentConfigJson[] };
       detect_runtime_agent: { params?: void; response: RuntimeAgentJson };
-      dotagent_machine_inventory: { params?: void; response: DotagentMachineInventoryJson };
-      dotagent_doctor: { params: { libraryRoot: string }; response: DotagentDoctorJson };
-      dotagent_materialization_status: { params: { libraryRoot: string }; response: DotagentMaterializationStatusJson };
-      dotagent_skill_discovery: { params?: void; response: DotagentSkillDiscoveryJson };
-      dotagent_audit: { params: { libraryRoot: string; visibility: "private" | "team" | "public" }; response: DotagentAuditJson };
-      dotagent_import_plan: {
+      dotagents_machine_inventory: { params?: void; response: DotagentsMachineInventoryJson };
+      dotagents_doctor: { params: { libraryRoot: string }; response: DotagentsDoctorJson };
+      dotagents_materialization_status: { params: { libraryRoot: string }; response: DotagentsMaterializationStatusJson };
+      dotagents_skill_discovery: { params?: void; response: DotagentsSkillDiscoveryJson };
+      dotagents_audit: { params: { libraryRoot: string; visibility: "private" | "team" | "public" }; response: DotagentsAuditJson };
+      dotagents_import_plan: {
         params: {
           libraryRoot: string;
           decisions: { candidateKey: string; disposition: "suggested" | "owned" | "dependency" | "local-only" | "excluded"; reason?: string }[];
         };
-        response: DotagentImportPlanJson;
+        response: DotagentsImportPlanJson;
       };
       read_skills_cli_lock: { params?: void; response: SkillsCliLockJson };
       scan_all_skills: { params?: void; response: SkillJson[] };
       scan_agent_skills: { params: { agentSlug: string }; response: SkillJson[] };
+      skill_quality_overview: { params?: void; response: SkillQualityOverviewJson };
+      skill_quality_reveal_file: { params: { qualityId: string; relativePath: string }; response: void };
+      skill_quality_eval_preview: { params: SkillQualityEvalPreviewRequestJson; response: SkillQualityEvalPlanJson };
+      skill_quality_dry_start: { params: { request: SkillQualityEvalPreviewRequestJson; expectedPlanId: string }; response: SkillQualityDryRunReportJson };
+      skill_quality_measured_start: { params: { request: SkillQualityEvalPreviewRequestJson; expectedPlanId: string }; response: SkillQualityMeasuredReportJson };
       list_sync_profiles: { params?: void; response: SyncProfileStatusJson[] };
 	  refresh_sync_profiles: { params?: void; response: SyncProfileStatusJson[] };
+	  sync_remote_trust_preview: { params: { profileId: string; minimumReleaseAgeMinutes?: number }; response: SyncRemoteTrustPreviewJson };
+	  sync_remote_trust_apply: { params: { profileId: string; planId: string; minimumReleaseAgeMinutes: number }; response: void };
       scan_sync_inventory: { params?: void; response: SyncInventoryJson };
 		get_sync_skill_preview: { params: { skillId: string }; response: SyncSkillPreviewJson };
 		reveal_sync_secret_finding: { params: { skillId: string; relativePath: string }; response: void };
       sync_center_publish_preview: {
-        params?: { selectedKeys?: string[]; decisions?: SyncLibraryDecisionJson[]; mode?: "private" | "public" };
+        params?: {
+          selectedKeys?: string[];
+          decisions?: SyncLibraryDecisionJson[];
+          mode?: "private" | "public";
+          minimumReleaseAgeMinutes?: number;
+        };
         response: SyncPublishPreviewJson;
       };
       sync_center_publish: {
@@ -465,10 +913,60 @@ export type AppRPCSchema = {
           mode: "private" | "public";
           license?: "MIT" | "Apache-2.0" | "CC0-1.0";
           planId: string;
+          sourceAuthorizationId: string;
+          minimumReleaseAgeMinutes: number;
         };
         response: { commit: string | null; pushed: boolean };
       };
       sync_three_way_review: { params: { profileId: string }; response: SyncThreeWayReviewJson };
+      sync_history: { params: { profileId: string }; response: SyncHistoryEntryJson[] };
+      sync_undo_preview: { params: { profileId: string; historyId: string }; response: SyncUndoPreviewJson };
+      sync_undo_apply: {
+        params: { profileId: string; historyId: string; planId: string };
+        response: { restored: string[] };
+      };
+      dotagents_resource_overview: { params: { profileId: string }; response: DotagentsResourceOverviewJson };
+      dotagents_library_health: { params: { profileId: string }; response: DotagentsLibraryHealthJson };
+      dotagents_library_repair_preview: {
+        params: { profileId: string; selectedCodes: string[] };
+        response: DotagentsLibraryRepairPreviewJson;
+      };
+      dotagents_library_repair_apply: {
+        params: { profileId: string; planId: string };
+        response: { history_id: string };
+      };
+      dotagents_scope_overview: { params: Record<string, never>; response: DotagentsScopeOverviewJson };
+      dotagents_scope_migration_preview: {
+        params: { profileId: string; scope: "personal" | "project" };
+        response: DotagentsScopeMigrationPreviewJson;
+      };
+      dotagents_scope_migration_apply: {
+        params: { profileId: string; planId: string };
+        response: { history_id: string };
+      };
+      dotagents_scope_composition_preview: {
+        params: {
+          personalProfileId: string | null;
+          projectProfileId: string | null;
+          exclusions: string[];
+        };
+        response: DotagentsScopeCompositionPreviewJson;
+      };
+      dotagents_scope_composition_apply: {
+        params: { planId: string };
+        response: DotagentsScopeCompositionPreviewJson;
+      };
+      dotagents_scope_composition_undo_preview: {
+        params: Record<string, never>;
+        response: DotagentsScopeCompositionUndoPreviewJson | null;
+      };
+      dotagents_scope_composition_undo_apply: {
+        params: { planId: string };
+        response: DotagentsScopeCompositionPreviewJson | null;
+      };
+      dotagents_resource_pick_source: { params: { kind: DotagentsResourceKindJson }; response: DotagentsResourceSelectionJson | null };
+      dotagents_resource_adopt_preview: { params: DotagentsResourceAdoptionRequestJson; response: DotagentsResourceAdoptionPreviewJson };
+      dotagents_resource_adopt_apply: { params: { planId: string }; response: { history_id: string; resource_key: string } };
       sync_apply_remote_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { restored: string[] } };
 	  sync_apply_conflicting_remote_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { restored: string[] } };
       sync_publish_local_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { commit: string | null; pushed: boolean } };
@@ -478,11 +976,11 @@ export type AppRPCSchema = {
       sync_recovery_status: { params: { profileId: string }; response: { pending: boolean } };
       sync_recovery_rollback: { params: { profileId: string }; response: { recovered: boolean } };
       sync_center_connect: {
-        params: { profileId: string; remoteUrl: string; agentSlugs: string[]; planId: string };
+        params: { profileId: string; remoteUrl: string; agentSlugs: string[]; planId: string; minimumReleaseAgeMinutes: number };
         response: SyncProfileStatusJson;
       };
       sync_center_connect_preview: {
-        params: { remoteUrl: string; agentSlugs: string[] };
+        params: { remoteUrl: string; agentSlugs: string[]; minimumReleaseAgeMinutes: number };
         response: SyncConnectPreviewJson;
       };
       sync_github_create_repo_preview: {

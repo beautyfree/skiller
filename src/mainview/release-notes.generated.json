@@ -1,5 +1,27 @@
 [
   {
+    "version": "0.2.27",
+    "date": "2026-08-07",
+    "sections": [
+      {
+        "title": "Features",
+        "changes": [
+          "add provider-neutral agent library sync (#53)"
+        ]
+      },
+      {
+        "title": "Bug Fixes",
+        "changes": [
+          "**ci:** call release workflow directly",
+          "**ci:** make release handoff deterministic",
+          "**release:** render and deduplicate update notes",
+          "**ui:** polish release notes dialog",
+          "**ui:** polish What’s New release notes"
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.26",
     "date": "2026-07-31",
     "sections": [

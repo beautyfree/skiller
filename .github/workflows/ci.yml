@@ -30,3 +30,15 @@ jobs:
       - run: bun run typecheck
       - run: bun test
       - run: bun run build
+
+  verify-required:
+    name: Verify
+    runs-on: ubuntu-latest
+    needs: verify
+    if: ${{ always() }}
+    steps:
+      - name: Require every platform to pass
+        env:
+          MATRIX_RESULT: ${{ needs.verify.result }}
+        run: |
+          test "$MATRIX_RESULT" = "success"

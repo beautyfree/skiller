@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import path, { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { parse as parseToml, stringify as stringifyToml } from "@iarna/toml";
 import type { AppSettingsJson, RepoEntryJson } from "../shared/rpc-schema";
@@ -10,24 +10,30 @@ const TEST_APP_DATA_ROOT_ENV = "SKILLER_TEST_DATA_ROOT";
 
 type Platform = NodeJS.Platform;
 
-function testAppDataRootPath(env: NodeJS.ProcessEnv): string | null {
+function pathApiFor(platform: Platform): typeof path.posix {
+	return platform === "win32" ? path.win32 : path.posix;
+}
+
+function testAppDataRootPath(platform: Platform, env: NodeJS.ProcessEnv): string | null {
 	const configured = env[TEST_APP_DATA_ROOT_ENV]?.trim();
 	if (!configured) return null;
-	if (!isAbsolute(configured)) {
+	const paths = pathApiFor(platform);
+	if (!paths.isAbsolute(configured)) {
 		throw new Error(`${TEST_APP_DATA_ROOT_ENV} must be an absolute path`);
 	}
-	return resolve(configured);
+	return paths.resolve(configured);
 }
 
 /** Native data roots for the platforms that do not conventionally use dotfiles. */
 export function appDataRootPathFor(platform: Platform, home: string, env: NodeJS.ProcessEnv): string {
-	const testRoot = testAppDataRootPath(env);
+	const paths = pathApiFor(platform);
+	const testRoot = testAppDataRootPath(platform, env);
 	if (testRoot) return testRoot;
-	if (platform === "win32") return join(env.APPDATA || join(home, "AppData", "Roaming"), "Skiller");
-	if (platform === "linux") return join(env.XDG_DATA_HOME || join(home, ".local", "share"), "skiller");
+	if (platform === "win32") return paths.join(env.APPDATA || paths.join(home, "AppData", "Roaming"), "Skiller");
+	if (platform === "linux") return paths.join(env.XDG_DATA_HOME || paths.join(home, ".local", "share"), "skiller");
 	// Keep the established macOS location: moving it would collide with
 	// Electron's unrelated userData directory on existing installations.
-	return join(home, APP_DATA_DIR);
+	return paths.join(home, APP_DATA_DIR);
 }
 
 function legacyAppDataRootPath(): string {
@@ -52,7 +58,7 @@ export function appDataRootPath(): string {
 	// Live packaged-app QA needs an isolated profile without ever moving or
 	// mutating the user's established ~/.skiller data. The deliberately named,
 	// absolute-only override bypasses legacy migration for that reason.
-	const testRoot = testAppDataRootPath(process.env);
+	const testRoot = testAppDataRootPath(process.platform, process.env);
 	if (testRoot) return testRoot;
 	return migrateLegacyRoot(appDataRootPathFor(process.platform, homedir(), process.env));
 }

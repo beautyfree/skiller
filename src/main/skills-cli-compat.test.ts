@@ -57,8 +57,8 @@ describe("Skills CLI compatibility", () => {
 	});
 
 	it("uses the documented XDG lock location", () => {
-		expect(getSkillsCliLockPath({ XDG_STATE_HOME: "/state" }, "/home/test")).toBe("/state/skills/.skill-lock.json");
-		expect(getSkillsCliLockPath({}, "/home/test")).toBe("/home/test/.agents/.skill-lock.json");
+		expect(getSkillsCliLockPath({ XDG_STATE_HOME: "/state" }, "/home/test")).toBe(join("/state", "skills", ".skill-lock.json"));
+		expect(getSkillsCliLockPath({}, "/home/test")).toBe(join("/home/test", ".agents", ".skill-lock.json"));
 	});
 
 	it("does not guess an unrecognised Skills CLI lockfile schema", () => {

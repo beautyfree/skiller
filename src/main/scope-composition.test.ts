@@ -8,6 +8,12 @@ import { ScopeCompositionSession, type ScopeProfileReference } from './scope-com
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
+function expectPrivateLocalFile(file: string): void {
+  // NTFS ACLs do not have POSIX mode bits. The implementation still requests
+  // 0600, but only POSIX hosts can meaningfully assert the resulting mode.
+  if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600)
+}
+
 function fixture(): {
   root: string
   stateFile: string
@@ -103,7 +109,7 @@ describe('Skiller scope composition adapter', () => {
       project_profile_id: 'project-kit',
       exclusions: ['skill:beta'],
     })
-    expect(statSync(current.stateFile).mode & 0o777).toBe(0o600)
+    expectPrivateLocalFile(current.stateFile)
     expect((await adapter.overview(current.profiles)).active?.resources).toEqual(preview.resources)
   })
 
@@ -143,7 +149,7 @@ describe('Skiller scope composition adapter', () => {
     })
     expect(JSON.stringify(undo)).not.toContain(current.root)
     const historyPath = current.stateFile + '.history.json'
-    expect(statSync(historyPath).mode & 0o777).toBe(0o600)
+    expectPrivateLocalFile(historyPath)
     expect(JSON.parse(readFileSync(historyPath, 'utf8')).records).toHaveLength(1)
 
     await adapter.applyCompositionUndo(undo!.plan_id, current.profiles)

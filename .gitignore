@@ -45,7 +45,7 @@ artifacts
 .claude/
 .cursor/
 .playwright-mcp/
+.gstack/
 
 # OS files
 Thumbs.db
-

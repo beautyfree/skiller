@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   Trash2,
@@ -14,9 +13,7 @@ import {
 } from 'lucide-react'
 import { openUrl, invoke, listen } from '@/mainview/lib/native'
 import { setTelemetryEnabled } from '@/mainview/lib/telemetry'
-import type {
-  AppUpdateStatusJson,
-} from '@/shared/rpc-schema'
+import type { AppUpdateStatusJson } from '@/shared/rpc-schema'
 import { useAccentColor } from '@/mainview/hooks/useAccentColor'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/mainview/components/ui/button'
@@ -47,6 +44,16 @@ const LANGUAGES = [
   { code: 'en', label: 'English' },
 ]
 
+const SETTINGS_SECTIONS = [
+  ['general', 'General'],
+  ['appearance', 'Appearance'],
+  ['library', 'Library sources'],
+  ['updates', 'Updates'],
+  ['about', 'About'],
+] as const
+
+type SettingsSection = typeof SETTINGS_SECTIONS[number][0]
+
 function isMacDesktopUa(): boolean {
   if (typeof navigator === 'undefined') return false
   const ua = navigator.userAgent
@@ -59,6 +66,7 @@ export default function SettingsPage() {
   const queryClient = useQueryClient()
   const isMacDesktop = isMacDesktopUa()
   const [cacheCleared, setCacheCleared] = useState(false)
+  const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSection>('appearance')
   const { accent, setAccent, presets } = useAccentColor()
   const { data: repos } = useRepos()
   const removeRepo = useRemoveRepo()
@@ -69,21 +77,6 @@ export default function SettingsPage() {
   const [updateBusy, setUpdateBusy] = useState<
     'idle' | 'checking' | 'downloading' | 'applying'
   >('idle')
-  const [searchParams] = useSearchParams()
-
-  // Scroll to the section named by `?section=<id>` after mount. Used when the
-  // footer sync indicator or SyncBanner deep-links here.
-  useEffect(() => {
-    const section = searchParams.get('section')
-    if (!section) return
-    // Wait a tick so the section has rendered (data fetches inside may still be
-    // pending but the target <section id> is always in the initial DOM tree).
-    const t = setTimeout(() => {
-      const el = document.getElementById(section)
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 50)
-    return () => clearTimeout(t)
-  }, [searchParams])
 
   useEffect(() => {
     invoke('get_app_version')
@@ -282,16 +275,21 @@ export default function SettingsPage() {
   const currentLang = i18n.language
 
   return (
-    <div className="settings-page flex min-h-full w-full justify-center px-6 py-8 pb-10 animate-fade-in-up">
-      <div className="w-full max-w-[560px] space-y-5">
-        <header className="pb-1">
+    <div className="settings-page min-h-full w-full px-6 py-8 pb-10 animate-fade-in-up">
+      <div className="mx-auto grid w-full max-w-4xl gap-x-8 gap-y-5 md:grid-cols-[10.5rem_minmax(0,1fr)]">
+        <header className="pb-1 md:col-start-2">
           <h1 className="text-[15px] font-semibold leading-5 tracking-[-0.015em] text-foreground">
             {t('sidebar.settings')}
           </h1>
         </header>
-
+        <aside className="h-fit border-b border-border/60 pb-4 md:sticky md:top-8 md:border-b-0 md:border-r md:pr-5">
+          <nav className="flex gap-0.5 overflow-x-auto md:flex-col" aria-label="Settings sections">
+            {SETTINGS_SECTIONS.map(([id, label]) => <button key={id} type="button" onClick={() => { setActiveSettingsSection(id); document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} className={`min-h-[28px] shrink-0 rounded-md border border-transparent px-3 py-1.5 text-left text-[13px] font-[510] leading-[18px] outline-none transition-[color,background-color,border-color,box-shadow,opacity] duration-150 focus-visible:ring-2 focus-visible:ring-ring/50 ${activeSettingsSection === id ? 'bg-black/[0.05] text-foreground dark:bg-white/[0.09] dark:text-foreground' : 'text-sidebar-foreground/80 hover:bg-black/[0.04] hover:text-foreground dark:hover:bg-white/[0.05]'}`}>{label}</button>)}
+          </nav>
+        </aside>
+        <main className="min-w-0 space-y-5">
         {/* Theme */}
-        <section className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
+        {activeSettingsSection === 'appearance' && <><section id="appearance" className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <h2 className="text-sm font-medium">{t('settings.theme')}</h2>
@@ -411,10 +409,10 @@ export default function SettingsPage() {
               </div>
             </div>
           </section>
-        )}
+        )}</>}
 
         {/* Language */}
-        <section className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
+        {activeSettingsSection === 'general' && <><section id="general" className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <h2 className="text-sm font-medium">{t('settings.language')}</h2>
@@ -507,10 +505,10 @@ export default function SettingsPage() {
               })}
             </div>
           </div>
-        </section>
+        </section></>}
 
         {/* App Updates */}
-        <section className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
+        {activeSettingsSection === 'updates' && <section id="updates" className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <h2 className="text-sm font-medium">
@@ -676,11 +674,11 @@ export default function SettingsPage() {
               {t('settings.viewReleaseNotes')}
             </Button>
           </div>
-        </section>
+        </section>}
 
 
         {/* Onboarding replay */}
-        <section className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
+        {activeSettingsSection === 'general' && <section className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <h2 className="text-sm font-medium">
@@ -709,10 +707,10 @@ export default function SettingsPage() {
               {t('settings.onboardingReplay')}
             </Button>
           </div>
-        </section>
+        </section>}
 
         {/* Cache */}
-        <section className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
+        {activeSettingsSection === 'library' && <><section id="library" className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <h2 className="text-sm font-medium">
@@ -829,10 +827,10 @@ export default function SettingsPage() {
               </p>
             </div>
           )}
-        </section>
+        </section></>}
 
         {/* About */}
-        <section className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
+        {activeSettingsSection === 'about' && <section id="about" className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
           <h2 className="text-sm font-medium flex items-center gap-1.5">
             <Info className="size-4" />
             {t('settings.about')}
@@ -857,7 +855,8 @@ export default function SettingsPage() {
             github.com/beautyfree/skiller
             <ExternalLink className="size-3" />
           </button>
-        </section>
+        </section>}
+        </main>
       </div>
 
     </div>

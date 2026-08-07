@@ -8,6 +8,8 @@ export type SkillSource =
 	| { kind: "Unknown" };
 
 export type SkillScope =
+	/** The canonical ~/.agents/skills library, owned by the user rather than an agent. */
+	| { kind: "SharedLibrary" }
 	| { kind: "SharedGlobal" }
 	| { kind: "AgentLocal"; agent: string };
 
@@ -15,6 +17,7 @@ export interface SkillInstallation {
 	agent_slug: string;
 	path: string;
 	is_symlink: boolean;
+	/** Deprecated compatibility field. New scans always emit false. */
 	is_inherited: boolean;
 	inherited_from?: string | null;
 }

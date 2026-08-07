@@ -5,11 +5,13 @@ export interface SkillInstallation {
   agent_slug: string;
   path: string;
   is_symlink: boolean;
+	/** Deprecated compatibility field. New scans always return false. */
   is_inherited: boolean;
   inherited_from: string | null;
 }
 
 export type SkillScope =
+	| { type: "SharedLibrary" }
   | { type: "SharedGlobal" }
   | { type: "AgentLocal"; agent: string };
 
@@ -34,14 +36,10 @@ export interface Skill {
   bundled_path?: string | null;
 }
 
-/** Direct (non-inherited) agent slugs */
 export function installedAgents(skill: Skill): string[] {
-  return skill.installations
-    .filter((i) => !i.is_inherited)
-    .map((i) => i.agent_slug);
+  return skill.installations.map((i) => i.agent_slug);
 }
 
-/** All agent slugs including inherited */
 export function allAgents(skill: Skill): string[] {
   return skill.installations.map((i) => i.agent_slug);
 }

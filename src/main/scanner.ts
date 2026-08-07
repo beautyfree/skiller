@@ -6,6 +6,7 @@ import type { AgentConfig } from "./types";
 import { parseSkillMdFile } from "./parser";
 import { readProvenanceRaw } from "./provenance";
 import { isSymlink, resolveCanonical } from "./fsutil";
+import { sharedSkillsDir } from "./shared-skills";
 import type { Skill, SkillInstallation, SkillScope, SkillSource } from "./skill-types";
 
 export type SkillCandidate = {
@@ -188,17 +189,12 @@ function mergeSkill(dedup: Map<string, Skill>, key: string, incoming: Skill): vo
 			const dominated = existing.installations.some((e) => e.agent_slug === inst.agent_slug);
 			if (!dominated) existing.installations.push(inst);
 		}
-		const distinct = new Set(
-			existing.installations.filter((i) => !i.is_inherited).map((i) => i.agent_slug),
-		);
-		if (distinct.size > 1) {
-			existing.scope = { kind: "SharedGlobal" };
-		}
 		return;
 	}
 	dedup.set(key, incoming);
 }
 
+/** A non-shared readable path is an explicit agent-to-agent link. */
 function scanInheritedRoot(
 	root: string,
 	agent: AgentConfig,
@@ -213,25 +209,13 @@ function scanInheritedRoot(
 		let parsed;
 		try {
 			parsed = parseSkillMdFile(skillMd);
-		} catch (e) {
-			console.error(`skipping ${skillMd}:`, e);
+		} catch {
 			continue;
 		}
 		if (parsed.description == null) continue;
-
 		const dirName = basename(skillDir);
-		const collection = detectCollection(skillDir, root);
 		const skillName = parsed.name ?? dirName;
 		const fp = listingFootprintFromParsed(parsed, skillName, dirName);
-
-		const installation: SkillInstallation = {
-			agent_slug: agent.slug,
-			path: skillDir,
-			is_symlink: isSymlink(skillDir),
-			is_inherited: true,
-			inherited_from: sourceAgent,
-		};
-
 		mergeSkill(dedup, dirName, {
 			id: dirName,
 			name: skillName,
@@ -240,9 +224,9 @@ function scanInheritedRoot(
 			canonical_path: canonical,
 			source: resolveSource(dirName, canonical, provenance),
 			metadata: parsed.metadata,
-			collection,
-			scope: { kind: "SharedGlobal" },
-			installations: [installation],
+			collection: detectCollection(skillDir, root),
+			scope: { kind: "AgentLocal", agent: sourceAgent },
+			installations: [{ agent_slug: agent.slug, path: skillDir, is_symlink: isSymlink(skillDir), is_inherited: true, inherited_from: sourceAgent }],
 			bundled_path: (provenance[dirName]?.bundled_path as string | undefined) ?? null,
 		});
 	}
@@ -300,9 +284,52 @@ function scanSkillMdRoot(
 	}
 }
 
-export function scanAllSkills(configs: AgentConfig[]): Skill[] {
+/**
+ * ~/.agents/skills is a library owned by the user, not by every agent that
+ * understands the universal path. Agent links are discovered separately from
+ * their own global folders and remain explicit installations.
+ */
+function scanSharedRoot(
+	root: string,
+	dedup: Map<string, Skill>,
+	provenance: Record<string, Record<string, unknown>>,
+): void {
+	for (const skillDir of collectSkillRoots(root)) {
+		const canonical = resolveCanonical(skillDir);
+		const skillMd = join(canonical, "SKILL.md");
+		if (!existsSync(skillMd)) continue;
+		let parsed;
+		try {
+			parsed = parseSkillMdFile(skillMd);
+		} catch (e) {
+			console.error(`skipping ${skillMd}:`, e);
+			continue;
+		}
+		if (parsed.description == null) continue;
+
+		const dirName = basename(skillDir);
+		const skillName = parsed.name ?? dirName;
+		const fp = listingFootprintFromParsed(parsed, skillName, dirName);
+		mergeSkill(dedup, dirName, {
+			id: dirName,
+			name: skillName,
+			description: parsed.description,
+			...fp,
+			canonical_path: canonical,
+			source: resolveSource(dirName, canonical, provenance),
+			metadata: parsed.metadata,
+			collection: detectCollection(skillDir, root),
+			scope: { kind: "SharedLibrary" },
+			installations: [],
+			bundled_path: (provenance[dirName]?.bundled_path as string | undefined) ?? null,
+		});
+	}
+}
+
+export function scanAllSkills(configs: AgentConfig[], sharedRoot = sharedSkillsDir()): Skill[] {
 	const dedup = new Map<string, Skill>();
 	const provenance = readProvenanceRaw();
+	if (existsSync(sharedRoot)) scanSharedRoot(sharedRoot, dedup, provenance);
 
 	for (const agent of configs.filter((cfg) => cfg.detected || cfg.global_paths.length > 0)) {
 		for (const root of agent.global_paths) {
@@ -310,10 +337,9 @@ export function scanAllSkills(configs: AgentConfig[]): Skill[] {
 			scanSkillMdRoot(root, agent, dedup, provenance);
 		}
 	}
-
 	for (const agent of configs.filter((cfg) => cfg.detected)) {
 		for (const readable of agent.additional_readable_paths) {
-			if (!existsSync(readable.path)) continue;
+			if (readable.source_agent === "shared" || !existsSync(readable.path)) continue;
 			scanInheritedRoot(readable.path, agent, readable.source_agent, dedup, provenance);
 		}
 	}

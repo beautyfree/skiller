@@ -20,6 +20,8 @@ declare global {
   interface Window {
     /** Set by the main process (either host) when tRPC binds a port. */
     __SKILLER_TRPC_BASE_URL__?: string
+    /** Per-process capability issued only over Electron IPC. */
+    __SKILLER_TRPC_TOKEN__?: string
     /** Electron preload-exposed bridge. Absent under Electrobun or plain Vite. */
     api?: {
       platform: NodeJS.Platform
@@ -35,8 +37,9 @@ declare global {
 type BunRequests = AppRPCSchema['bun']['requests']
 export type BunPushMessage = keyof AppRPCSchema['bun']['messages']
 
-const DEFAULT_TRPC_URL = 'http://127.0.0.1:17888'
 const ELECTRON_PUSH_CHANNEL = 'skiller:push'
+const ELECTRON_TRPC_ENDPOINT_CHANNEL = 'skiller:trpc-endpoint'
+const TRPC_TOKEN_HEADER = 'X-Skiller-Rpc-Token'
 
 /** WKWebView can time out localhost requests around 60s; keep signal long-lived. */
 const TRPC_FETCH_MAX_MS = 600_000
@@ -104,7 +107,10 @@ type PushListener = (payload: unknown) => void
 const g = globalThis as typeof globalThis & {
   __skillerPushHub?: Map<string, Set<PushListener>>
   __skillerPushBooted?: boolean
+  __skillerElectronTrpcEndpoint?: Promise<TrpcEndpoint>
 }
+
+type TrpcEndpoint = { baseUrl: string; token: string }
 
 function getHub(): Map<string, Set<PushListener>> {
   if (!g.__skillerPushHub) g.__skillerPushHub = new Map()
@@ -151,38 +157,89 @@ async function bootPushTransport(): Promise<void> {
     const msg = args[0] as { name?: string; payload?: unknown } | undefined
     if (!msg || typeof msg.name !== 'string') return
     if (msg.name === 'trpc_endpoint') {
-      const baseUrl = (msg.payload as { baseUrl?: string } | undefined)?.baseUrl
-      if (typeof baseUrl === 'string' && baseUrl.length > 0) {
-        window.__SKILLER_TRPC_BASE_URL__ = baseUrl
+      try {
+        const endpoint = parseElectronTrpcEndpoint(msg.payload)
+        window.__SKILLER_TRPC_BASE_URL__ = endpoint.baseUrl
+        window.__SKILLER_TRPC_TOKEN__ = endpoint.token
+      } catch {
+        // The first invoke will request a fresh endpoint through IPC.
       }
     }
     dispatchPush(msg.name, msg.payload)
   })
 }
 
-// Fire-and-forget — any `listen()` call races with this; missed events during
-// boot are extremely unlikely in practice because main waits for renderer to
-// signal ready before sending, but we queue nothing explicitly.
+// Fire-and-forget for later push events. The first Electron `invoke()` also
+// pulls the endpoint over IPC, so queries cannot race this listener or fall
+// through to another Skiller process that owns the preferred HTTP port.
 void bootPushTransport()
 
 /** ------------------------------------------------------------------
  * tRPC base URL resolution + request helper.
  * ------------------------------------------------------------------ */
 
-function trpcBaseUrl(): string {
+export function parseElectronTrpcEndpoint(payload: unknown): TrpcEndpoint {
+  const baseUrl =
+    payload && typeof payload === 'object' && 'baseUrl' in payload
+      ? (payload as { baseUrl?: unknown }).baseUrl
+      : undefined
+  const token =
+    payload && typeof payload === 'object' && 'token' in payload
+      ? (payload as { token?: unknown }).token
+      : undefined
+  if (typeof baseUrl !== 'string' || typeof token !== 'string' || !/^[A-Za-z0-9_-]{32,128}$/.test(token)) {
+    throw new Error('Skiller could not connect to its local service.')
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(baseUrl)
+  } catch {
+    throw new Error('Skiller could not connect to its local service.')
+  }
+  if (
+    parsed.protocol !== 'http:' ||
+    parsed.hostname !== '127.0.0.1' ||
+    !parsed.port ||
+    parsed.username ||
+    parsed.password ||
+    parsed.pathname !== '/' ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw new Error('Skiller could not connect to its local service.')
+  }
+  return { baseUrl: parsed.origin, token }
+}
+
+async function trpcEndpoint(): Promise<TrpcEndpoint> {
   const override = parseTrpcPortOverride()
   if (override !== null) {
-    return `http://127.0.0.1:${override}`
+    throw new Error('Skiller local service authentication is unavailable for this port override.')
   }
-  if (typeof window !== 'undefined' && window.__SKILLER_TRPC_BASE_URL__) {
-    return window.__SKILLER_TRPC_BASE_URL__
+  if (typeof window !== 'undefined' && window.__SKILLER_TRPC_BASE_URL__ && window.__SKILLER_TRPC_TOKEN__) {
+    return { baseUrl: window.__SKILLER_TRPC_BASE_URL__, token: window.__SKILLER_TRPC_TOKEN__ }
   }
-  if (isBundledSkillerView()) {
-    return DEFAULT_TRPC_URL
+  if (isElectronHost()) {
+    if (!g.__skillerElectronTrpcEndpoint) {
+      g.__skillerElectronTrpcEndpoint = window.api!
+        .invoke(ELECTRON_TRPC_ENDPOINT_CHANNEL)
+        .then((payload) => {
+          const endpoint = parseElectronTrpcEndpoint(payload)
+          window.__SKILLER_TRPC_BASE_URL__ = endpoint.baseUrl
+          window.__SKILLER_TRPC_TOKEN__ = endpoint.token
+          return endpoint
+        })
+        .catch((error) => {
+          g.__skillerElectronTrpcEndpoint = undefined
+          throw error
+        })
+    }
+    return g.__skillerElectronTrpcEndpoint
   }
-  return (
-    (import.meta as ImportMeta & { env?: { VITE_TRPC_URL?: string } }).env
-      ?.VITE_TRPC_URL ?? DEFAULT_TRPC_URL
+  throw new Error(
+    isBundledSkillerView()
+      ? 'Skiller could not authenticate its local service.'
+      : 'Open Skiller through its Electron shell to connect to its local service.',
   )
 }
 
@@ -190,15 +247,30 @@ type TrpcSingleResponse<T> =
   | { result: { data?: T } }
   | { error: { message?: string; code?: number; data?: unknown } }
 
+/** Keep server stacks and transport metadata out of user-facing errors. */
+export function readableTrpcError(name: string, response: unknown, status: number): string {
+  if (response && typeof response === 'object' && 'error' in response) {
+    const error = (response as { error?: unknown }).error
+    if (error && typeof error === 'object' && 'message' in error) {
+      const message = (error as { message?: unknown }).message
+      if (typeof message === 'string' && message.trim()) {
+        return (message.split(/\n\s*at\s/)[0] ?? message).replace(/\s+/g, ' ').trim().slice(0, 600)
+      }
+    }
+  }
+  return `${name.replace(/_/g, ' ')} failed (HTTP ${status})`
+}
+
 async function callTrpcProcedure<T>(
   name: string,
   input: unknown,
   isQuery: boolean,
 ): Promise<T> {
-  const base = trpcBaseUrl()
-  let url = `${base}/trpc/${name}`
+  const endpoint = await trpcEndpoint()
+  let url = `${endpoint.baseUrl}/trpc/${name}`
   const init: RequestInit = {
     method: isQuery ? 'GET' : 'POST',
+    headers: { [TRPC_TOKEN_HEADER]: endpoint.token },
   }
   if (isQuery) {
     if (input !== undefined) {
@@ -208,17 +280,13 @@ async function callTrpcProcedure<T>(
     // tRPC v11 requires Content-Type: application/json on every mutation,
     // even ones with no input (it rejects the body-less POST with 415
     // UNSUPPORTED_MEDIA_TYPE before reaching the procedure).
-    init.headers = { 'Content-Type': 'application/json' }
+    init.headers = { ...init.headers, 'Content-Type': 'application/json' }
     init.body = input === undefined ? '{}' : JSON.stringify(input)
   }
   const res = await trpcFetch(url, init)
   const payload = (await res.json()) as TrpcSingleResponse<T>
   if (!res.ok || ('error' in payload && payload.error)) {
-    const detail =
-      payload && typeof payload === 'object' && 'error' in payload && payload.error
-        ? JSON.stringify(payload.error)
-        : `HTTP ${res.status}`
-    throw new Error(`tRPC ${name} failed: ${detail}`)
+    throw new Error(readableTrpcError(name, payload, res.status))
   }
   const data = 'result' in payload ? payload.result.data : undefined
   return data as T

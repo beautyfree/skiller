@@ -9,7 +9,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-[var(--btn-primary-shadow)] hover:brightness-[1.04] active:scale-[0.98] active:brightness-[0.98] [a]:hover:brightness-[1.04] dark:shadow-[var(--btn-primary-shadow-dark)] dark:hover:brightness-[1.1] dark:active:brightness-[0.9]",
+          "bg-primary text-white shadow-[var(--btn-primary-shadow)] hover:brightness-[1.04] active:scale-[0.98] active:brightness-[0.98] [a]:hover:brightness-[1.04] dark:shadow-[var(--btn-primary-shadow-dark)] dark:hover:brightness-[1.1] dark:active:brightness-[0.9]",
         outline:
           "border-[0.5px] border-border bg-transparent text-foreground hover:bg-[var(--ds-surface-hover)] active:bg-[var(--ds-surface-active)] aria-expanded:bg-[var(--ds-surface-hover)]",
         secondary:

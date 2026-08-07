@@ -1,14 +1,66 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from "node:fs";
+import path, { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { parse as parseToml, stringify as stringifyToml } from "@iarna/toml";
 import type { AppSettingsJson, RepoEntryJson } from "../shared/rpc-schema";
 
 const APP_DATA_DIR = ".skiller";
 const LEGACY_APP_DATA_DIR = ".skills-app";
+const TEST_APP_DATA_ROOT_ENV = "SKILLER_TEST_DATA_ROOT";
+
+type Platform = NodeJS.Platform;
+
+function pathApiFor(platform: Platform): typeof path.posix {
+	return platform === "win32" ? path.win32 : path.posix;
+}
+
+function testAppDataRootPath(platform: Platform, env: NodeJS.ProcessEnv): string | null {
+	const configured = env[TEST_APP_DATA_ROOT_ENV]?.trim();
+	if (!configured) return null;
+	const paths = pathApiFor(platform);
+	if (!paths.isAbsolute(configured)) {
+		throw new Error(`${TEST_APP_DATA_ROOT_ENV} must be an absolute path`);
+	}
+	return paths.resolve(configured);
+}
+
+/** Native data roots for the platforms that do not conventionally use dotfiles. */
+export function appDataRootPathFor(platform: Platform, home: string, env: NodeJS.ProcessEnv): string {
+	const paths = pathApiFor(platform);
+	const testRoot = testAppDataRootPath(platform, env);
+	if (testRoot) return testRoot;
+	if (platform === "win32") return paths.join(env.APPDATA || paths.join(home, "AppData", "Roaming"), "Skiller");
+	if (platform === "linux") return paths.join(env.XDG_DATA_HOME || paths.join(home, ".local", "share"), "skiller");
+	// Keep the established macOS location: moving it would collide with
+	// Electron's unrelated userData directory on existing installations.
+	return paths.join(home, APP_DATA_DIR);
+}
+
+function legacyAppDataRootPath(): string {
+	return join(homedir(), APP_DATA_DIR);
+}
+
+function migrateLegacyRoot(target: string): string {
+	const legacy = legacyAppDataRootPath();
+	if (target === legacy || existsSync(target) || !existsSync(legacy)) return target;
+	try {
+		mkdirSync(dirname(target), { recursive: true });
+		renameSync(legacy, target);
+		return target;
+	} catch {
+		// Keep using the original location if a cross-volume or permission error
+		// prevents an atomic move. No settings or sync worktree is discarded.
+		return legacy;
+	}
+}
 
 export function appDataRootPath(): string {
-	return join(homedir(), APP_DATA_DIR);
+	// Live packaged-app QA needs an isolated profile without ever moving or
+	// mutating the user's established ~/.skiller data. The deliberately named,
+	// absolute-only override bypasses legacy migration for that reason.
+	const testRoot = testAppDataRootPath(process.platform, process.env);
+	if (testRoot) return testRoot;
+	return migrateLegacyRoot(appDataRootPathFor(process.platform, homedir(), process.env));
 }
 
 function legacySettingsPath(): string {

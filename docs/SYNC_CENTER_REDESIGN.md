@@ -172,3 +172,262 @@ remains for recovery if the application or machine stops mid-operation.
   secrets before commit.
 - The user completes local UI testing before any branch is merged, pushed, or
   released.
+
+---
+
+## Experience direction — Agent Library and Sync Center
+
+### Design thesis
+
+**A calm personal archive, not a Git control panel.**
+
+Skiller should make a person feel that their working knowledge is safe, legible,
+and portable. Git is present only where it gives a useful choice. The interface
+must never make a manager, designer, or first-time developer learn Git terms in
+order to protect a skill collection.
+
+The existing dark desktop system remains the visual foundation: compact,
+precise, and high-trust. Indigo remains the one intentional accent. Sync setup
+gets a distinct entry moment, but its working screens return to the normal app
+canvas rather than becoming a marketing funnel inside the product.
+
+### Product language
+
+Use the person’s mental model consistently:
+
+| Say | Do not lead with | Reason |
+| --- | --- | --- |
+| Agent Library | profile, workspace, managed worktree | it is the person’s collection |
+| Save in library | bundle, materialize, stage | describes the result |
+| Keep linked to source | immutable dependency | explains why files are not copied |
+| Keep on this computer | excluded external skill | says the safe outcome without implying failure |
+| Choose where to keep it | choose a Git home | storage is the decision; Git is the implementation |
+| Review and create | publish plan, commit preview | names the visible next screen |
+| Check for changes | pull preview | makes the action non-destructive by name |
+
+Technical terms such as commit SHA, repository URL, lock file, provenance,
+branch, or installation mode live in `Details` and `Advanced`, never in the
+first reading pass.
+
+### Information architecture
+
+The two top-level areas have a strict ownership boundary.
+
+| Area | Its job | Default view | Actions it owns |
+| --- | --- | --- | --- |
+| **Agent Library** | Understand and curate the collection | skills, origin, availability, local edits | add, remove, inspect, classify a skill |
+| **Sync Center** | Connect, review, and move changes safely | connection health and next change | create/connect, check, publish, restore, resolve conflict |
+
+The dashboard shows only a small status such as `Library connected · 3 local
+changes` and one action, `Review changes`. It never embeds another setup flow.
+
+### The complete journey
+
+#### A. First visit: make the promise precise
+
+**Page purpose:** answer “What is this, and will it upload anything?” before
+asking the person to act.
+
+```text
+Build your portable Agent Library
+Your skills stay yours: review what travels, choose where to keep it, and
+confirm before anything is uploaded.
+
+[ Review my library ]        [ Connect an existing library ]
+
+261 skills found   ·   Private by default   ·   Works with GitHub, GitLab, and your own Git server
+```
+
+Rules:
+
+* `Review my library` is the primary action. `Create my library` is too early:
+  it hides the review and publication boundary.
+* The privacy promise sits beside the action, not below a scroll boundary.
+* Counts are supporting evidence, never a second focal point.
+* The indigo entry surface may be more expressive, but it must contain no
+  feature-card grid, decorative statistics, or extra calls to action.
+
+#### B. Review: one inventory, three possible outcomes
+
+**Page purpose:** answer “What will happen to every skill?” in five seconds.
+
+The whole primary canvas is one grouped inventory, not four competing cards:
+
+```text
+Review your library                         2 of 4
+Here is what will happen. Nothing has changed yet.
+
+  ✓ 68  Saved in your library
+       Your own and reviewed skills will travel with you.
+       View skills
+
+  ↗ 34  Kept linked to their source
+       Skiller records their exact version without copying the files.
+       View sources
+
+  • 159 Stays on this computer
+       Their source could not be safely included yet. Nothing is deleted or changed.
+       See why
+
+  Safety check complete · No secrets found
+
+                                             [ Choose where to keep it ]
+```
+
+Requirements:
+
+* The three counts are mutually exclusive and add up to the scanned total.
+* The `Stays on this computer` group appears once. Reasons are grouped under
+  the row only after `See why`; no repeated amber panel with the same number.
+* Success safety status is a quiet inline line. A real secret finding replaces
+  it with a blocking alert grouped by file, showing rule names and a `Show
+  file` action. It must say both what happened and what to do next.
+* Cooling-off and reviewed-source policy are advanced safety controls. They are
+  never a fourth primary card, and the control always explains its effect.
+* This screen does not expose `skills.lock`, `dotagents.yaml`, source allowlist,
+  or a SHA unless the person opens details.
+
+#### C. Destination: privacy first, provider second
+
+**Page purpose:** answer “Who can see this, and where will it live?”
+
+```text
+Choose where to keep your library            3 of 4
+
+Visibility
+  ● Private  Only you and people you invite can read this library.
+  ○ Shared   People in this workspace can read and contribute.
+  ○ Public   Anyone can read it. You will review every included file first.
+
+Where
+  [ GitHub ]  [ GitLab ]  [ Another Git server ]
+
+GitHub
+  Sign in to GitHub to choose or create a private repository.
+  [ Continue with GitHub ]
+
+[ Back ]                                       [ Review and create ]
+```
+
+Rules:
+
+* Private is preselected. A change to public needs a visible consequence and
+  a separate public-file review. This matches GitHub’s own treatment of
+  repository visibility as a consequential change requiring explicit
+  acknowledgement.
+* Provider authentication happens only after a provider is selected. The person
+  never has to remember URLs or folders after initial setup.
+* `Another Git server` is an advanced but equal path for GitLab, Gitea,
+  self-hosted Git, SSH, HTTPS, and local remotes. It starts with a provider
+  template and plain labels, then exposes URL details.
+* The app delegates credentials to the system credential helper, SSH agent, or
+  provider CLI. It never asks the person to paste a token into the library.
+
+#### D. Final confirmation: separate authorization from upload
+
+**Page purpose:** make the first write irreversible only in the user’s mind,
+not by surprise.
+
+```text
+Ready to create your private library          4 of 4
+
+GitHub · alex/agent-library · Private
+
+68 skills will be saved
+34 skills will stay linked to their original source
+159 skills will stay on this computer
+
+No secrets found in the files that will be uploaded.
+
+[ Back ]                 [ Create private library and upload 68 skills ]
+```
+
+This is the only screen with a write CTA. Account authorization is not an
+upload. `Create` and `upload` must occur together in the final label, along
+with visibility and a concrete count.
+
+#### E. Healthy state: one quiet status, not a dashboard mosaic
+
+**Page purpose:** make the next useful action obvious.
+
+```text
+Agent Library
+Private · GitHub · last updated 12 minutes ago
+
+261 skills available across 14 agents
+3 local changes are ready to review
+
+[ Review changes ]       [ Open library ]
+```
+
+The page does not repeat provider setup, source policy, and library content.
+These are inspectable details. The primary action reflects the only current
+work: review changes.
+
+#### F. Check, resolve, then apply
+
+**Page purpose:** keep a second computer or a local edit safe.
+
+1. `Check for changes` fetches metadata and builds a non-mutating plan.
+2. The result groups items by human outcome: `Only on this computer`, `Only in
+   library`, `Changed in both`, `Already the same`.
+3. `Changed in both` has no destructive default. The default resolution is
+   `Keep both`; taking remote or replacing local is a deliberate per-item
+   choice.
+4. Before `Apply`, a final summary names target agents, folders, and affected
+   skills. Apply is transactional and recoverable.
+5. Completion confirms what was changed and exposes a short activity record.
+
+This follows the useful safety lesson from backup and vault products: selection
+is visible early, recovery is understandable, and the product explains what
+will remain local rather than implying that everything is a remote mirror.
+
+### Visual rules for this flow
+
+* One screen, one question, one primary action. Supporting actions never use
+  primary indigo.
+* Use rows and dividers for outcome summaries. A card is reserved for a true
+  interaction, such as a provider choice or a blocking security event.
+* Semantic colour is scarce: indigo for the next action, green for completed,
+  amber only for an actionable caution, red only for a block. Do not colour
+  normal provenance information.
+* Section labels are utility labels, not marketing copy. Do not write `Your
+  new repository will contain` above every review.
+* The setup footer is sticky only for the navigation actions. It must not
+  contain a second summary or a different background that competes with the
+  page.
+* Every expansion is optional. The initial scan answers the core decision
+  without requiring hover, popovers, or scrolling through a long skill list.
+* All actions use direct verbs: `Review`, `Choose`, `Check`, `Create`, `Apply`,
+  `Restore`. Avoid `Continue` unless the next destination is named alongside it.
+
+### Why this is the right direction
+
+The research supports three non-negotiable patterns:
+
+1. Backup products foreground folder selection and allow later modification;
+   they also warn users about conflicting backup sources. Skiller must make
+   selection and “stay local” first-class, rather than treating exclusions as
+   error residue. [Dropbox Backup](https://help.dropbox.com/organize/how-to-use-dropbox-backup)
+2. Products handling sensitive collections make scope explicit and make
+   restoration understandable. Skiller’s counterpart is a transparent
+   library-vs-local classification and an explicit restore plan. [1Password
+   Travel Mode](https://1password.com/features/travel-mode)
+3. Repository visibility has meaningful consequences. Private must be the
+   default and public sharing needs a separate, explicit acknowledgement.
+   [GitHub visibility guidance](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility)
+
+### Acceptance criteria for the experience
+
+* In five seconds on the review screen, a person can answer: how many skills
+  will be saved, linked, and left local.
+* No screen says or implies that an account login uploads data.
+* A person can create a private GitHub library without typing a remote URL,
+  profile ID, or filesystem path.
+* A person can choose GitLab or self-hosted Git without being sent through a
+  GitHub-shaped flow.
+* No normal operation overwrites a local skill. A conflict starts with a plan,
+  not an apply action.
+* Agent Library and Sync Center can each pass the trunk test independently:
+  their title, purpose, current state, and primary action are obvious on first
+  view.

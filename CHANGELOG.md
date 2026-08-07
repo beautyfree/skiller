@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.27](https://github.com/beautyfree/skiller/compare/v0.2.26...v0.2.27) (2026-08-07)
+
+
+### Features
+
+* add provider-neutral agent library sync ([#53](https://github.com/beautyfree/skiller/issues/53)) ([af72045](https://github.com/beautyfree/skiller/commit/af7204583123316b6f91fb6bf339fb9552d9856c))
+
+
+### Bug Fixes
+
+* **ci:** call release workflow directly ([b89183a](https://github.com/beautyfree/skiller/commit/b89183a47be38c12bd7e468b6d9061807fa5b592))
+* **ci:** make release handoff deterministic ([e7d160c](https://github.com/beautyfree/skiller/commit/e7d160ce42d558affb33c5354148b4d0e468cf12))
+* **release:** render and deduplicate update notes ([b116399](https://github.com/beautyfree/skiller/commit/b11639909b51efd44e4588da84817e376296b7fd))
+* **ui:** polish release notes dialog ([7e4ce88](https://github.com/beautyfree/skiller/commit/7e4ce8809eb13d91e72f5c05b926c0c310a003a2))
+* **ui:** polish What’s New release notes ([99e5477](https://github.com/beautyfree/skiller/commit/99e547727d6e9a46b52897517b0afa714c87b680))
+
 ## [0.2.26](https://github.com/beautyfree/skiller/compare/v0.2.25...v0.2.26) (2026-07-31)
 
 

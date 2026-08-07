@@ -137,7 +137,8 @@ export type DotagentsSkillDiscoveryJson = {
     metadata_valid: boolean;
     locations: { agent_slug?: string; kind: "shared" | "agent-local" | "inherited" }[];
     suggested: {
-      kind: "owned" | "dependency" | "vendored" | "local-only" | "excluded";
+      /** `adopt-owned` means the reviewed skill is already inside the canonical library. */
+      kind: "owned" | "adopt-owned" | "dependency" | "vendored" | "local-only" | "excluded";
       source?: "git" | "skills-cli";
       package?: string;
       reason?: string;
@@ -165,13 +166,14 @@ export type DotagentsImportPlanJson = {
     skill_id: string;
     action:
       | "copy-owned"
+      | "adopt-owned"
       | "copy-vendored"
       | "record-dependency"
       | "unchanged"
       | "leave-local"
       | "exclude"
       | "conflict";
-    source_kind: "owned" | "dependency" | "vendored" | "local-only" | "excluded";
+    source_kind: "owned" | "adopt-owned" | "dependency" | "vendored" | "local-only" | "excluded";
     package?: string;
     reason?: string;
   }[];
@@ -257,6 +259,14 @@ export type UpdateProgressJson = {
   done: number;
   total: number;
   current_skill: string;
+};
+
+/** Safe aggregate-only progress while Sync Center checks approved Git sources. */
+export type SyncSourceReviewProgressJson = {
+  completed: number;
+  total: number;
+  verified: number;
+  kept_local: number;
 };
 
 export type UpdateAllResultJson = {
@@ -379,6 +389,19 @@ export type SyncGitHubRepositoryPreviewJson = {
   plan_id: string;
   repository: string;
   visibility: "private" | "public";
+};
+
+export type SyncGitLabProjectPreviewJson = {
+  plan_id: string;
+  project: string;
+  visibility: "private" | "public";
+};
+
+/** A credential-free remote the user explicitly asked the provider CLI to list. */
+export type SyncProviderLibraryJson = {
+  provider: "github" | "gitlab";
+  label: string;
+  remote_url: string;
 };
 
 export type SyncProfileStatusJson = {
@@ -886,6 +909,7 @@ export type AppRPCSchema = {
       scan_agent_skills: { params: { agentSlug: string }; response: SkillJson[] };
       skill_quality_overview: { params?: void; response: SkillQualityOverviewJson };
       skill_quality_reveal_file: { params: { qualityId: string; relativePath: string }; response: void };
+      skill_quality_reveal_folder: { params: { qualityId: string }; response: void };
       skill_quality_eval_preview: { params: SkillQualityEvalPreviewRequestJson; response: SkillQualityEvalPlanJson };
       skill_quality_dry_start: { params: { request: SkillQualityEvalPreviewRequestJson; expectedPlanId: string }; response: SkillQualityDryRunReportJson };
       skill_quality_measured_start: { params: { request: SkillQualityEvalPreviewRequestJson; expectedPlanId: string }; response: SkillQualityMeasuredReportJson };
@@ -990,6 +1014,18 @@ export type AppRPCSchema = {
       sync_github_create_repo: {
         params: { repository: string; visibility: "private" | "public"; planId: string };
         response: { remoteUrl: string };
+      };
+      sync_gitlab_create_project_preview: {
+        params: { project: string; visibility: "private" | "public" };
+        response: SyncGitLabProjectPreviewJson;
+      };
+      sync_gitlab_create_project: {
+        params: { project: string; visibility: "private" | "public"; planId: string };
+        response: { remoteUrl: string };
+      };
+      sync_provider_libraries: {
+        params: { provider: "github" | "gitlab" };
+        response: SyncProviderLibraryJson[];
       };
       install_skill: { params: { source: SkillSourceParam; targetAgents: string[] }; response: void };
       uninstall_skill: { params: { skillId: string; agentSlug: string }; response: void };
@@ -1106,9 +1142,10 @@ export type AppRPCSchema = {
       close_requested: void;
       skill_update_progress: UpdateProgressJson;
       repo_progress: RepoProgressJson;
+      sync_source_review_progress: SyncSourceReviewProgressJson;
       shell_runtime_changed: { macosWindowBlur: boolean };
       /** Bun → webview: actual http://127.0.0.1:<port> for tRPC (port may differ if default was busy). */
-      trpc_endpoint: { baseUrl: string };
+      trpc_endpoint: { baseUrl: string; token: string };
       /** Emitted on every Updater status change so the UI stays live. */
       app_update_status_changed: AppUpdateStatusJson;
     };
@@ -1121,8 +1158,9 @@ export type AppRPCSchema = {
       close_requested: void;
       skill_update_progress: UpdateProgressJson;
       repo_progress: RepoProgressJson;
+      sync_source_review_progress: SyncSourceReviewProgressJson;
       shell_runtime_changed: { macosWindowBlur: boolean };
-      trpc_endpoint: { baseUrl: string };
+      trpc_endpoint: { baseUrl: string; token: string };
       app_update_status_changed: AppUpdateStatusJson;
     };
   };

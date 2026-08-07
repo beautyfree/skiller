@@ -27,6 +27,8 @@ const QUERY_NAMES = new Set<string>([
   'dotagents_resource_adopt_preview',
   'sync_center_connect_preview',
   'sync_github_create_repo_preview',
+  'sync_gitlab_create_project_preview',
+  'sync_provider_libraries',
   'sync_recovery_status',
   'read_skill_content',
   'fetch_remote_skill_content',

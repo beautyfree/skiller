@@ -7,6 +7,7 @@ import {
   CircleDashed,
   FileCheck2,
   FileText,
+  FolderOpen,
   FlaskConical,
   Gauge,
   ListChecks,
@@ -30,6 +31,7 @@ import type {
 } from '@/shared/rpc-schema'
 
 type Filter = 'all' | 'ready' | 'needs-work'
+type MeasuredHarness = 'codex' | 'claude'
 
 const stateCopy: Record<SkillQualityStatusJson['state'], { label: string; tone: string }> = {
   ready: { label: 'Ready', tone: 'text-emerald-700 dark:text-emerald-300' },
@@ -270,7 +272,8 @@ function QualityDetail({ skill }: { skill: SkillQualityStatusJson }) {
   const [dryRunLoading, setDryRunLoading] = useState(false)
   const [measuredRunLoading, setMeasuredRunLoading] = useState(false)
   const [measuredNetwork, setMeasuredNetwork] = useState(false)
-  const [measuredCredential, setMeasuredCredential] = useState<'none' | 'codex'>('none')
+  const [measuredHarness, setMeasuredHarness] = useState<MeasuredHarness>('codex')
+  const [measuredCredential, setMeasuredCredential] = useState<'none' | MeasuredHarness>('none')
   const [sandboxImage, setSandboxImage] = useState('skillet-eval')
   const state = stateCopy[skill.state]
   const errors = skill.issues.filter((entry) => entry.severity === 'error')
@@ -285,12 +288,13 @@ function QualityDetail({ skill }: { skill: SkillQualityStatusJson }) {
     setDryRunLoading(false)
     setMeasuredRunLoading(false)
     setMeasuredNetwork(false)
+    setMeasuredHarness('codex')
     setMeasuredCredential('none')
   }, [skill.quality_id])
 
   const reviewEvaluation = async (
     mode: 'dry' | 'measured',
-    measuredOptions = { network: measuredNetwork, credential: measuredCredential },
+    measuredOptions = { network: measuredNetwork, harness: measuredHarness, credential: measuredCredential },
   ) => {
     setEvalPlanLoading(mode)
     setEvalPlanError(null)
@@ -301,7 +305,7 @@ function QualityDetail({ skill }: { skill: SkillQualityStatusJson }) {
         sandboxImage,
         concurrency: 2,
         ...(mode === 'measured' ? {
-          harness: 'codex' as const,
+          harness: measuredOptions.harness,
           baseline: true,
           trials: 3,
           network: measuredOptions.network,
@@ -318,12 +322,14 @@ function QualityDetail({ skill }: { skill: SkillQualityStatusJson }) {
     }
   }
 
-  const updateMeasuredReview = async (next: { network?: boolean; credential?: 'none' | 'codex' }) => {
+  const updateMeasuredReview = async (next: { network?: boolean; harness?: MeasuredHarness; credential?: 'none' | MeasuredHarness }) => {
     const options = {
       network: next.network ?? measuredNetwork,
-      credential: next.credential ?? measuredCredential,
+      harness: next.harness ?? measuredHarness,
+      credential: next.credential ?? (next.harness && next.harness !== measuredHarness ? 'none' : measuredCredential),
     }
     setMeasuredNetwork(options.network)
+    setMeasuredHarness(options.harness)
     setMeasuredCredential(options.credential)
     await reviewEvaluation('measured', options)
   }
@@ -361,7 +367,7 @@ function QualityDetail({ skill }: { skill: SkillQualityStatusJson }) {
           mode: 'measured',
           sandboxImage,
           concurrency: 2,
-          harness: 'codex',
+          harness: measuredHarness,
           baseline: true,
           trials: 3,
           network: measuredNetwork,
@@ -508,6 +514,25 @@ function QualityDetail({ skill }: { skill: SkillQualityStatusJson }) {
                 aria-label="Local Docker image"
               />
             </label>
+            <div className="block">
+              <span className="mb-1 block text-[10px] font-medium text-muted-foreground">Harness</span>
+              <div className="flex h-8 overflow-hidden rounded-md border border-border" role="group" aria-label="Measured evaluation harness">
+                {(['codex', 'claude'] as const).map((harness) => (
+                  <button
+                    key={harness}
+                    type="button"
+                    onClick={() => updateMeasuredReview({ harness })}
+                    className={cn(
+                      'min-w-14 px-2 text-[11px] font-medium transition-colors',
+                      harness === measuredHarness ? 'bg-foreground text-background' : 'bg-background/70 text-muted-foreground hover:bg-muted hover:text-foreground',
+                    )}
+                    aria-pressed={harness === measuredHarness}
+                  >
+                    {harness === 'codex' ? 'Codex' : 'Claude'}
+                  </button>
+                ))}
+              </div>
+            </div>
             <Button variant="outline" onClick={() => reviewEvaluation('dry')} disabled={evalPlanLoading !== null}>
               {evalPlanLoading === 'dry' ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <ShieldCheck className="size-3.5" aria-hidden="true" />}
               Review dry checks
@@ -529,7 +554,7 @@ function QualityDetail({ skill }: { skill: SkillQualityStatusJson }) {
             running={dryRunLoading || measuredRunLoading}
             onStart={evalPlan.mode === 'dry' ? runDryChecks : runMeasuredChecks}
             onEnableNetwork={() => updateMeasuredReview({ network: true })}
-            onUseCodexProfile={() => updateMeasuredReview({ credential: 'codex' })}
+            onUseHarnessProfile={() => updateMeasuredReview({ credential: measuredHarness })}
             onDisableNetwork={() => updateMeasuredReview({ network: false })}
             onRemoveCredential={() => updateMeasuredReview({ credential: 'none' })}
             onClose={() => {
@@ -551,7 +576,7 @@ function EvaluationReview({
   running,
   onStart,
   onEnableNetwork,
-  onUseCodexProfile,
+  onUseHarnessProfile,
   onDisableNetwork,
   onRemoveCredential,
   onClose,
@@ -562,7 +587,7 @@ function EvaluationReview({
   running: boolean
   onStart: () => void
   onEnableNetwork: () => void
-  onUseCodexProfile: () => void
+  onUseHarnessProfile: () => void
   onDisableNetwork: () => void
   onRemoveCredential: () => void
   onClose: () => void
@@ -634,7 +659,7 @@ function EvaluationReview({
                 <Button size="sm" variant="outline" onClick={onEnableNetwork} disabled={running}>Allow network for this plan</Button>
               )}
               {plan.blockers.some((entry) => entry.code === 'credential-profile-required') && (
-                <Button size="sm" variant="outline" onClick={onUseCodexProfile} disabled={running}>Use Codex profile read-only</Button>
+                <Button size="sm" variant="outline" onClick={onUseHarnessProfile} disabled={running}>Use {plan.harness.name === 'claude' ? 'Claude' : 'Codex'} profile read-only</Button>
               )}
             </div>
           )}
@@ -778,6 +803,17 @@ function Finding({ finding, qualityId }: { finding: SkillQualityIssueJson; quali
           onClick={() => invoke('skill_quality_reveal_file', { qualityId, relativePath: finding.file! })}
         >
           Show file
+        </Button>
+      )}
+      {finding.code === 'missing-spec' && (
+        <Button
+          variant="ghost"
+          size="xs"
+          className="mt-0.5 shrink-0"
+          onClick={() => invoke('skill_quality_reveal_folder', { qualityId })}
+        >
+          <FolderOpen className="size-3.5" aria-hidden="true" />
+          Open folder
         </Button>
       )}
     </div>

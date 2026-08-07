@@ -43,8 +43,10 @@ Reports must preserve case/behavior pass rates, baseline rates, lift, harness, m
   credentials, or environment passthrough. A case that already passes is
   reported as vacuous; judge-only cases remain indeterminate.
 - Measured runs support Codex and Claude, repeated trials, optional baseline,
-  per-behavior pass rates, and lift. Network and the matching credential
-  profile are separate explicit decisions. The profile is mounted read-only.
+  per-behavior pass rates, and lift. The Quality Center makes the harness an
+  explicit choice before review, and only offers the matching credential
+  profile. Network and that profile are separate explicit decisions. The
+  profile is mounted read-only.
 - Setup and shell checks stay network-off and credential-free even during a
   measured run. Agent and judge calls run only inside the reviewed image.
 - Completed case/trial files are written atomically to local Skiller device

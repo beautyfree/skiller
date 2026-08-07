@@ -87,11 +87,13 @@ const appRouter = createAppRouter({
 });
 
 let trpcServerPort = TRPC_PORT;
+let trpcServerAuthToken = "";
 let trpcCloseServer: (() => void) | null = null;
 
 async function initTrpcServer(): Promise<void> {
 	const handle = await startTrpcHttpServer(appRouter, TRPC_PORT);
 	trpcServerPort = handle.port;
+	trpcServerAuthToken = handle.authToken;
 	trpcCloseServer = handle.close;
 	console.log(`tRPC: http://127.0.0.1:${trpcServerPort}/trpc`);
 }
@@ -99,6 +101,7 @@ async function initTrpcServer(): Promise<void> {
 function sendTrpcEndpointToRenderer(): void {
 	bunSideRpc.send("trpc_endpoint", {
 		baseUrl: `http://127.0.0.1:${trpcServerPort}`,
+		token: trpcServerAuthToken,
 	});
 }
 
@@ -177,6 +180,7 @@ function createMainWindow(): BrowserWindow {
 ipcMain.handle("skiller:version", () => app.getVersion());
 ipcMain.handle("skiller:trpc-endpoint", () => ({
 	baseUrl: `http://127.0.0.1:${trpcServerPort}`,
+	token: trpcServerAuthToken,
 }));
 
 // --- Tray -----------------------------------------------------------------

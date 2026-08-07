@@ -1,17 +1,4 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { computePlanId } from "dotagents";
-
-const execFileAsync = promisify(execFile);
-
-/** A personal repo or owner/repo; no shell interpolation is ever used. */
-export function assertGitHubRepositoryName(value: string): string {
-	const name = value.trim();
-	if (!/^(?:[A-Za-z0-9-]+\/)?[A-Za-z0-9._-]{1,100}$/.test(name)) {
-		throw new Error("GitHub repository must be `name` or `owner/name`");
-	}
-	return name;
-}
+import { createProviderAdapter, planProviderLibraryCreation, type RemoteConnection, type RemoteProviderAdapter } from "dotagents";
 
 export type GitHubSyncRepositoryPlan = {
 	kind: "skiller-github-repository";
@@ -21,40 +8,47 @@ export type GitHubSyncRepositoryPlan = {
 	visibility: "private" | "public";
 };
 
+/** Shared dotagents validation for a personal repository or `owner/repository`. */
+export function assertGitHubRepositoryName(value: string): string {
+	return planProviderLibraryCreation("github", value).name;
+}
+
+/**
+ * Keeps Skiller's renderer contract while binding the plan ID to dotagents'
+ * provider-neutral repository creation review.
+ */
 export function planGitHubSyncRepository(
 	repository: string,
 	visibility: "private" | "public",
 ): GitHubSyncRepositoryPlan {
-	const payload = {
-		kind: "skiller-github-repository" as const,
-		schemaVersion: 1 as const,
-		repository: assertGitHubRepositoryName(repository),
-		visibility,
+	const shared = planProviderLibraryCreation("github", repository, visibility);
+	return {
+		kind: "skiller-github-repository",
+		schemaVersion: 1,
+		planId: shared.planId,
+		repository: shared.name,
+		visibility: shared.visibility,
 	};
-	return { ...payload, planId: computePlanId(payload) };
 }
 
 /**
- * Uses the user's existing GitHub CLI session. Skiller deliberately never sees
- * or stores a GitHub token; `gh` owns authentication and creates the repo only
- * after an explicit UI action.
+ * Uses the user's existing GitHub CLI session. Skiller never reads or stores a
+ * token; the shared core creates only the reviewed private/public repository.
  */
 export async function createGitHubSyncRepository(plan: GitHubSyncRepositoryPlan): Promise<string> {
-	const current = planGitHubSyncRepository(plan.repository, plan.visibility);
-	if (current.planId !== plan.planId) {
+	const shared = planProviderLibraryCreation("github", plan.repository, plan.visibility);
+	if (shared.planId !== plan.planId)
 		throw new Error("GitHub repository name or visibility changed after review. Review it again.");
-	}
-	const name = current.repository;
-	try {
-		await execFileAsync("gh", ["repo", "create", name, `--${current.visibility}`, "--disable-wiki"]);
-		const { stdout } = await execFileAsync("gh", ["repo", "view", name, "--json", "sshUrl", "--jq", ".sshUrl"]);
-		const remote = stdout.trim();
-		if (!/^git@github\.com:[^\s]+\.git$/.test(remote)) {
-			throw new Error("GitHub CLI did not return an SSH remote URL");
-		}
-		return remote;
-	} catch (error) {
-		const detail = error instanceof Error ? error.message : String(error);
-		throw new Error(`Could not create GitHub repository via gh: ${detail}`);
-	}
+	return (await createProviderAdapter("github").createLibrary(shared)).remote;
+}
+
+/**
+ * Reads only repositories writable through the user's existing `gh` session.
+ * This stays behind an explicit renderer action; Skiller never asks GitHub in
+ * the background and never receives the session token.
+ */
+export async function listGitHubSyncRepositories(
+	adapter: Pick<RemoteProviderAdapter, "listLibraries"> = createProviderAdapter("github"),
+): Promise<RemoteConnection[]> {
+	return adapter.listLibraries();
 }

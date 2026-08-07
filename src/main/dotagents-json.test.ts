@@ -64,4 +64,18 @@ describe("dotagents renderer JSON mapping", () => {
 		expect(json).toMatchObject({ plan_id: "plan", owned_skill_count: 1, operations: [{ skill_id: "writing", action: "copy-owned" }], secret_findings: [{ relative_path: "notes.md" }] });
 		expect(JSON.stringify(json)).not.toContain("/private");
 	});
+
+	it("keeps a reviewed in-library adoption distinct without leaking its path", () => {
+		const json = dotagentsDiscoveryToJson(
+			{
+				skills: [{ candidateKey: "writing", name: "writing", description: null, whenToUse: null, integrity: "sha256-safe", fileCount: 1, bytes: 42, sourcePath: "/private/library/skills/writing", locations: [{ kind: "shared" }], metadataValid: true }],
+				collisions: [],
+				issues: [],
+				linkedAliases: 0,
+			},
+			[{ kind: "adopt-owned", skill: "writing", sourcePath: "/private/library/skills/writing" }],
+		);
+		expect(json.skills[0]).toMatchObject({ suggested: { kind: "adopt-owned" } });
+		expect(JSON.stringify(json)).not.toContain("/private");
+	});
 });

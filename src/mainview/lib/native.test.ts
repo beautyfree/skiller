@@ -22,17 +22,20 @@ describe('renderer tRPC errors', () => {
 
 describe('Electron tRPC endpoint handshake', () => {
   test('accepts only the exact loopback endpoint returned by this main process', () => {
-    expect(parseElectronTrpcEndpoint({ baseUrl: 'http://127.0.0.1:17889' })).toBe(
-      'http://127.0.0.1:17889',
-    )
+    expect(parseElectronTrpcEndpoint({
+      baseUrl: 'http://127.0.0.1:17889',
+      token: 'a'.repeat(43),
+    })).toEqual({ baseUrl: 'http://127.0.0.1:17889', token: 'a'.repeat(43) })
   })
 
   test.each([
     undefined,
-    { baseUrl: 'http://localhost:17889' },
-    { baseUrl: 'https://127.0.0.1:17889' },
-    { baseUrl: 'http://127.0.0.1:17889/trpc' },
-    { baseUrl: 'http://user:secret@127.0.0.1:17889' },
+    { baseUrl: 'http://localhost:17889', token: 'a'.repeat(43) },
+    { baseUrl: 'https://127.0.0.1:17889', token: 'a'.repeat(43) },
+    { baseUrl: 'http://127.0.0.1:17889/trpc', token: 'a'.repeat(43) },
+    { baseUrl: 'http://user:secret@127.0.0.1:17889', token: 'a'.repeat(43) },
+    { baseUrl: 'http://127.0.0.1:17889' },
+    { baseUrl: 'http://127.0.0.1:17889', token: 'too-short' },
   ])('rejects an endpoint that could route RPC outside the owned local server', (payload) => {
     expect(() => parseElectronTrpcEndpoint(payload)).toThrow(
       'Skiller could not connect to its local service.',

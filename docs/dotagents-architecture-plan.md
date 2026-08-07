@@ -38,7 +38,52 @@ The first useful release must support this complete story:
 | Canonical library directory | `~/.agents` by default; configurable |
 | Product UI | Skiller Sync Center / Library |
 
-The unscoped npm package `dotagents` already exists. The scoped package is mandatory. A short binary alias may be reconsidered later, but v1 must not unexpectedly shadow another installed command.
+The unscoped npm package and binary are deliberately `dotagents`. This is a
+new project, so it does not read legacy names, aliases, or paths.
+
+### 2.1 Remembered Git homes and provider setup
+
+The normal user path is intentionally short:
+
+```text
+first computer:  dotagents setup  → choose a Git home once
+later:           dotagents sync   → uses the saved home
+new computer:    dotagents setup  → choose the same saved remote
+```
+
+The saved connection is Device-local, mode `0600`, credential-free, and never
+enters a portable library. It contains only a normalized Git remote, a friendly
+label, provider kind, library root, and opaque connection ID. It may not store a
+token, account name, browser session, absolute path in the portable output, or
+a source-trust exception.
+
+Provider acceptance criteria:
+
+- GitHub: after explicit permission to contact the provider, use the user's
+  `gh` session to list writable repositories or to create one reviewed private
+  repository; creating or pushing is always a separate confirmation. Skiller
+  exposes the list only after the user selects **Use an existing repository**.
+  The same explicit list is available when connecting an existing library, so a
+  normal GitHub user does not need to remember or paste its remote URL.
+- GitLab.com: the equivalent flow uses `glab`, keeps project paths validated,
+  paginates discovery, and never receives or saves an access token. Skiller
+  exposes the list only after the user selects **Use an existing project**;
+  connecting an existing library offers the same picker.
+- Self-hosted / company Git: accept any credential-free Git remote once. Git
+  itself owns authentication; dotagents does not guess a host API or upload a
+  token. Provider-specific project creation is offered only where an adapter
+  can prove the destination and review the exact operation first.
+- A missing CLI, missing sign-in, rejected permission, changed remote, or
+  unavailable server must stop before a library write, clone, create, or push
+  and give the user a next action. No automatic fallback may silently widen
+  network access or switch a repository.
+- Sync Center source review reports only aggregate progress (`completed`,
+  `verified`, `kept local`) while it checks the already approved source
+  allowlist. It never sends URLs, host paths, credentials, or matched secret
+  values to the renderer; every source has a finite review deadline and a
+  timeout becomes a local-only result rather than a blocked setup screen.
+- The flow and Device profile must work on macOS, Linux, and Windows. Native
+  config roots follow Application Support, XDG, and AppData respectively.
 
 ## 3. Product model
 
@@ -603,7 +648,7 @@ The schemas reserve no fake fields for deferred surfaces. Add them through expli
 | 2026-08-03 | Build from behavior and tests; attribute any literal upstream code | uses dotagents as prior art while keeping a maintainable TypeScript architecture |
 | 2026-08-03 | Canonical import is a reviewed journaled plan, not folder copying | preserves source provenance, keeps local-only content local, and makes crashes and stale previews recoverable |
 | 2026-08-03 | New Sync Center repositories are canonical dotagents; legacy Skiller repositories use a versioned compatibility path | stops producing a second portable format without silently rewriting existing user repositories |
-| 2026-08-03 | Git workspace/authentication are separate layers | dotagents owns provider-neutral reviewed Git plans; Skiller retains GitHub CLI sign-in and repository-creation UX without receiving tokens |
+| 2026-08-03 | Git workspace/authentication are separate layers | dotagents owns provider-neutral reviewed Git plans; Skiller retains GitHub/GitLab CLI sign-in and repository-creation UX without receiving tokens. Self-hosted Git remains a reviewed remote-entry path. |
 | 2026-08-03 | Bundled capability data is authoritative in dotagents | CLI and Skiller now share 49 agent roots, detection markers, shared-reader declarations, and project paths; Skiller keeps only product install/docs/UI metadata and explicit custom extensions |
 | 2026-08-03 | Portable per-skill routes and private machine selection are intersected in dotagents | a public library can express intended routing while each computer restricts it without publishing local preferences or inventing unsupported targets |
 | 2026-08-03 | Public library creation requires an explicit license | public audit remains enforceable and Skiller never silently licenses a user's work |
@@ -620,7 +665,7 @@ The schemas reserve no fake fields for deferred surfaces. Add them through expli
 | 2026-08-03 | Every Sync Center decision carries its reviewed plan ID | publish, restore, conflict, adopt, and keep-local actions reject stale source/target/remote state instead of silently rebuilding a different plan at mutation time |
 | 2026-08-03 | Remote review uses a disposable exact-commit checkout | fetching may update Git metadata, but preview never advances the managed library; apply requires both the reviewed fast-forward plan and the resulting reconciliation plan |
 | 2026-08-03 | Sync Center is the only library setup surface | the hidden Settings-era flow and its duplicate RPC routes were removed so new safety rules cannot be bypassed by stale product code |
-| 2026-08-03 | Repository creation and connection are separately reviewed | GitHub name/visibility and Git remote/destination/agent selection receive deterministic IDs and are revalidated before any repository or managed checkout is created |
+| 2026-08-03 | Repository creation and connection are separately reviewed | GitHub repository or GitLab project name/visibility, plus generic Git remote/destination/agent selection, receive deterministic IDs and are revalidated before any repository or managed checkout is created |
 
 ## 18. Immediate implementation checklist
 

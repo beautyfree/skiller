@@ -20,6 +20,8 @@ declare global {
   interface Window {
     /** Set by the main process (either host) when tRPC binds a port. */
     __SKILLER_TRPC_BASE_URL__?: string
+    /** Per-process capability issued only over Electron IPC. */
+    __SKILLER_TRPC_TOKEN__?: string
     /** Electron preload-exposed bridge. Absent under Electrobun or plain Vite. */
     api?: {
       platform: NodeJS.Platform
@@ -35,9 +37,9 @@ declare global {
 type BunRequests = AppRPCSchema['bun']['requests']
 export type BunPushMessage = keyof AppRPCSchema['bun']['messages']
 
-const DEFAULT_TRPC_URL = 'http://127.0.0.1:17888'
 const ELECTRON_PUSH_CHANNEL = 'skiller:push'
 const ELECTRON_TRPC_ENDPOINT_CHANNEL = 'skiller:trpc-endpoint'
+const TRPC_TOKEN_HEADER = 'X-Skiller-Rpc-Token'
 
 /** WKWebView can time out localhost requests around 60s; keep signal long-lived. */
 const TRPC_FETCH_MAX_MS = 600_000
@@ -105,8 +107,10 @@ type PushListener = (payload: unknown) => void
 const g = globalThis as typeof globalThis & {
   __skillerPushHub?: Map<string, Set<PushListener>>
   __skillerPushBooted?: boolean
-  __skillerElectronTrpcBaseUrl?: Promise<string>
+  __skillerElectronTrpcEndpoint?: Promise<TrpcEndpoint>
 }
+
+type TrpcEndpoint = { baseUrl: string; token: string }
 
 function getHub(): Map<string, Set<PushListener>> {
   if (!g.__skillerPushHub) g.__skillerPushHub = new Map()
@@ -153,9 +157,12 @@ async function bootPushTransport(): Promise<void> {
     const msg = args[0] as { name?: string; payload?: unknown } | undefined
     if (!msg || typeof msg.name !== 'string') return
     if (msg.name === 'trpc_endpoint') {
-      const baseUrl = (msg.payload as { baseUrl?: string } | undefined)?.baseUrl
-      if (typeof baseUrl === 'string' && baseUrl.length > 0) {
-        window.__SKILLER_TRPC_BASE_URL__ = baseUrl
+      try {
+        const endpoint = parseElectronTrpcEndpoint(msg.payload)
+        window.__SKILLER_TRPC_BASE_URL__ = endpoint.baseUrl
+        window.__SKILLER_TRPC_TOKEN__ = endpoint.token
+      } catch {
+        // The first invoke will request a fresh endpoint through IPC.
       }
     }
     dispatchPush(msg.name, msg.payload)
@@ -171,12 +178,16 @@ void bootPushTransport()
  * tRPC base URL resolution + request helper.
  * ------------------------------------------------------------------ */
 
-export function parseElectronTrpcEndpoint(payload: unknown): string {
+export function parseElectronTrpcEndpoint(payload: unknown): TrpcEndpoint {
   const baseUrl =
     payload && typeof payload === 'object' && 'baseUrl' in payload
       ? (payload as { baseUrl?: unknown }).baseUrl
       : undefined
-  if (typeof baseUrl !== 'string') {
+  const token =
+    payload && typeof payload === 'object' && 'token' in payload
+      ? (payload as { token?: unknown }).token
+      : undefined
+  if (typeof baseUrl !== 'string' || typeof token !== 'string' || !/^[A-Za-z0-9_-]{32,128}$/.test(token)) {
     throw new Error('Skiller could not connect to its local service.')
   }
   let parsed: URL
@@ -197,39 +208,38 @@ export function parseElectronTrpcEndpoint(payload: unknown): string {
   ) {
     throw new Error('Skiller could not connect to its local service.')
   }
-  return parsed.origin
+  return { baseUrl: parsed.origin, token }
 }
 
-async function trpcBaseUrl(): Promise<string> {
+async function trpcEndpoint(): Promise<TrpcEndpoint> {
   const override = parseTrpcPortOverride()
   if (override !== null) {
-    return `http://127.0.0.1:${override}`
+    throw new Error('Skiller local service authentication is unavailable for this port override.')
   }
-  if (typeof window !== 'undefined' && window.__SKILLER_TRPC_BASE_URL__) {
-    return window.__SKILLER_TRPC_BASE_URL__
+  if (typeof window !== 'undefined' && window.__SKILLER_TRPC_BASE_URL__ && window.__SKILLER_TRPC_TOKEN__) {
+    return { baseUrl: window.__SKILLER_TRPC_BASE_URL__, token: window.__SKILLER_TRPC_TOKEN__ }
   }
   if (isElectronHost()) {
-    if (!g.__skillerElectronTrpcBaseUrl) {
-      g.__skillerElectronTrpcBaseUrl = window.api!
+    if (!g.__skillerElectronTrpcEndpoint) {
+      g.__skillerElectronTrpcEndpoint = window.api!
         .invoke(ELECTRON_TRPC_ENDPOINT_CHANNEL)
         .then((payload) => {
-          const baseUrl = parseElectronTrpcEndpoint(payload)
-          window.__SKILLER_TRPC_BASE_URL__ = baseUrl
-          return baseUrl
+          const endpoint = parseElectronTrpcEndpoint(payload)
+          window.__SKILLER_TRPC_BASE_URL__ = endpoint.baseUrl
+          window.__SKILLER_TRPC_TOKEN__ = endpoint.token
+          return endpoint
         })
         .catch((error) => {
-          g.__skillerElectronTrpcBaseUrl = undefined
+          g.__skillerElectronTrpcEndpoint = undefined
           throw error
         })
     }
-    return g.__skillerElectronTrpcBaseUrl
+    return g.__skillerElectronTrpcEndpoint
   }
-  if (isBundledSkillerView()) {
-    return DEFAULT_TRPC_URL
-  }
-  return (
-    (import.meta as ImportMeta & { env?: { VITE_TRPC_URL?: string } }).env
-      ?.VITE_TRPC_URL ?? DEFAULT_TRPC_URL
+  throw new Error(
+    isBundledSkillerView()
+      ? 'Skiller could not authenticate its local service.'
+      : 'Open Skiller through its Electron shell to connect to its local service.',
   )
 }
 
@@ -256,10 +266,11 @@ async function callTrpcProcedure<T>(
   input: unknown,
   isQuery: boolean,
 ): Promise<T> {
-  const base = await trpcBaseUrl()
-  let url = `${base}/trpc/${name}`
+  const endpoint = await trpcEndpoint()
+  let url = `${endpoint.baseUrl}/trpc/${name}`
   const init: RequestInit = {
     method: isQuery ? 'GET' : 'POST',
+    headers: { [TRPC_TOKEN_HEADER]: endpoint.token },
   }
   if (isQuery) {
     if (input !== undefined) {
@@ -269,7 +280,7 @@ async function callTrpcProcedure<T>(
     // tRPC v11 requires Content-Type: application/json on every mutation,
     // even ones with no input (it rejects the body-less POST with 415
     // UNSUPPORTED_MEDIA_TYPE before reaching the procedure).
-    init.headers = { 'Content-Type': 'application/json' }
+    init.headers = { ...init.headers, 'Content-Type': 'application/json' }
     init.body = input === undefined ? '{}' : JSON.stringify(input)
   }
   const res = await trpcFetch(url, init)

@@ -1,3 +1,4 @@
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { AddressInfo } from "node:net";
 import type { AnyRouter } from "@trpc/server";
@@ -15,11 +16,12 @@ const corsHeaders: Record<string, string> = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 	"Access-Control-Allow-Headers":
-		"content-type, trpc-accept, x-trpc-source, authorization",
+		"content-type, trpc-accept, x-trpc-source, x-skiller-rpc-token, authorization",
 };
 
 export interface TrpcServerHandle {
 	port: number;
+	authToken: string;
 	close: () => void;
 }
 
@@ -28,10 +30,11 @@ export async function startTrpcHttpServer(
 	preferredPort: number,
 ): Promise<TrpcServerHandle> {
 	const maxPort = Math.min(preferredPort + TRPC_PORT_TRY_MAX, 65535);
+	const authToken = randomBytes(32).toString("base64url");
 
 	for (let port = preferredPort; port <= maxPort; port++) {
 		try {
-			const handle = await bindServerOnce(router, port);
+			const handle = await bindServerOnce(router, port, authToken);
 			if (handle.port !== preferredPort) {
 				console.warn(
 					`[tRPC] Port ${preferredPort} in use; bound to ${handle.port}. Renderer resolves the owned endpoint through Electron IPC.`,
@@ -52,10 +55,11 @@ export async function startTrpcHttpServer(
 function bindServerOnce(
 	router: AnyRouter,
 	port: number,
+	authToken: string,
 ): Promise<TrpcServerHandle> {
 	return new Promise((resolve, reject) => {
 		const server = createServer((req, res) => {
-			void handleRequest(router, req, res);
+			void handleRequest(router, authToken, req, res);
 		});
 
 		server.once("error", (err) => {
@@ -67,6 +71,7 @@ function bindServerOnce(
 			const bound = address?.port ?? port;
 			resolve({
 				port: bound,
+				authToken,
 				close: () => server.close(),
 			});
 		});
@@ -75,6 +80,7 @@ function bindServerOnce(
 
 async function handleRequest(
 	router: AnyRouter,
+	authToken: string,
 	req: IncomingMessage,
 	res: ServerResponse,
 ): Promise<void> {
@@ -87,6 +93,17 @@ async function handleRequest(
 	}
 
 	for (const [k, v] of Object.entries(corsHeaders)) res.setHeader(k, v);
+	const supplied = req.headers["x-skiller-rpc-token"];
+	const suppliedToken = Array.isArray(supplied) ? "" : supplied ?? "";
+	if (
+		suppliedToken.length !== authToken.length
+		|| !timingSafeEqual(Buffer.from(suppliedToken), Buffer.from(authToken))
+	) {
+		res.statusCode = 401;
+		res.setHeader("content-type", "application/json");
+		res.end(JSON.stringify({ error: { message: "Skiller local service authentication failed." } }));
+		return;
+	}
 
 	// Strip the `/trpc/` prefix so the adapter sees the bare procedure path.
 	const url = new URL(req.url ?? "/", "http://127.0.0.1");

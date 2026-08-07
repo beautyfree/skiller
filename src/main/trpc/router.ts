@@ -1,12 +1,23 @@
 import { initTRPC } from '@trpc/server'
 import { z } from 'zod'
 import type { AppPlatform } from '../../shared/platform'
+import { redactTrpcErrorData } from './error-data'
 import {
   createRequestHandlers,
   type BunSideRpc,
 } from '../rpc-handlers'
 
-const t = initTRPC.create()
+const t = initTRPC.create({
+  // The HTTP transport is loopback-only, but it is still a renderer boundary.
+  // Never serialize a main-process stack, absolute path, or validator detail
+  // across it. User-facing handlers return deliberate safe messages instead.
+  errorFormatter({ shape }) {
+    return {
+      ...shape,
+      data: redactTrpcErrorData(shape.data),
+    }
+  },
+})
 const anyIn = z.any()
 
 export function createAppRouter(ctx: {
@@ -32,6 +43,7 @@ export function createAppRouter(ctx: {
     scan_agent_skills: proc.input(anyIn).query(({ input }) => h.scan_agent_skills(input)),
     skill_quality_overview: proc.query(() => h.skill_quality_overview()),
     skill_quality_reveal_file: proc.input(anyIn).mutation(({ input }) => h.skill_quality_reveal_file(input)),
+    skill_quality_reveal_folder: proc.input(anyIn).mutation(({ input }) => h.skill_quality_reveal_folder(input)),
     skill_quality_eval_preview: proc.input(anyIn).query(({ input }) => h.skill_quality_eval_preview(input)),
     skill_quality_dry_start: proc.input(anyIn).mutation(({ input }) => h.skill_quality_dry_start(input)),
     skill_quality_measured_start: proc.input(anyIn).mutation(({ input }) => h.skill_quality_measured_start(input)),
@@ -75,6 +87,9 @@ export function createAppRouter(ctx: {
     sync_center_connect_preview: proc.input(anyIn).query(({ input }) => h.sync_center_connect_preview(input)),
     sync_github_create_repo_preview: proc.input(anyIn).query(({ input }) => h.sync_github_create_repo_preview(input)),
     sync_github_create_repo: proc.input(anyIn).mutation(({ input }) => h.sync_github_create_repo(input)),
+		sync_gitlab_create_project_preview: proc.input(anyIn).query(({ input }) => h.sync_gitlab_create_project_preview(input)),
+		sync_gitlab_create_project: proc.input(anyIn).mutation(({ input }) => h.sync_gitlab_create_project(input)),
+    sync_provider_libraries: proc.input(anyIn).query(({ input }) => h.sync_provider_libraries(input)),
     install_skill: proc.input(anyIn).mutation(({ input }) => h.install_skill(input)),
     uninstall_skill: proc.input(anyIn).mutation(({ input }) => h.uninstall_skill(input)),
     uninstall_skill_all: proc.input(anyIn).mutation(({ input }) => h.uninstall_skill_all(input)),

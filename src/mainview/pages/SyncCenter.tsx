@@ -1,9 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Cloud, FolderOpen, Github, History, Info, Loader2, RotateCcw, Server } from 'lucide-react'
-import { invoke } from '@/mainview/lib/native'
-import type { AgentConfigJson, SyncConnectPreviewJson, SyncGitHubRepositoryPreviewJson, SyncHistoryEntryJson, SyncInventoryJson, SyncLibraryDecisionJson, SyncProfileStatusJson, SyncPublishPreviewJson, SyncRemoteTrustPreviewJson, SyncThreeWayReviewJson, SyncUndoPreviewJson } from '@/shared/rpc-schema'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Cloud, FolderOpen, Github, Gitlab, History, Info, Loader2, RotateCcw, Server } from 'lucide-react'
+import { invoke, listen } from '@/mainview/lib/native'
+import type { AgentConfigJson, SyncConnectPreviewJson, SyncGitHubRepositoryPreviewJson, SyncGitLabProjectPreviewJson, SyncHistoryEntryJson, SyncInventoryJson, SyncLibraryDecisionJson, SyncProfileStatusJson, SyncProviderLibraryJson, SyncPublishPreviewJson, SyncRemoteTrustPreviewJson, SyncSourceReviewProgressJson, SyncThreeWayReviewJson, SyncUndoPreviewJson } from '@/shared/rpc-schema'
 import { Button } from '@/mainview/components/ui/button'
 import { useToast } from '@/mainview/components/ToastProvider'
 import { AgentIcon } from '@/mainview/components/AgentIcon'
@@ -108,6 +108,7 @@ export default function SyncCenter() {
   const [showInventory, setShowInventory] = useState(false)
   const [showConnect, setShowConnect] = useState(false)
   const [connectRemoteUrl, setConnectRemoteUrl] = useState('')
+  const [selectedConnectLibraryLabel, setSelectedConnectLibraryLabel] = useState<string | null>(null)
   const [connectAgentSlugs, setConnectAgentSlugs] = useState<string[]>([])
   const [connectSelectionReady, setConnectSelectionReady] = useState(false)
   const [connectPreview, setConnectPreview] = useState<SyncConnectPreviewJson | null>(null)
@@ -116,14 +117,20 @@ export default function SyncCenter() {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [libraryDecisions, setLibraryDecisions] = useState<Record<string, SyncLibraryDecisionJson>>({})
   const [selectionReady, setSelectionReady] = useState(false)
-  const [setupMode, setSetupMode] = useState<'github' | 'custom' | null>(null)
+  const [setupMode, setSetupMode] = useState<'github' | 'gitlab' | 'custom' | null>(null)
   const [repositoryName, setRepositoryName] = useState('skiller-agent-library')
   const [githubRepositoryPreview, setGitHubRepositoryPreview] = useState<SyncGitHubRepositoryPreviewJson | null>(null)
+  const [gitLabProjectName, setGitLabProjectName] = useState('skiller-agent-library')
+  const [gitLabProjectPreview, setGitLabProjectPreview] = useState<SyncGitLabProjectPreviewJson | null>(null)
+  const [providerLibraries, setProviderLibraries] = useState<{ provider: 'github' | 'gitlab'; libraries: SyncProviderLibraryJson[] } | null>(null)
+  const [connectProviderLibraries, setConnectProviderLibraries] = useState<{ provider: 'github' | 'gitlab'; libraries: SyncProviderLibraryJson[] } | null>(null)
+  const [browsingProvider, setBrowsingProvider] = useState<'github' | 'gitlab' | null>(null)
   const [libraryMode, setLibraryMode] = useState<'private' | 'public'>('private')
   const [libraryLicense, setLibraryLicense] = useState<'' | 'MIT' | 'Apache-2.0' | 'CC0-1.0'>('')
   const [minimumReleaseAgeMinutes, setMinimumReleaseAgeMinutes] = useState(7 * 24 * 60)
   const [remoteUrl, setRemoteUrl] = useState('')
   const [preview, setPreview] = useState<SyncPublishPreviewJson | null>(null)
+  const [sourceReviewProgress, setSourceReviewProgress] = useState<SyncSourceReviewProgressJson | null>(null)
   const [showDestination, setShowDestination] = useState(false)
   const [remoteReview, setRemoteReview] = useState<SyncThreeWayReviewJson | null>(null)
 	const [undoPreview, setUndoPreview] = useState<SyncUndoPreviewJson | null>(null)
@@ -131,7 +138,7 @@ export default function SyncCenter() {
 	const [remoteTrustMinimumReleaseAgeMinutes, setRemoteTrustMinimumReleaseAgeMinutes] = useState(7 * 24 * 60)
 	const [remoteSelections, setRemoteSelections] = useState<string[]>([])
 	const [localSelections, setLocalSelections] = useState<string[]>([])
-  const [busy, setBusy] = useState<'idle' | 'reviewing' | 'creating' | 'connecting' | 'publishing' | 'undoing'>('idle')
+  const [busy, setBusy] = useState<'idle' | 'reviewing' | 'creating' | 'browsing' | 'connecting' | 'publishing' | 'undoing'>('idle')
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const { data: inventory, isLoading: inventoryLoading } = useQuery<SyncInventoryJson>({
@@ -212,7 +219,16 @@ export default function SyncCenter() {
     setConnectSelectionReady(true)
   }, [agents, connectSelectionReady])
 
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    void listen<SyncSourceReviewProgressJson>('sync_source_review_progress', (event) => {
+      if (busy === 'reviewing') setSourceReviewProgress(event.payload)
+    }).then((cleanup) => { unlisten = cleanup })
+    return () => unlisten?.()
+  }, [busy])
+
   async function prepareStorageChoice() {
+    setSourceReviewProgress(null)
     setBusy('reviewing')
     try {
       const result = await invoke('sync_center_publish_preview', { selectedKeys, decisions: reviewedDecisions, mode: libraryMode, minimumReleaseAgeMinutes })
@@ -230,6 +246,7 @@ export default function SyncCenter() {
     setLibraryMode(mode)
     setGitHubRepositoryPreview(null)
     if (!preview) return
+    setSourceReviewProgress(null)
     setBusy('reviewing')
     try {
       setPreview(await invoke('sync_center_publish_preview', { selectedKeys, decisions: reviewedDecisions, mode, minimumReleaseAgeMinutes }))
@@ -245,6 +262,7 @@ export default function SyncCenter() {
     if (minutes === minimumReleaseAgeMinutes) return
     setMinimumReleaseAgeMinutes(minutes)
     if (!preview) return
+    setSourceReviewProgress(null)
     setBusy('reviewing')
     try {
       setPreview(await invoke('sync_center_publish_preview', {
@@ -313,6 +331,7 @@ export default function SyncCenter() {
 		setShowDestination(false)
 		setSetupMode(null)
 		setGitHubRepositoryPreview(null)
+		setGitLabProjectPreview(null)
 		setRemoteUrl('')
 	  }
 	  window.addEventListener('skiller:sync-home', returnHome)
@@ -394,6 +413,73 @@ export default function SyncCenter() {
       setRemoteUrl(result.remoteUrl)
 		setGitHubRepositoryPreview(null)
 		toast(`${libraryMode === 'private' ? 'Private' : 'Public'} GitHub repository created. Your library is ready to create.`)
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), 'destructive')
+    } finally {
+      setBusy('idle')
+    }
+  }
+
+  async function browseProviderLibraries(provider: 'github' | 'gitlab', target: 'create' | 'connect' = 'create') {
+    setBrowsingProvider(provider)
+    setBusy('browsing')
+    try {
+      const result = { provider, libraries: await invoke('sync_provider_libraries', { provider }) }
+      if (target === 'connect') setConnectProviderLibraries(result)
+      else setProviderLibraries(result)
+    } catch (error) {
+      if (target === 'connect') setConnectProviderLibraries(null)
+      else setProviderLibraries(null)
+      toast(error instanceof Error ? error.message : String(error), 'destructive')
+    } finally {
+      setBrowsingProvider(null)
+      setBusy('idle')
+    }
+  }
+
+  function useProviderLibrary(library: SyncProviderLibraryJson, target: 'create' | 'connect' = 'create') {
+    if (target === 'connect') {
+      setConnectRemoteUrl(library.remote_url)
+      setSelectedConnectLibraryLabel(library.label)
+      setConnectProviderLibraries(null)
+      setConnectPreview(null)
+      toast(`${library.label} selected. Skiller will review its exact commit before it creates a local workspace.`)
+      return
+    }
+    setRemoteUrl(library.remote_url)
+    setProviderLibraries(null)
+    setGitHubRepositoryPreview(null)
+    setGitLabProjectPreview(null)
+    toast(`${library.label} selected. Skiller will still show the full library review before it writes or uploads anything.`)
+  }
+
+  async function reviewGitLabProject() {
+    setBusy('reviewing')
+    try {
+      setGitLabProjectPreview(await invoke('sync_gitlab_create_project_preview', {
+        project: gitLabProjectName,
+        visibility: libraryMode,
+      }))
+    } catch (error) {
+      setGitLabProjectPreview(null)
+      toast(error instanceof Error ? error.message : String(error), 'destructive')
+    } finally {
+      setBusy('idle')
+    }
+  }
+
+  async function createGitLabProject() {
+    if (!gitLabProjectPreview) return
+    setBusy('creating')
+    try {
+      const result = await invoke('sync_gitlab_create_project', {
+        project: gitLabProjectName,
+        visibility: libraryMode,
+        planId: gitLabProjectPreview.plan_id,
+      })
+      setRemoteUrl(result.remoteUrl)
+      setGitLabProjectPreview(null)
+      toast(`${libraryMode === 'private' ? 'Private' : 'Public'} GitLab project created. Your library is ready to create.`)
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), 'destructive')
     } finally {
@@ -631,14 +717,17 @@ export default function SyncCenter() {
 			  <span>Private by default · share when ready</span>
             </div>
           </div> : <div className="relative w-full max-w-2xl rounded-2xl border border-white/20 bg-background/95 p-5 text-left text-foreground shadow-2xl backdrop-blur-xl sm:p-6">
-            <button type="button" className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => { setShowConnect(false); setConnectPreview(null) }}><ChevronLeft className="size-3.5" />Back</button>
+            <button type="button" className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => { setShowConnect(false); setConnectPreview(null); setSelectedConnectLibraryLabel(null) }}><ChevronLeft className="size-3.5" />Back</button>
             <div className="mt-4 flex items-start gap-3">
               <div className="rounded-xl bg-primary/10 p-2.5 text-primary"><Cloud className="size-5" /></div>
               <div><h1 className="text-xl font-semibold tracking-[-0.025em]">Use an existing library</h1><p className="mt-1 text-xs leading-relaxed text-muted-foreground">Connect a public or private dotagents Git repository. Skiller downloads a managed local workspace first; it does not touch any agent folder until the next review is confirmed.</p></div>
             </div>
-            <label className="mt-5 grid gap-1.5 text-xs font-medium">Git repository
-              <input value={connectRemoteUrl} onChange={(event) => { setConnectRemoteUrl(event.target.value); setConnectPreview(null) }} placeholder="https://github.com/you/agent-library.git" spellCheck={false} className="h-10 rounded-lg border border-border bg-background px-3 text-xs font-normal text-foreground outline-none focus:ring-2 focus:ring-ring/40" />
-            </label>
+            <div className="mt-5 rounded-xl border border-border/70 bg-muted/15 p-3.5">
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold">Find your library</p><p className="mt-0.5 max-w-md text-[11px] leading-relaxed text-muted-foreground">Choose a provider to see libraries available through its existing CLI sign-in. Skiller asks only after you press a button; choosing one does not clone or change it.</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => void browseProviderLibraries('github', 'connect')} disabled={busy !== 'idle'}>{busy === 'browsing' && browsingProvider === 'github' ? <><Loader2 className="size-3.5 animate-spin" />Checking GitHub…</> : <><Github className="size-3.5" />GitHub</>}</Button><Button size="sm" variant="outline" onClick={() => void browseProviderLibraries('gitlab', 'connect')} disabled={busy !== 'idle'}>{busy === 'browsing' && browsingProvider === 'gitlab' ? <><Loader2 className="size-3.5 animate-spin" />Checking GitLab…</> : <><Gitlab className="size-3.5" />GitLab</>}</Button></div></div>
+              {connectProviderLibraries && <label className="mt-3 grid gap-1 text-[11px] font-medium text-foreground">{connectProviderLibraries.provider === 'github' ? 'Choose a GitHub repository' : 'Choose a GitLab project'}<select defaultValue="" onChange={(event) => { const selected = connectProviderLibraries.libraries.find((library) => library.remote_url === event.target.value); if (selected) useProviderLibrary(selected, 'connect') }} className="h-9 rounded-lg border border-border bg-background px-2.5 text-xs font-normal text-foreground outline-none focus:ring-2 focus:ring-ring/40"><option value="" disabled>{connectProviderLibraries.libraries.length ? 'Select your library…' : `No writable ${connectProviderLibraries.provider === 'github' ? 'repositories' : 'projects'} found`}</option>{connectProviderLibraries.libraries.map((library) => <option key={library.remote_url} value={library.remote_url}>{library.label}</option>)}</select></label>}
+              {selectedConnectLibraryLabel && <p className="mt-3 text-[11px] leading-relaxed text-emerald-700 dark:text-emerald-300"><span className="font-medium">Selected:</span> {selectedConnectLibraryLabel}. Review connection will verify its exact remote and immutable commit.</p>}
+              <details className="mt-3 border-t border-border/60 pt-3"><summary className="cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-foreground">Use another Git server or paste a remote URL</summary><label className="mt-2 grid gap-1.5 text-xs font-medium">Git repository<input value={connectRemoteUrl} onChange={(event) => { setConnectRemoteUrl(event.target.value); setSelectedConnectLibraryLabel(null); setConnectPreview(null) }} placeholder="git@git.example.com:team/agent-library.git" spellCheck={false} className="h-10 rounded-lg border border-border bg-background px-3 text-xs font-normal text-foreground outline-none focus:ring-2 focus:ring-ring/40" /></label></details>
+            </div>
             <div className="mt-4 flex flex-wrap items-start justify-between gap-3 rounded-xl border border-border/70 bg-muted/20 px-3.5 py-3">
               <div className="max-w-sm"><p className="text-xs font-semibold">Commit cooling-off</p><p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Review resolves the default branch to one immutable commit. The delay reduces surprise from a just-pushed change; Git dates are author-controlled.</p></div>
               <label className="relative min-w-36"><span className="sr-only">Commit cooling-off</span><select value={connectMinimumReleaseAgeMinutes} disabled={busy !== 'idle'} onChange={(event) => { setConnectMinimumReleaseAgeMinutes(Number(event.target.value)); setConnectPreview(null) }} className="h-9 w-full appearance-none rounded-lg border border-border bg-background px-3 pr-8 text-xs font-medium text-foreground outline-none focus:ring-2 focus:ring-ring/40"><option value={0}>Off</option><option value={1440}>24 hours</option><option value={10080}>7 days · recommended</option><option value={43200}>30 days</option></select><ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" /></label>
@@ -728,7 +817,8 @@ export default function SyncCenter() {
 			<div className="order-4 mt-4 flex w-full shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 px-1 pt-3">
 			  <p className="max-w-xl text-xs font-semibold">{selectedKeys.length} skills included <span className="ml-1 font-normal text-muted-foreground">{librarySkillCount > selectedKeys.length ? `${librarySkillCount - selectedKeys.length} stay only on this computer` : 'Ready for the next step'}</span>{reviewedExternalSkillCount > 0 && <span className="mt-1 block font-normal leading-relaxed text-muted-foreground">Continuing contacts the exact Git sources for {plural(reviewedExternalSkillCount, 'external skill')} to pin and verify their commits. No other source is allowed.</span>}{missingVendoredLicenses.length > 0 && <span className="mt-1 block font-normal text-amber-700 dark:text-amber-300">Add an upstream license for {plural(missingVendoredLicenses.length, 'vendored skill')} in Skill details.</span>}</p>
 			  <div className="flex gap-2">
-				<Button size="lg" onClick={prepareStorageChoice} disabled={busy !== 'idle' || selectedKeys.length === 0 || missingVendoredLicenses.length > 0}>{busy === 'reviewing' ? <><Loader2 className="size-3.5 animate-spin" />Preparing your library…</> : <>Choose a home <ChevronRight className="size-3.5" /></>}</Button>
+				<Button size="lg" onClick={prepareStorageChoice} disabled={busy !== 'idle' || selectedKeys.length === 0 || missingVendoredLicenses.length > 0}>{busy === 'reviewing' ? <><Loader2 className="size-3.5 animate-spin" />{sourceReviewProgress && sourceReviewProgress.total > 0 ? `Checking sources ${sourceReviewProgress.completed}/${sourceReviewProgress.total}` : `Checking ${plural(reviewedExternalSkillCount, 'external source')}…`}</> : <>Choose a home <ChevronRight className="size-3.5" /></>}</Button>
+				{busy === 'reviewing' && reviewedExternalSkillCount > 0 && <p className="max-w-60 text-[10px] leading-relaxed text-muted-foreground">{sourceReviewProgress && sourceReviewProgress.total > 0 ? `${plural(sourceReviewProgress.verified, 'source')} verified · ${plural(sourceReviewProgress.kept_local, 'source')} will stay local if it cannot be verified.` : 'Each source has a 15-second limit. If one cannot be verified, it stays on this computer.'}</p>}
 			</div>
 			</div>
 		  )}
@@ -783,8 +873,21 @@ export default function SyncCenter() {
 			  {preview.source_trust.length > 0 && <section className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.05] px-4 py-3.5"><div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-500" /><div className="min-w-0 flex-1"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold text-foreground">Only {plural(preview.source_trust.length, 'reviewed source')} contacted</p><p className="mt-1 max-w-xl leading-relaxed text-muted-foreground">This exact allowlist is bound to the plan and stays only on this device. Skiller blocks every other source before Git can run.</p></div><label className="grid min-w-40 gap-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Commit cooling-off<span className="relative"><select value={minimumReleaseAgeMinutes} disabled={busy !== 'idle'} onChange={(event) => void changeMinimumReleaseAge(Number(event.target.value))} className="h-8 w-full appearance-none rounded-lg border border-border bg-background px-2.5 pr-8 text-xs font-medium normal-case tracking-normal text-foreground outline-none focus:ring-2 focus:ring-ring/40"><option value={0}>Off</option><option value={1440}>24 hours</option><option value={10080}>7 days</option><option value={43200}>30 days</option></select><ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" /></span></label></div><p className="mt-2 leading-relaxed text-muted-foreground">{preview.source_security.commit_ages.length > 0 ? `${plural(preview.source_security.commit_ages.length, 'source')} passed the ${minimumReleaseAgeMinutes === 0 ? 'disabled' : minimumReleaseAgeMinutes === 1440 ? '24-hour' : minimumReleaseAgeMinutes === 10080 ? '7-day' : '30-day'} cooling-off policy.` : 'No external commit passed this policy yet.'} Git dates are author-controlled, so this delay reduces surprise; it does not prove that code is safe.</p><details className="mt-2"><summary className="cursor-pointer font-medium text-foreground underline-offset-2 hover:underline">View contacted sources</summary><div className="mt-1.5 space-y-1">{preview.source_trust.map((source) => <p key={source.source} className="break-all font-mono text-[10px] text-muted-foreground">{source.source}</p>)}</div></details></div></div></section>}
 			  {preview.unresolved_sources && preview.unresolved_sources.length > 0 && <section className="mt-4 rounded-xl border border-amber-400/35 bg-amber-500/[0.07] px-4 py-3.5 text-amber-950 dark:text-amber-100"><div className="flex gap-3"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-300" /><div className="min-w-0"><p className="font-semibold">{plural(preview.unresolved_sources.length, 'external skill')} will stay on this computer</p><p className="mt-1 leading-relaxed text-amber-900/80 dark:text-amber-200/80">{preview.unresolved_sources.some((source) => source.reason === 'too-new') ? 'Some source commits are newer than your cooling-off period. Others may need Git authentication. Nothing from them will be uploaded or changed; lower the delay only if you have reviewed that risk.' : 'Skiller could not verify these sources. Nothing from them will be uploaded or changed. Reconnect or authenticate Git, then refresh this review.'}</p><details className="mt-3"><summary className="cursor-pointer font-medium text-amber-900 underline-offset-2 hover:underline dark:text-amber-100">View affected skills ({preview.unresolved_sources.length})</summary><div className="mt-2 space-y-1 text-[11px] text-amber-900/80 dark:text-amber-200/80">{preview.unresolved_sources.map((source) => <p key={`${source.kind}-${source.id}`}><span className="font-medium">{source.id}</span>{source.reason === 'too-new' ? ` · commit is ${source.age_minutes ?? 0} minutes old; policy requires ${source.minimum_age_minutes ?? minimumReleaseAgeMinutes}` : ' · source could not be verified'}</p>)}</div></details></div></div></section>}
 			  {preview.secret_findings.length > 0 ? <section className="mt-4 border-y border-destructive/25 py-3"><p className="font-medium text-destructive">Backup is paused: review {preview.secret_findings.length} possible secret{preview.secret_findings.length === 1 ? '' : 's'} in {groupSecretFindings(preview.secret_findings).length} file{groupSecretFindings(preview.secret_findings).length === 1 ? '' : 's'} first.</p><p className="mt-1 text-muted-foreground">Skiller never shows the matched value. Lines below identify what needs your decision.</p><div className="mt-2 max-h-40 divide-y divide-destructive/10 overflow-y-auto rounded-lg border border-destructive/15 bg-background/45">{groupSecretFindings(preview.secret_findings).map((group) => <div key={`${group.skillId}-${group.relativePath}`} className="px-2.5 py-2"><div className="flex items-center gap-2"><p className="min-w-0 flex-1 truncate font-medium text-foreground">{group.skillId} <span className="font-normal text-muted-foreground">· {group.relativePath}</span></p><Button size="xs" variant="ghost" className="h-6 shrink-0 px-1.5 text-[11px]" onClick={() => void revealSecretFinding(group.skillId, group.relativePath)}><FolderOpen className="size-3" />Show file</Button></div><div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">{group.findings.map((finding) => <p key={`${finding.line}-${finding.column}-${finding.rule}`}>Line {finding.line} · Possible {secretRuleLabel(finding.rule)}</p>)}</div></div>)}</div></section> : <p className="mt-3 flex items-center gap-1.5 text-muted-foreground"><CheckCircle2 className="size-3.5 text-emerald-500" />No secret patterns found. This review is rebuilt immediately before commit.</p>}</div><div className="mt-3 flex shrink-0 items-center justify-end gap-3 border-t border-border/60 pt-3">{previewIncludedCount === 0 && <p className="text-[11px] text-amber-700 dark:text-amber-300">Include at least one verified skill before choosing a Git home.</p>}<Button size="sm" className="h-9 px-4" onClick={() => setShowDestination(true)} disabled={preview.secret_findings.length > 0 || previewIncludedCount === 0}>Choose a Git home <ChevronRight className="size-3.5" /></Button></div></>}
-			  {showDestination && <div className="min-h-0 flex-1 overflow-y-auto pr-1"><section className="mt-5 rounded-xl border border-border/70 p-3.5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">Who can use this repository?</p><p className="mt-0.5 text-muted-foreground">This controls the library policy; GitHub can also apply the repository visibility for you.</p></div><div className="flex rounded-lg border border-border bg-muted/25 p-0.5"><button type="button" className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${libraryMode === 'private' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => void changeLibraryMode('private')}>Private</button><button type="button" className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${libraryMode === 'public' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => void changeLibraryMode('public')}>Public</button></div></div>{libraryMode === 'public' && <label className="mt-3 grid max-w-xs gap-1 text-[11px] font-medium">License for your library<span className="relative"><select value={libraryLicense} onChange={(event) => setLibraryLicense(event.target.value as typeof libraryLicense)} className="h-9 w-full appearance-none rounded-lg border border-border bg-background px-2.5 pr-9 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/40"><option value="">Choose a license…</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache 2.0</option><option value="CC0-1.0">CC0 1.0</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" /></span><span className="font-normal leading-relaxed text-muted-foreground">Public libraries require an explicit license; Skiller never chooses one for your work.</span></label>}</section><section className="mt-3 grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => { setSetupMode('github'); setRemoteUrl(''); setGitHubRepositoryPreview(null) }} className={`rounded-xl border p-4 text-left transition-colors ${setupMode === 'github' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 hover:border-primary/45 hover:bg-muted/30'}`}><div className="flex items-center justify-between"><span className="flex items-center gap-2 font-semibold"><Github className="size-4" />GitHub</span><span className="text-[10px] font-medium text-primary">{libraryMode === 'private' ? 'Private by default' : 'Public repository'}</span></div><p className="mt-1.5 leading-relaxed text-muted-foreground">Create a new {libraryMode} repository with your existing GitHub sign-in.</p></button><button type="button" onClick={() => { setSetupMode('custom'); setGitHubRepositoryPreview(null) }} className={`rounded-xl border p-4 text-left transition-colors ${setupMode === 'custom' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 hover:border-primary/45 hover:bg-muted/30'}`}><span className="flex items-center gap-2 font-semibold"><Server className="size-4" />Another Git server</span><p className="mt-1.5 leading-relaxed text-muted-foreground">Use GitLab, a self-hosted server, or another remote you control.</p></button></section>
-			  {setupMode === 'github' ? (
+			  {showDestination && <div className="min-h-0 flex-1 overflow-y-auto pr-1"><section className="mt-5 rounded-xl border border-border/70 p-3.5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">Who can use this repository?</p><p className="mt-0.5 text-muted-foreground">This controls the library policy; GitHub and GitLab apply the same visibility when they create a home for you.</p></div><div className="flex rounded-lg border border-border bg-muted/25 p-0.5"><button type="button" className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${libraryMode === 'private' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => void changeLibraryMode('private')}>Private</button><button type="button" className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${libraryMode === 'public' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => void changeLibraryMode('public')}>Public</button></div></div>{libraryMode === 'public' && <label className="mt-3 grid max-w-xs gap-1 text-[11px] font-medium">License for your library<span className="relative"><select value={libraryLicense} onChange={(event) => setLibraryLicense(event.target.value as typeof libraryLicense)} className="h-9 w-full appearance-none rounded-lg border border-border bg-background px-2.5 pr-9 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/40"><option value="">Choose a license…</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache 2.0</option><option value="CC0-1.0">CC0 1.0</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" /></span><span className="font-normal leading-relaxed text-muted-foreground">Public libraries require an explicit license; Skiller never chooses one for your work.</span></label>}</section><section className="mt-3 grid gap-2 sm:grid-cols-3"><button type="button" onClick={() => { setSetupMode('github'); setRemoteUrl(''); setGitHubRepositoryPreview(null) }} className={`rounded-xl border p-4 text-left transition-colors ${setupMode === 'github' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 hover:border-primary/45 hover:bg-muted/30'}`}><div className="flex items-center justify-between"><span className="flex items-center gap-2 font-semibold"><Github className="size-4" />GitHub</span><span className="text-[10px] font-medium text-primary">{libraryMode === 'private' ? 'Private by default' : 'Public repository'}</span></div><p className="mt-1.5 leading-relaxed text-muted-foreground">Create a new {libraryMode} repository with your existing GitHub sign-in.</p></button><button type="button" onClick={() => { setSetupMode('gitlab'); setRemoteUrl(''); setGitHubRepositoryPreview(null); setGitLabProjectPreview(null) }} className={`rounded-xl border p-4 text-left transition-colors ${setupMode === 'gitlab' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 hover:border-primary/45 hover:bg-muted/30'}`}><div className="flex items-center justify-between"><span className="flex items-center gap-2 font-semibold"><Gitlab className="size-4" />GitLab</span><span className="text-[10px] font-medium text-primary">{libraryMode === 'private' ? 'Private by default' : 'Public project'}</span></div><p className="mt-1.5 leading-relaxed text-muted-foreground">Create a new {libraryMode} project with your existing GitLab sign-in.</p></button><button type="button" onClick={() => { setSetupMode('custom'); setGitHubRepositoryPreview(null); setGitLabProjectPreview(null) }} className={`rounded-xl border p-4 text-left transition-colors ${setupMode === 'custom' ? 'border-primary bg-primary/[0.07] ring-1 ring-primary/30' : 'border-border/70 hover:border-primary/45 hover:bg-muted/30'}`}><span className="flex items-center gap-2 font-semibold"><Server className="size-4" />Another Git server</span><p className="mt-1.5 leading-relaxed text-muted-foreground">Use a self-hosted server or another remote you control.</p></button></section>
+			  {setupMode === 'gitlab' ? (
+				<div className="mt-3 flex flex-wrap items-end gap-2 border-t border-border/60 pt-4">
+				  {!remoteUrl ? <>
+					<label className="grid gap-1 text-[11px] text-muted-foreground">Project path
+					  <input value={gitLabProjectName} onChange={(event) => { setGitLabProjectName(event.target.value); setGitLabProjectPreview(null) }} placeholder="group/agent-library" className="h-8 w-52 rounded-lg border border-border bg-background px-2 text-xs text-foreground" />
+					  <span className="max-w-64 leading-relaxed">Uses your existing GitLab CLI sign-in. Skiller never receives or stores a GitLab token.</span>
+					</label>
+					{gitLabProjectPreview && <div className="max-w-56 rounded-lg border border-primary/25 bg-primary/[0.06] px-3 py-2 text-[11px]"><p className="font-semibold text-foreground">Ready to create {gitLabProjectPreview.project}</p><p className="mt-0.5 leading-relaxed text-muted-foreground">GitLab will create one {gitLabProjectPreview.visibility} project. No skill is uploaded until the next confirmation.</p></div>}
+					<Button size="sm" onClick={gitLabProjectPreview ? createGitLabProject : reviewGitLabProject} disabled={busy !== 'idle' || preview.secret_findings.length > 0 || (libraryMode === 'public' && !libraryLicense)}>{busy === 'reviewing' ? <><Loader2 className="size-3.5 animate-spin" />Reviewing…</> : busy === 'creating' ? <><Loader2 className="size-3.5 animate-spin" />Creating…</> : gitLabProjectPreview ? `Create ${libraryMode} project` : 'Review project'}</Button>
+					<Button size="sm" variant="outline" onClick={() => void browseProviderLibraries('gitlab')} disabled={busy !== 'idle'}>{busy === 'browsing' && browsingProvider === 'gitlab' ? <><Loader2 className="size-3.5 animate-spin" />Checking GitLab…</> : 'Use an existing project'}</Button>
+					{providerLibraries?.provider === 'gitlab' && <label className="grid gap-1 text-[11px] text-muted-foreground">Choose an existing GitLab project<select defaultValue="" onChange={(event) => { const selected = providerLibraries.libraries.find((library) => library.remote_url === event.target.value); if (selected) useProviderLibrary(selected) }} className="h-8 min-w-56 rounded-lg border border-border bg-background px-2 text-xs text-foreground"><option value="" disabled>{providerLibraries.libraries.length ? 'Select a project…' : 'No writable projects found'}</option>{providerLibraries.libraries.map((library) => <option key={library.remote_url} value={library.remote_url}>{library.label}</option>)}</select><span className="max-w-64 leading-relaxed">Skiller asked GitLab only because you requested this list. Selecting one does not clone, create, or upload anything.</span></label>}
+				  </> : <Button size="sm" onClick={publishBackup} disabled={busy !== 'idle' || preview.secret_findings.length > 0 || (libraryMode === 'public' && !libraryLicense)}>Create library</Button>}
+				</div>
+			  ) : setupMode === 'github' ? (
                 <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-border/60 pt-4">
                   {!remoteUrl ? <>
                     <label className="grid gap-1 text-[11px] text-muted-foreground">Repository name
@@ -792,16 +895,18 @@ export default function SyncCenter() {
 					  <span className="max-w-52 leading-relaxed">Uses your existing GitHub CLI sign-in. Skiller never receives or stores a GitHub token.</span></label>
 					{githubRepositoryPreview && <div className="max-w-56 rounded-lg border border-primary/25 bg-primary/[0.06] px-3 py-2 text-[11px]"><p className="font-semibold text-foreground">Ready to create {githubRepositoryPreview.repository}</p><p className="mt-0.5 leading-relaxed text-muted-foreground">GitHub will create one {githubRepositoryPreview.visibility} repository. No skill is uploaded until the next confirmation.</p></div>}
                     <Button size="sm" onClick={githubRepositoryPreview ? createGitHubRepository : reviewGitHubRepository} disabled={busy !== 'idle' || preview.secret_findings.length > 0 || (libraryMode === 'public' && !libraryLicense)}>{busy === 'reviewing' ? <><Loader2 className="size-3.5 animate-spin" />Reviewing…</> : busy === 'creating' ? <><Loader2 className="size-3.5 animate-spin" />Creating…</> : githubRepositoryPreview ? `Create ${libraryMode} repository` : 'Review repository'}</Button>
+					<Button size="sm" variant="outline" onClick={() => void browseProviderLibraries('github')} disabled={busy !== 'idle'}>{busy === 'browsing' && browsingProvider === 'github' ? <><Loader2 className="size-3.5 animate-spin" />Checking GitHub…</> : 'Use an existing repository'}</Button>
+					{providerLibraries?.provider === 'github' && <label className="grid gap-1 text-[11px] text-muted-foreground">Choose an existing GitHub repository<select defaultValue="" onChange={(event) => { const selected = providerLibraries.libraries.find((library) => library.remote_url === event.target.value); if (selected) useProviderLibrary(selected) }} className="h-8 min-w-56 rounded-lg border border-border bg-background px-2 text-xs text-foreground"><option value="" disabled>{providerLibraries.libraries.length ? 'Select a repository…' : 'No writable repositories found'}</option>{providerLibraries.libraries.map((library) => <option key={library.remote_url} value={library.remote_url}>{library.label}</option>)}</select><span className="max-w-64 leading-relaxed">Skiller asked GitHub only because you requested this list. Selecting one does not clone, create, or upload anything.</span></label>}
 				  </> : <Button size="sm" onClick={publishBackup} disabled={busy !== 'idle' || preview.secret_findings.length > 0 || (libraryMode === 'public' && !libraryLicense)}>Create library</Button>}
                 </div>
-              ) : (
+              ) : setupMode === 'custom' ? (
                 <div className="mt-3 flex flex-wrap items-end gap-2">
 				  <label className="grid gap-1 text-[11px] text-muted-foreground">Git remote <span className="font-normal">Visibility is controlled by this server.</span>
                     <input value={remoteUrl} onChange={(event) => setRemoteUrl(event.target.value)} placeholder="git@git.example.com:team/agent-library.git" className="h-8 w-72 rounded-lg border border-border bg-background px-2 text-xs text-foreground" />
                   </label>
 				  <Button size="sm" onClick={publishBackup} disabled={busy !== 'idle' || !remoteUrl || preview.secret_findings.length > 0 || (libraryMode === 'public' && !libraryLicense)}>Create library</Button>
                 </div>
-			  )}</div>}
+			  ) : <p className="mt-4 text-xs leading-relaxed text-muted-foreground">Choose a provider above. Skiller will show only that provider's next step, and will not create or upload anything until you confirm it.</p>}</div>}
             </div>
           )}
         </section>

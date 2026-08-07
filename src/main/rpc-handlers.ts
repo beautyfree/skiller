@@ -26,6 +26,8 @@ import type {
 	SyncSkillPreviewJson,
   SyncConnectPreviewJson,
   SyncGitHubRepositoryPreviewJson,
+  SyncGitLabProjectPreviewJson,
+  SyncProviderLibraryJson,
   SyncThreeWayReviewJson,
   SyncHistoryEntryJson,
   SyncUndoPreviewJson,
@@ -40,6 +42,7 @@ import type {
   DotagentsResourceAdoptionRequestJson,
   DotagentsResourceAdoptionPreviewJson,
   SyncPublishPreviewJson,
+  SyncSourceReviewProgressJson,
   UpdateAllResultJson,
   UpdateProgressJson,
 } from '../shared/rpc-schema'
@@ -140,10 +143,12 @@ import { planBundledSkillExport } from './sync-export'
 import { parseSkillMdFile } from './parser'
 import { makeSyncLedger, readSyncLedger, writeSyncLedgerAt, syncLedgerPath } from './sync-ledger'
 import { readRestoreJournalAt, recoverRestoreJournalAt, syncJournalPath } from './sync-journal'
-import { createGitHubSyncRepository, planGitHubSyncRepository } from './github-sync'
+import { createGitHubSyncRepository, listGitHubSyncRepositories, planGitHubSyncRepository } from './github-sync'
+import { createGitLabSyncProject, listGitLabSyncProjects, planGitLabSyncProject } from './gitlab-sync'
 import { applySyncPublishFiles, applySyncPublishPlan, createSyncPublishPlan, mergeBundledUpdateIntoManifest, type SyncPublishCandidate } from './sync-publish'
 import { applySyncRestorePlan, createSyncRestorePlan, syncRestorePlanId } from './sync-restore'
 import { canonicalSyncAgentRouting, isCanonicalSyncLibrary, planCanonicalSyncLibrary, readCanonicalSyncLock, readSyncManifestFromWorkspace, writeLocalSyncAgentSelection, writeLocalSyncSourceSecurityPolicy } from './sync-dotagents'
+import { withReviewTimeout } from './review-timeout'
 import { classifyExternalRestore, externalKeptSourceMatches, externalSkillDirectory, externalSkillRepository, type ManagedExternalSkill, type ExternalRestoreAction } from './sync-external'
 import { assertCredentialFreeGitRemote, assertPortableRelativePath, assertSyncStableId, syncProfileIdFromRemote, type SyncManifest } from './sync-profile'
 import {
@@ -195,8 +200,9 @@ export type BunSideRpc = {
       | RepoProgressJson
       | { macosWindowBlur: boolean }
       | { active: boolean }
-      | { baseUrl: string }
+      | { baseUrl: string; token: string }
       | { path: string }
+      | SyncSourceReviewProgressJson
       | import('../shared/rpc-schema').AppUpdateStatusJson
   ) => void
 }
@@ -619,6 +625,7 @@ async function createSyncCenterPublishPlan(
   reviewedDecisions?: ImportDecision[],
   minimumReleaseAgeMinutes = DEFAULT_MINIMUM_RELEASE_AGE_MINUTES,
   expectedSourceAuthorizationId?: string,
+  onSourceReviewProgress?: (progress: SyncSourceReviewProgressJson) => void,
 ): Promise<SyncCenterPublishPlanResult> {
   const inventory = scanSyncInventory(loadDetectedAgents('sync_center_publish'))
   const selected = selectedKeys ? new Set(selectedKeys) : null
@@ -726,7 +733,10 @@ async function createSyncCenterPublishPlan(
     throw new Error('The selected sources or trust policy changed after review. Review them again before Skiller contacts Git.')
   }
   const cachedReview = cachedSyncCenterReview(sourceAuthorizationId)
-  if (cachedReview) return cachedReview
+  if (cachedReview) {
+    onSourceReviewProgress?.({ completed: 0, total: 0, verified: 0, kept_local: 0 })
+    return cachedReview
+  }
 
   const sourceGroups = new Map<string, { source: string; requestedRef: string; entries: SyncCenterPreparedItem[] }>()
   for (const entry of prepared) {
@@ -745,21 +755,37 @@ async function createSyncCenterPublishPlan(
   // conservative limit of four made a normal 90+ repository library take
   // nearly a minute even with a warm object cache. Keep the bound explicit,
   // but allow enough overlap for the review screen to finish promptly.
+  const orderedSourceGroups = [...sourceGroups.values()].sort((left, right) => `${left.source}\u0000${left.requestedRef}`.localeCompare(`${right.source}\u0000${right.requestedRef}`, 'en'))
+  let completedSourceGroups = 0
+  let verifiedSourceGroups = 0
+  let keptLocalSourceGroups = 0
+  const reportSourceReviewProgress = () => onSourceReviewProgress?.({
+    completed: completedSourceGroups,
+    total: orderedSourceGroups.length,
+    verified: verifiedSourceGroups,
+    kept_local: keptLocalSourceGroups,
+  })
+  reportSourceReviewProgress()
   const resolvedGroups = await mapWithConcurrency(
-    [...sourceGroups.values()].sort((left, right) => `${left.source}\u0000${left.requestedRef}`.localeCompare(`${right.source}\u0000${right.requestedRef}`, 'en')),
+    orderedSourceGroups,
     16,
     async (group) => {
       const first = group.entries[0]!.external!
       try {
-        const resolved = await resolver.resolve(`sync-center-${computePlanId({ source: group.source, ref: group.requestedRef }).slice(0, 16)}`, {
+        const resolved = await withReviewTimeout(resolver.resolve(`sync-center-${computePlanId({ source: group.source, ref: group.requestedRef }).slice(0, 16)}`, {
           url: first.repository,
           ref: group.requestedRef,
           select: [...new Set(group.entries.map((entry) => entry.external!.skillPath))].sort(),
-        })
+        }), group.source)
         if (!resolved.committed_at) throw new Error(`Git source ${group.source} did not provide a commit timestamp`)
+        verifiedSourceGroups += 1
         return { group, resolved } as const
       } catch (error) {
+        keptLocalSourceGroups += 1
         return { group, error } as const
+      } finally {
+        completedSourceGroups += 1
+        reportSourceReviewProgress()
       }
     },
   )
@@ -1331,6 +1357,21 @@ export function createRequestHandlers(ctx: {
       if (!lstatSync(filePath).isFile()) throw new Error('This quality artifact is not a regular file')
       platform.showItemInFolder(filePath)
     },
+    skill_quality_reveal_folder: async (params: { qualityId: string }) => {
+      if (!/^[a-f0-9]{16}$/.test(params.qualityId)) throw new Error('Invalid quality item identity')
+      const skill = scanAllSkills(loadDetectedAgents('skill_quality_reveal_folder')).find(
+        (candidate) => skillQualityIdentity(candidate) === params.qualityId,
+      )
+      if (!skill) throw new Error('This skill is no longer available locally')
+      let metadata
+      try {
+        metadata = lstatSync(skill.canonical_path)
+      } catch {
+        throw new Error('This skill is no longer available locally')
+      }
+      if (metadata.isSymbolicLink() || !metadata.isDirectory()) throw new Error('This skill folder is not safe to reveal')
+      platform.showItemInFolder(skill.canonical_path)
+    },
     skill_quality_eval_preview: async (params: SkillQualityEvalPreviewRequestJson): Promise<SkillQualityEvalPlanJson> => {
       if (!/^[a-f0-9]{16}$/.test(params.qualityId)) throw new Error('Invalid quality item identity')
       const skill = scanAllSkills(loadDetectedAgents('skill_quality_eval_preview')).find(
@@ -1537,6 +1578,8 @@ export function createRequestHandlers(ctx: {
         params?.mode ?? 'private',
         params?.decisions,
         params?.minimumReleaseAgeMinutes ?? DEFAULT_MINIMUM_RELEASE_AGE_MINUTES,
+        undefined,
+        (progress) => rpc.send('sync_source_review_progress', progress),
       )
       return syncPublishPlanToJson(
         result.plan,
@@ -1573,6 +1616,7 @@ export function createRequestHandlers(ctx: {
         params.decisions,
         params.minimumReleaseAgeMinutes,
         params.sourceAuthorizationId,
+		  (progress) => rpc.send('sync_source_review_progress', progress),
 		)
 		assertReviewedPublishPlan(params.planId, publishPlan.reviewPlanId)
       if (publishPlan.plan.manifest.skills.length === 0) {
@@ -1715,6 +1759,27 @@ export function createRequestHandlers(ctx: {
         throw new Error('GitHub repository name or visibility changed after review. Review it again.')
       }
       return { remoteUrl: await createGitHubSyncRepository(plan) }
+    },
+    sync_gitlab_create_project_preview: async (params: { project: string; visibility: 'private' | 'public' }): Promise<SyncGitLabProjectPreviewJson> => {
+      const plan = planGitLabSyncProject(params.project, params.visibility)
+      return { plan_id: plan.planId, project: plan.project, visibility: plan.visibility }
+    },
+    sync_gitlab_create_project: async (params: { project: string; visibility: 'private' | 'public'; planId: string }) => {
+      const plan = planGitLabSyncProject(params.project, params.visibility)
+      if (plan.planId !== params.planId) {
+        throw new Error('GitLab project name or visibility changed after review. Review it again.')
+      }
+      return { remoteUrl: await createGitLabSyncProject(plan) }
+    },
+    sync_provider_libraries: async (params: { provider: 'github' | 'gitlab' }): Promise<SyncProviderLibraryJson[]> => {
+      const libraries = params.provider === 'github'
+        ? await listGitHubSyncRepositories()
+        : await listGitLabSyncProjects()
+      return libraries.map((library) => ({
+        provider: params.provider,
+        label: library.label,
+        remote_url: library.remote,
+      }))
     },
     install_skill: async (params: {
       source: SkillSourceParam

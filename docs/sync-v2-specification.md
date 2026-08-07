@@ -148,7 +148,10 @@ All writes must stage into a temporary sibling directory, validate content and h
 - [x] Make recognized Git-reference publishing/restoration available in the main Sync Center flow.
 - [~] Implement pull/push planning from base/local/remote hashes and a conflict-resolution UI. Bundles have reviewed three-way decisions; external references are safely blocked on a mismatch until an interactive resolution is built.
 - [x] Persist a local managed-object ledger so bundled restores can distinguish Skiller-owned artifacts from user files.
-- [ ] Add GitHub OAuth/repository setup as the easy destination path; keep custom Git remotes first-class.
+- [x] Add a guided GitHub/GitLab repository path without giving Skiller an OAuth
+  token: after explicit user intent, the provider's own `gh`/`glab` session can
+  list writable repositories or create one reviewed private destination. Keep
+  credential-free custom Git remotes first-class for self-hosted servers.
 - [~] Add end-to-end tests for macOS, Linux, and Windows path/link behavior, including a clean second-device restore fixture. The local-Git clean-home fixture covers bundle and pinned-source safety; OS-specific path/link behaviour remains.
 - [ ] Perform live UX verification for new library, publish, pull, conflict, secret finding, invalid symlinked repo, `skills.sh` reference, and shared `.agents` cases.
 
@@ -179,6 +182,25 @@ Sync v2 is not complete until all are true:
 | Unsafe folders/secrets are actionable | Secret locations and safe skipped-folder instructions are rendered in review. | UX review pending |
 | Portable remotes do not carry credentials | Manifest URL validation and generic local Git remote tests pass. | Hosted/self-hosted live remotes pending |
 | Supported OS release path | macOS development checks pass. | Linux/Windows and installed release verification pending |
+
+### Verification addendum (2026-08-07)
+
+- The exact-path Sync Center review shows GitHub, GitLab, and another Git server
+  as distinct destination choices. Selecting a provider is required before any
+  repository-list request; the live review did not authenticate, create, push,
+  or publish anything.
+- `dotagents@0.2.0` adds an equivalent guided CLI route and saves only the
+  credential-free selected remote in an OS-native Device profile. Subsequent
+  `sync` and `status` invocations do not ask the user to remember a library path
+  or remote URL. Its 173-test check, package-content validation, and packed
+  consumer smoke pass.
+- A clean isolated Skiller copy using that exact packed `dotagents@0.2.0`
+  tarball passed fresh dependency installation, TypeScript checks, all 178
+  tests, and production build. The public Skiller pin is deliberately still
+  marked blocked until this candidate is published as an immutable dependency.
+- Native Ubuntu and Windows runtime verification, an authenticated provider
+  creation, and complete visible state coverage remain open release gates; none
+  is inferred from local package or cross-build checks.
 
 ## Decision log
 

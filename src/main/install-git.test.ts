@@ -54,7 +54,10 @@ console.log(JSON.stringify({ installed, agentSkillRoot, provenance: readProvenan
 	return Bun.spawnSync({
 		cmd: [process.execPath, "-e", script],
 		cwd: process.cwd(),
-		env: { ...process.env, HOME: options.home },
+		// node:os.homedir() reads HOME on Unix but USERPROFILE on Windows.
+		// Set both so this subprocess is genuinely a clean second device on
+		// every supported platform.
+		env: { ...process.env, HOME: options.home, USERPROFILE: options.home },
 		stdout: "pipe",
 		stderr: "pipe",
 	});

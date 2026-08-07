@@ -23,7 +23,7 @@
 | macOS current-worktree gates | Complete locally | Current Skiller source passes 178/178, typecheck and production build against both the current dotagents checkout and the packed local `dotagents@0.2.0` candidate. The signed arm64 v15 package in `artifacts-goal-scope-v15` passes deep/strict verification; the prior v14 exact-path runtime review remains the visible UI evidence because the v15 change is a non-UI Device-size guard. |
 | Linux current-worktree gates | Complete locally | A clean current `linux/arm64` run copied both worktrees, passed dotagents 164/164 plus all package gates and Skiller 163/163, typecheck and production build. |
 | Windows current-worktree gates | Native CI smoke configured; current hosted run pending | PR CI runs install, typecheck, tests and build on `windows-latest`; the release workflow packages on a Windows runner and starts the unpacked `.exe` to catch startup failures. Current v15 locally cross-produced an x64 NSIS installer, blockmap, updater manifest and unpacked PE application; the uncommitted provider changes have not yet had a hosted Windows run. |
-| Immutable Skiller dependency pin | Complete; npm release pending trusted-publisher setup | Skiller pins the pushed immutable dotagents commit `8946ba509cd9a03151ad8fa9cd4564510e3db955`, which exports the required provider adapter and credential-free Device profile. `dotagents@0.2.0` has passed GitHub release validation but npm publication remains blocked only by the missing npm trusted-publisher configuration. |
+| Immutable Skiller dependency pin | Complete; npm release pending trusted-publisher setup | Skiller pins the pushed immutable dotagents commit `2a8cd1cb20b0a247cb0e5f2ebf0efb0d6bb9d402`, which exports the required provider adapter and preserves native Device-profile paths on macOS, Linux, and Windows. `dotagents@0.2.0` has passed GitHub release validation but npm publication remains blocked only by the missing npm trusted-publisher configuration. |
 | User-visible approval of every new state | Partial | Agent Library empty/error/Repair states and Skill Quality were reviewed live in exact-path packages. v9 remains open on its reviewed Repair preview in an isolated canonical fixture; technical runtime evidence is complete, but user approval is not inferred. |
 | Commit, push, npm publication and release | Not authorized | No external publication action is allowed until the user explicitly approves it. |
 
@@ -86,14 +86,14 @@
   package-integration failure: pinned `dotagents@41c1e52` lacks
   `createProviderAdapter`, which current GitHub/GitLab setup imports. This is
   historical regression evidence; Skiller now pins the pushed immutable
-  replacement commit `8946ba5`.
+  replacement commit `2a8cd1c`.
 - [x] A separate isolated Skiller copy replaced only its dependency source with
   the packed local `dotagents@0.2.0` tarball. A fresh install, typecheck,
   complete 178-test suite and production build all passed. This proves the
   candidate package exports satisfy Skiller; it does not turn the unpublished
   tarball into a valid immutable public dependency.
 - [x] Skiller's normal dependency installation now resolves the pushed immutable
-  `dotagents@8946ba5` Git package rather than a development symlink. Its public
+  `dotagents@2a8cd1c` Git package rather than a development symlink. Its public
   root export contains `createProviderAdapter`; typecheck, all 178 tests and
   production build pass against that installed package.
 - [x] Current GitHub and GitLab setup-plan unit tests plus renderer/main typecheck pass; production `electron-vite build` passes after the GitLab provider path was added.

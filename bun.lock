@@ -20,7 +20,7 @@
         "chokidar": "^5.0.0",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
-        "dotagents": "git+https://github.com/beautyfree/dotagents.git#8946ba509cd9a03151ad8fa9cd4564510e3db955",
+        "dotagents": "git+https://github.com/beautyfree/dotagents.git#2a8cd1cb20b0a247cb0e5f2ebf0efb0d6bb9d402",
         "electron-updater": "^6.8.3",
         "handlebars": "^4.7.9",
         "i18next": "^25.8.19",
@@ -1204,7 +1204,7 @@
 
     "domutils": ["domutils@3.2.2", "", { "dependencies": { "dom-serializer": "^2.0.0", "domelementtype": "^2.3.0", "domhandler": "^5.0.3" } }, "sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw=="],
 
-    "dotagents": ["dotagents@github:beautyfree/dotagents#8946ba5", { "dependencies": { "yaml": "^2.8.3", "zod": "^3.24.0" }, "bin": { "dotagents": "dist/cli.js" } }, "beautyfree-dotagents-8946ba5", "sha512-oZfGrKxQj9WdHR9OinGsg2LmplcXnWW+mexUlyH6bblCsKhiujw7Vm9u0BHkKSHAoSJ3YnK7s1GklIJYQg70tg=="],
+    "dotagents": ["dotagents@github:beautyfree/dotagents#2a8cd1c", { "dependencies": { "yaml": "^2.8.3", "zod": "^3.24.0" }, "bin": { "dotagents": "dist/cli.js" } }, "beautyfree-dotagents-2a8cd1c", "sha512-5xGyh6kCi4TS0lTozad/GHnCfh8FYpwhRrp2ZcSkTdDiL+qOgjdxZEvKaJHS+lKaheCiqaZBcrE34ali0G6Q7A=="],
 
     "dotenv": ["dotenv@16.6.1", "", {}, "sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow=="],
 

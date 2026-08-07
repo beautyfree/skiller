@@ -50,27 +50,25 @@ export const SkillAgentList = memo(function SkillAgentList({
   const anyBusy = skillId
     ? detectedAgents.some((a) => busyAgents.has(busyKey(skillId, a.slug)))
     : false;
+	const sharedSkill = skill?.scope.type === "SharedLibrary";
+	const visibleAgents = sharedSkill
+		? detectedAgents.filter((agent) => skill?.installations.some((installation) => installation.agent_slug === agent.slug))
+		: detectedAgents;
+
+	if (sharedSkill && visibleAgents.length === 0) {
+		return <p className="text-xs text-muted-foreground">{t("skills.sharedNoAgentLinks")}</p>;
+	}
 
   return (
     <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2">
-      {detectedAgents.map((agent) => {
+      {visibleAgents.map((agent) => {
         const installation = skill?.installations.find(
           (i) => i.agent_slug === agent.slug
         );
-        const isDirect = installation ? !installation.is_inherited : false;
-        const isInherited = installation?.is_inherited ?? false;
-        const status = isDirect
-          ? "installed"
-          : isInherited
-            ? "inherited"
-            : "not-installed";
-
-        const sourceTag = resolveSourceTag(
-          installation,
-          isInherited,
-          detectedAgents,
-          t,
-        );
+		const isDirect = installation ? !installation.is_inherited : false;
+		const isInherited = installation?.is_inherited ?? false;
+		const status = isDirect ? "installed" : isInherited ? "inherited" : "not-installed";
+		const sourceTag = resolveSourceTag(installation, isInherited, detectedAgents);
 
         const key = skillId ? busyKey(skillId, agent.slug) : "";
         const busyOp = busyAgents.get(key);
@@ -83,11 +81,7 @@ export const SkillAgentList = memo(function SkillAgentList({
             name={agent.name}
             status={status}
             path={installation?.path}
-            tags={sourceTag ? (
-              <span className="text-[10px] text-muted-foreground/60 shrink-0">
-                {t("skills.via", { name: sourceTag })}
-              </span>
-            ) : undefined}
+			tags={sourceTag ? <span className="shrink-0 text-[10px] text-muted-foreground/60">{t("skills.via", { name: sourceTag })}</span> : undefined}
             onUninstall={!readOnly && isDirect && skill ? () => onUninstall(skill.id, agent.slug) : undefined}
             onInstall={readOnly ? undefined : () => onInstall([agent.slug])}
             uninstallTitle={`${t("skills.uninstall")} ${agent.name}`}
@@ -108,7 +102,7 @@ export const SkillAgentList = memo(function SkillAgentList({
   );
 });
 
-/** Compute installed agent count (direct + inherited, filtered to detected agents only) */
+/** Compute explicit agent links, filtered to detected agents only. */
 export function installedAgentCount(
   skill: Skill | undefined,
   detectedAgents: AgentConfig[],
@@ -118,14 +112,7 @@ export function installedAgentCount(
   return skill.installations.filter((i) => detected.has(i.agent_slug)).length;
 }
 
-function resolveSourceTag(
-  installation: SkillInstallation | undefined,
-  isInherited: boolean,
-  detectedAgents: AgentConfig[],
-  t: (key: string, opts?: Record<string, unknown>) => string,
-): string | undefined {
-  if (!isInherited || !installation?.inherited_from) return undefined;
-  if (installation.inherited_from === "shared") return t("skills.sharedDirectory");
-  return detectedAgents.find((a) => a.slug === installation.inherited_from)?.name
-    ?? installation.inherited_from;
+function resolveSourceTag(installation: SkillInstallation | undefined, isInherited: boolean, detectedAgents: AgentConfig[]): string | undefined {
+	if (!isInherited || !installation?.inherited_from) return undefined;
+	return detectedAgents.find((agent) => agent.slug === installation.inherited_from)?.name ?? installation.inherited_from;
 }

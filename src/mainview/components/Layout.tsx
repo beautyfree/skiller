@@ -1,8 +1,8 @@
-import { NavLink, Outlet, useSearchParams } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import { useMemo, useState, useCallback, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { pickFolder, invoke, openUrl } from '@/mainview/lib/native'
 import {
@@ -14,8 +14,12 @@ import {
   FolderOpen,
   FolderKanban,
   Copy,
+  Cloud,
   Trash2,
   ChevronRight,
+  MessageCircle,
+  FlaskConical,
+  LibraryBig,
 } from 'lucide-react'
 import { AgentIcon } from '@/mainview/components/AgentIcon'
 import { Button } from '@/mainview/components/ui/button'
@@ -27,9 +31,13 @@ import ResizeHandle from '@/mainview/components/ResizeHandle'
 import { useAgents } from '@/mainview/hooks/useAgents'
 import { useSkills, allAgents } from '@/mainview/hooks/useSkills'
 import { useProjects } from '@/mainview/hooks/useProjects'
+import type { SyncProfileStatusJson } from '@/shared/rpc-schema'
+import skillerMark from '@/mainview/assets/brand/skiller-mark.png'
 
 const GITHUB_REPO_URL =
   'https://github.com/beautyfree/skiller'
+const FEEDBACK_URL =
+  'https://github.com/beautyfree/skiller/discussions/categories/ideas'
 
 // Hoisted outside component — stable reference, no re-creation per render
 const NAV_LINK_BASE =
@@ -83,7 +91,16 @@ function LayoutInner({
   const { data: agents, isLoading: agentsLoading } = useAgents()
   const { data: skills, isLoading: skillsLoading } = useSkills()
   const { data: projects } = useProjects()
+  const { data: syncProfiles } = useQuery<SyncProfileStatusJson[]>({
+    queryKey: ['sync-profiles'],
+    // Safe metadata check only: no local skills are touched, no merge/commit
+    // is performed and Git is forbidden from showing an auth prompt.
+    queryFn: () => invoke('refresh_sync_profiles'),
+    refetchInterval: 5 * 60_000,
+  })
+  const syncNeedsReview = Boolean(syncProfiles?.some((profile) => profile.changed || profile.ahead > 0 || profile.behind > 0 || profile.check_error))
   const [searchParams] = useSearchParams()
+	const location = useLocation()
 
   const detectedAgents = useMemo(
     () => agents?.filter((a) => a.detected) ?? [],
@@ -160,14 +177,24 @@ function LayoutInner({
     <div className="layout-root box-border flex h-screen flex-col overflow-hidden">
       {/* Global drag band as a real layout row (not overlay). */}
       <div
-        className={`pointer-events-auto shrink-0 cursor-default select-none ${DRAG_CLASSES}`}
+        className={`relative pointer-events-auto shrink-0 cursor-default select-none ${DRAG_CLASSES}`}
         style={{ height: TITLE_BAR_DRAG_HEIGHT }}
         onMouseDown={(e) => {
           if (e.detail === 2) onTitleBarZoomGesture(e)
         }}
         onDoubleClick={onTitleBarZoomGesture}
         aria-hidden="true"
-      />
+      >
+        {/* Decorative only: stays within the native drag surface on every OS. */}
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="flex items-center gap-1.5" aria-label="Skiller">
+            <span className="grid size-[19px] place-items-center rounded-[5px] bg-[#20242d] shadow-[0_1px_2px_rgba(0,0,0,0.16)]">
+              <img src={skillerMark} alt="" draggable={false} className="size-[15px] object-contain" />
+            </span>
+            <span className="relative top-px inline-block text-[14px] font-bold leading-none tracking-[-0.055em] text-foreground/90 [font-family:'Bricolage_Grotesque',sans-serif]">Skiller</span>
+          </div>
+        </div>
+      </div>
 
       <div className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${WINDOW_EDGE_INSET_RIGHT}`}>
         {/* Sidebar — same plane as canvas */}
@@ -262,6 +289,17 @@ function LayoutInner({
                         </span>
                       )}
                     </NavLink>
+
+                    <NavLink to="/quality" className={navLinkClass}>
+                      <FlaskConical className="size-4" aria-hidden="true" />
+                      Quality
+                    </NavLink>
+
+                    <NavLink to="/library" className={navLinkClass}>
+                      <LibraryBig className="size-4" aria-hidden="true" />
+                      Agent Library
+                    </NavLink>
+
                   </div>
                 </div>
 
@@ -277,7 +315,9 @@ function LayoutInner({
                           const breakdown = skillBreakdownByAgent.get(
                             agent.slug,
                           ) ?? { direct: 0, inherited: 0 }
-                          const isActive = activeAgentSlug === agent.slug
+                          const isActive =
+                            location.pathname === '/skills' &&
+                            activeAgentSlug === agent.slug
                           const tooltip =
                             breakdown.inherited > 0
                               ? t('sidebar.agentSkillsTooltip', {
@@ -309,7 +349,12 @@ function LayoutInner({
 
                 {detectedAgents.length === 0 && <div className="flex-1 min-h-2" />}
 
-                <div className="shrink-0 border-t border-border/50 pt-2">
+                <div className="shrink-0 flex flex-col gap-0.5 border-t border-border/50 pt-2">
+                  <NavLink to="/sync" className={navLinkClass} onClick={() => window.dispatchEvent(new Event('skiller:sync-home'))}>
+                    <Cloud className="size-4" aria-hidden="true" />
+                    Sync Center
+                    {syncNeedsReview && <span className="ml-auto size-1.5 rounded-full bg-amber-500" title="Sync changes need review" />}
+                  </NavLink>
                   <NavLink to="/settings" className={navLinkClass}>
                     <Settings className="size-4" aria-hidden="true" />
                     {t('sidebar.settings')}
@@ -325,7 +370,7 @@ function LayoutInner({
         {/* Main column: inset rounded panel — separate from sidebar; footer stays on canvas */}
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <main className="main-workspace-panel relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-border bg-card shadow-(--ds-shadow-layered-subtle) select-none">
-            <InsetScrollArea className="min-h-0 flex-1 pr-0">
+            <InsetScrollArea className="min-h-0 flex-1 pr-0" scroll={!['/sync', '/quality', '/library'].includes(location.pathname)}>
               {loading ? (
                 <div className="space-y-4 px-6 py-6 animate-pulse">
                   <div className="grid grid-cols-3 gap-4">
@@ -368,6 +413,14 @@ function LayoutInner({
                 </button>
               </div>
             )}
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 transition-colors hover:text-muted-foreground/85"
+              onClick={() => openUrl(FEEDBACK_URL)}
+            >
+              <MessageCircle className="size-3" aria-hidden="true" />
+              {t('layout.footerFeedback')}
+            </button>
             <button
               type="button"
               className="transition-colors hover:text-muted-foreground/85"

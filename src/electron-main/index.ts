@@ -87,11 +87,13 @@ const appRouter = createAppRouter({
 });
 
 let trpcServerPort = TRPC_PORT;
+let trpcServerAuthToken = "";
 let trpcCloseServer: (() => void) | null = null;
 
 async function initTrpcServer(): Promise<void> {
 	const handle = await startTrpcHttpServer(appRouter, TRPC_PORT);
 	trpcServerPort = handle.port;
+	trpcServerAuthToken = handle.authToken;
 	trpcCloseServer = handle.close;
 	console.log(`tRPC: http://127.0.0.1:${trpcServerPort}/trpc`);
 }
@@ -99,6 +101,7 @@ async function initTrpcServer(): Promise<void> {
 function sendTrpcEndpointToRenderer(): void {
 	bunSideRpc.send("trpc_endpoint", {
 		baseUrl: `http://127.0.0.1:${trpcServerPort}`,
+		token: trpcServerAuthToken,
 	});
 }
 
@@ -156,9 +159,9 @@ function createMainWindow(): BrowserWindow {
 		return { action: "deny" };
 	});
 
-	// Push the tRPC endpoint every time a new document becomes interactive so
-	// the renderer gets it before the first `invoke()` — mirrors the Electrobun
-	// dom-ready flow.
+	// Refresh the renderer cache after each navigation. The first `invoke()`
+	// independently pulls this endpoint over IPC, which closes the load-order
+	// race when another Skiller process already owns the preferred HTTP port.
 	win.webContents.on("did-finish-load", sendTrpcEndpointToRenderer);
 
 	if (is.dev && process.env.ELECTRON_RENDERER_URL) {
@@ -175,6 +178,10 @@ function createMainWindow(): BrowserWindow {
 // which forwards to ipcMain. Phase 2 only uses this for ad-hoc calls — the
 // main traffic goes through tRPC over HTTP.
 ipcMain.handle("skiller:version", () => app.getVersion());
+ipcMain.handle("skiller:trpc-endpoint", () => ({
+	baseUrl: `http://127.0.0.1:${trpcServerPort}`,
+	token: trpcServerAuthToken,
+}));
 
 // --- Tray -----------------------------------------------------------------
 function trayIconPath(): string | undefined {

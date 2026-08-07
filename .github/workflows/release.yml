@@ -65,14 +65,21 @@ jobs:
           done
           [[ -n "${release}" ]] || { echo "Draft release ${REQUESTED_TAG} was not found after 30 seconds." >&2; exit 1; }
 
-          target="$(jq -r '.target_commitish' <<<"${release}")"
-          # workflow_dispatch intentionally accepts only a tag: it is the
-          # controlled recovery path for an already-created draft.
-          expected_target="${REQUESTED_TARGET:-${target}}"
-          [[ "${target}" == "${expected_target}" ]] || {
-            echo "Draft ${REQUESTED_TAG} targets ${target}, expected ${expected_target}." >&2
+          release_target="$(jq -r '.target_commitish // empty' <<<"${release}")"
+          # A draft created by Release Please does not yet expose a Git ref
+          # through the REST API, so its target_commitish may be null even
+          # though the caller already has the immutable release SHA. Use that
+          # explicit hand-off value; workflow_dispatch still requires a
+          # target exposed by the pre-existing draft.
+          target="${REQUESTED_TARGET:-${release_target}}"
+          [[ -n "${target}" ]] || {
+            echo "Draft ${REQUESTED_TAG} does not expose a target commit; rerun it through Release Please." >&2
             exit 1
           }
+          if [[ -n "${REQUESTED_TARGET}" && -n "${release_target}" && "${release_target}" != "${REQUESTED_TARGET}" ]]; then
+            echo "Draft ${REQUESTED_TAG} targets ${release_target}, expected ${REQUESTED_TARGET}." >&2
+            exit 1
+          fi
 
           if [[ "$(jq -r '.draft' <<<"${release}")" != "true" ]]; then
             echo "Release $(jq -r '.tag_name' <<<"${release}") is already published; refusing to replace its assets."

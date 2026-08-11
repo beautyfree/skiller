@@ -4,10 +4,10 @@ import { computeSkillFootprint } from "../shared/skill-footprint";
 import type { ParsedSkillMd } from "./parser";
 import type { AgentConfig } from "./types";
 import { parseSkillMdFile } from "./parser";
-import { readProvenanceRaw } from "./provenance";
+import { readLocalSkillSources, type LocalSkillSourceRecord } from "dotagents/source-registry";
 import { isSymlink, resolveCanonical } from "./fsutil";
 import { sharedSkillsDir } from "./shared-skills";
-import type { Skill, SkillInstallation, SkillScope, SkillSource } from "./skill-types";
+import type { Skill, SkillInstallation, SkillLibraryState, SkillScope, SkillSource } from "./skill-types";
 
 export type SkillCandidate = {
 	dir: string;
@@ -163,7 +163,7 @@ function listingFootprintFromParsed(parsed: ParsedSkillMd, rawName: string, dirN
 function resolveSource(
 	skillId: string,
 	canonical: string,
-	provenance: Record<string, Record<string, unknown>>,
+	provenance: Record<string, LocalSkillSourceRecord>,
 ): SkillSource {
 	const entry = provenance[skillId];
 	if (entry) {
@@ -177,6 +177,20 @@ function resolveSource(
 		}
 	}
 	return { kind: "LocalPath", path: canonical };
+}
+
+function resolveLibraryState(
+	skillId: string,
+	provenance: Record<string, LocalSkillSourceRecord>,
+): SkillLibraryState | null {
+	const entry = provenance[skillId];
+	if (!entry) return null;
+	return {
+		first_seen_at: entry.first_seen_at,
+		reviewed_at: entry.reviewed_at,
+		ownership: entry.ownership,
+		forked_from: entry.forked_from,
+	};
 }
 
 function mergeSkill(dedup: Map<string, Skill>, key: string, incoming: Skill): void {
@@ -200,7 +214,7 @@ function scanInheritedRoot(
 	agent: AgentConfig,
 	sourceAgent: string,
 	dedup: Map<string, Skill>,
-	provenance: Record<string, Record<string, unknown>>,
+	provenance: Record<string, LocalSkillSourceRecord>,
 ): void {
 	for (const skillDir of collectSkillRoots(root)) {
 		const canonical = resolveCanonical(skillDir);
@@ -227,7 +241,7 @@ function scanInheritedRoot(
 			collection: detectCollection(skillDir, root),
 			scope: { kind: "AgentLocal", agent: sourceAgent },
 			installations: [{ agent_slug: agent.slug, path: skillDir, is_symlink: isSymlink(skillDir), is_inherited: true, inherited_from: sourceAgent }],
-			bundled_path: (provenance[dirName]?.bundled_path as string | undefined) ?? null,
+			library_state: resolveLibraryState(dirName, provenance),
 		});
 	}
 }
@@ -236,7 +250,7 @@ function scanSkillMdRoot(
 	root: string,
 	agent: AgentConfig,
 	dedup: Map<string, Skill>,
-	provenance: Record<string, Record<string, unknown>>,
+	provenance: Record<string, LocalSkillSourceRecord>,
 ): void {
 	for (const skillDir of collectSkillRoots(root)) {
 		const canonical = resolveCanonical(skillDir);
@@ -279,7 +293,7 @@ function scanSkillMdRoot(
 			collection,
 			scope,
 			installations: [installation],
-			bundled_path: (provenance[skillId]?.bundled_path as string | undefined) ?? null,
+			library_state: resolveLibraryState(skillId, provenance),
 		});
 	}
 }
@@ -292,7 +306,7 @@ function scanSkillMdRoot(
 function scanSharedRoot(
 	root: string,
 	dedup: Map<string, Skill>,
-	provenance: Record<string, Record<string, unknown>>,
+	provenance: Record<string, LocalSkillSourceRecord>,
 ): void {
 	for (const skillDir of collectSkillRoots(root)) {
 		const canonical = resolveCanonical(skillDir);
@@ -321,14 +335,14 @@ function scanSharedRoot(
 			collection: detectCollection(skillDir, root),
 			scope: { kind: "SharedLibrary" },
 			installations: [],
-			bundled_path: (provenance[dirName]?.bundled_path as string | undefined) ?? null,
+			library_state: resolveLibraryState(dirName, provenance),
 		});
 	}
 }
 
 export function scanAllSkills(configs: AgentConfig[], sharedRoot = sharedSkillsDir()): Skill[] {
 	const dedup = new Map<string, Skill>();
-	const provenance = readProvenanceRaw();
+	const provenance = readLocalSkillSources();
 	if (existsSync(sharedRoot)) scanSharedRoot(sharedRoot, dedup, provenance);
 
 	for (const agent of configs.filter((cfg) => cfg.detected || cfg.global_paths.length > 0)) {

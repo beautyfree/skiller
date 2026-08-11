@@ -26,6 +26,7 @@ import {
 import { useSkills, installedAgents } from "@/mainview/hooks/useSkills";
 import LiquidGlass from "@/mainview/components/LiquidGlass";
 import { Button } from "@/mainview/components/ui/button";
+import { Tooltip } from "@/mainview/components/ui/tooltip";
 import SearchInput from "@/mainview/components/SearchInput";
 import { cn, nativeSelectClass, nativeSelectChevronClass } from "@/mainview/lib/utils";
 import { openUrl } from "@/mainview/lib/native";
@@ -64,7 +65,6 @@ export default function Dashboard() {
   const totalSkills = skills?.length ?? 0;
   const isRefreshing = agentsFetching || skillsFetching;
   const syncProfile = syncProfiles?.[0];
-  const syncNeedsReview = Boolean(syncProfile && (syncProfile.changed || syncProfile.behind > 0));
 
   const skillCountByAgent = useMemo(() => {
     const counts = new Map<string, number>();
@@ -122,15 +122,28 @@ export default function Dashboard() {
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5"><MonitorCheck className="size-3.5 text-primary" />{agentsLoading ? t("dashboard.scanning") : t("dashboard.agentsReady", { detected: detectedAgents.length, total: agents?.length ?? 0 })}</span>
             <span className="hidden size-1 rounded-full bg-border sm:block" />
-            <span className="inline-flex items-center gap-1.5"><Puzzle className="size-3.5 text-primary" />{skillsLoading ? t("dashboard.scanning") : t("dashboard.skillsAvailable", { count: totalSkills })}</span>
+            {skillsLoading ? (
+              <span className="inline-flex items-center gap-1.5"><Puzzle className="size-3.5 text-primary" />{t("dashboard.scanning")}</span>
+            ) : (
+              <Tooltip content="View all skills">
+              <button
+                type="button"
+                onClick={() => navigate('/skills')}
+                className="inline-flex items-center gap-1.5 rounded-sm text-left transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              >
+                <Puzzle className="size-3.5 text-primary" />
+                <span className="underline decoration-border underline-offset-4 transition-colors hover:decoration-primary">{t("dashboard.skillsAvailable", { count: totalSkills })}</span>
+              </button>
+              </Tooltip>
+            )}
             {runtimeAgent && <span className="hidden lg:inline">{t("dashboard.runtimeAgent", { agent: runtimeAgent.runtime_name, source: runtimeAgent.source })}</span>}
             {skillsCliLock && <span className="hidden lg:inline">{t("dashboard.skillsCliLock", { count: skillsCliLock.skills.length, version: skillsCliLock.version })}</span>}
           </div>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <Button size="sm" variant={syncProfile && !syncNeedsReview ? "outline" : "default"} onClick={() => navigate("/sync")}>
-            {syncProfile && !syncNeedsReview ? <ShieldCheck className="size-3.5" /> : <Cloud className="size-3.5" />}
-            {syncNeedsReview ? t("dashboard.reviewSync") : syncProfile ? t("dashboard.openSync") : t("dashboard.protectLibrary")}
+          <Button size="sm" variant={syncProfile ? "outline" : "default"} onClick={() => navigate("/library")}>
+            {syncProfile ? <ShieldCheck className="size-3.5" /> : <Cloud className="size-3.5" />}
+            {syncProfile ? t("dashboard.openSync") : t("dashboard.protectLibrary")}
           </Button>
           {!syncProfile && <p className="text-[11px] text-muted-foreground">{t("dashboard.remoteLibraryHint")}</p>}
         </div>
@@ -144,6 +157,8 @@ export default function Dashboard() {
             <span className="text-xs text-muted-foreground">
               {t("dashboard.detectedOf", { detected: detectedAgents.length, total: agents?.length ?? 0 })}
             </span>
+            <Tooltip content={t("dashboard.refreshTitle")}>
+            <span className="inline-flex">
             <Button
               variant="outline"
               size="icon-sm"
@@ -151,10 +166,11 @@ export default function Dashboard() {
               onClick={() => {
                 void Promise.all([refetchAgents(), refetchSkills()]);
               }}
-              title={t("dashboard.refreshTitle")}
             >
               <RefreshCw className={cn("size-3.5", isRefreshing && "animate-spin")} />
             </Button>
+            </span>
+            </Tooltip>
           </div>
         </div>
         <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center">
@@ -267,26 +283,28 @@ export default function Dashboard() {
                   </div>
                   <div className="relative z-[3] shrink-0">
                     {agent.detected ? (
+                      <Tooltip content={`Open ${agent.name} skills`}>
                       <Button
                         variant="ghost"
                         size="icon-sm"
                         className="opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={(e) => { e.stopPropagation(); navigate("/skills?agent=" + agent.slug); }}
-                        title={`Open ${agent.name} skills`}
                       >
                         <ArrowRight className="size-4 text-muted-foreground" />
                       </Button>
+                      </Tooltip>
                     ) : (
+                      <Tooltip content={t("dashboard.installationGuide")}>
                       <Button
                         variant="outline"
                         size="xs"
                         className="shrink-0 whitespace-nowrap px-2"
-                        title={t("dashboard.installationGuide")}
                         aria-label={t("dashboard.installationGuide")}
                         onClick={(e) => { e.stopPropagation(); setGuideAgent(agent.slug); }}
                       >
                         {t("dashboard.installationGuideShort")}
                       </Button>
+                      </Tooltip>
                     )}
                   </div>
                 </LiquidGlass>
@@ -425,9 +443,9 @@ function SkillAgentsBadge({
     .map((s) => agents.find((a) => a.slug === s)?.name ?? s)
     .join(", ");
   return (
+    <Tooltip content={title}>
     <div
       className="flex shrink-0 items-center ml-3 relative z-[3]"
-      title={title}
     >
       <div className="flex -space-x-1.5">
         {visible.map((slug) => (
@@ -445,6 +463,7 @@ function SkillAgentsBadge({
         </span>
       )}
     </div>
+    </Tooltip>
   );
 }
 
@@ -529,9 +548,9 @@ function InstallGuideModal({
     ? `which ${agent.cli_command}`
     : "";
   return (
-    <div className="modal-shell fixed inset-0 z-50 flex items-center justify-center">
+    <div className="modal-shell modal-overlay fixed inset-0 z-50 flex items-center justify-center">
       <div
-        className="absolute inset-0 bg-[rgba(0,0,0,0.85)] animate-backdrop-in"
+        className="absolute inset-0"
         aria-hidden
         onClick={onClose}
       />

@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react'
 import { Button } from '@/mainview/components/ui/button'
+import { Tooltip } from '@/mainview/components/ui/tooltip'
 import { invoke } from '@/mainview/lib/native'
 import { cn } from '@/mainview/lib/utils'
 import type {
@@ -107,16 +108,19 @@ export default function QualityCenter() {
               <LockKeyhole className="size-3.5" aria-hidden="true" />
               Structural review only
             </div>
+            <Tooltip content="Refresh quality review">
+            <span className="inline-flex">
             <Button
               variant="outline"
               size="icon"
               onClick={() => quality.refetch()}
               disabled={quality.isFetching}
               aria-label="Refresh quality review"
-              title="Refresh quality review"
             >
               <RefreshCw className={cn('size-4', quality.isFetching && 'animate-spin')} />
             </Button>
+            </span>
+            </Tooltip>
           </div>
         </div>
 

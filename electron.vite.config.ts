@@ -15,6 +15,9 @@ import tailwindcss from "@tailwindcss/vite";
  */
 const trpcPort = process.env.AGENTSKILLS_TRPC_PORT ?? "17888";
 const trpcUrl = `http://127.0.0.1:${trpcPort}`;
+// Keeping the default preserves the existing development URL, while an
+// isolated QA profile can run alongside a user's normal dev instance.
+const rendererPort = Number(process.env.SKILLER_DEV_PORT ?? "5180");
 
 export default defineConfig({
 	main: {
@@ -52,7 +55,7 @@ export default defineConfig({
 		server: {
 			host: "127.0.0.1",
 			// Same port as old vite.config.ts so anyone with it bookmarked keeps working.
-			port: 5180,
+			port: rendererPort,
 			strictPort: true,
 		},
 		build: {

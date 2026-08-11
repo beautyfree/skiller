@@ -248,7 +248,7 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
 
   return (
     <div
-      className="modal-shell fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/40 animate-backdrop-in"
+      className="modal-shell modal-overlay fixed inset-0 z-50 flex items-center justify-center"
       role="presentation"
       onClick={busy ? undefined : handleClose}
     >

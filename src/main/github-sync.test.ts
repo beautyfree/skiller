@@ -3,7 +3,6 @@ import { planProviderLibraryCreation } from "dotagents";
 import {
 	assertGitHubRepositoryName,
 	createGitHubSyncRepository,
-	listGitHubSyncRepositories,
 	planGitHubSyncRepository,
 } from "./github-sync";
 
@@ -25,19 +24,8 @@ describe("GitHub sync setup", () => {
 		expect(planGitHubSyncRepository("team/skills", "public").planId).not.toBe(first.planId);
 	});
 
-it("rejects a changed repository plan before invoking GitHub", async () => {
+	it("rejects a changed repository plan before invoking GitHub", async () => {
 		const plan = planGitHubSyncRepository("team/skills", "private");
-		await expect(createGitHubSyncRepository({ ...plan, visibility: "public" })).rejects.toThrow("changed after review");
+		await expect(createGitHubSyncRepository({ ...plan, visibility: "public" }, 'unused')).rejects.toThrow("changed after review");
 	});
-});
-
-it("lists existing writable GitHub repositories only after the explicit chooser action", async () => {
-	const libraries = await listGitHubSyncRepositories({
-		listLibraries: async () => [
-			{ provider: "github", label: "team/agent-library", remote: "git@github.com:team/agent-library.git" },
-		],
-	});
-	expect(libraries).toEqual([
-		{ provider: "github", label: "team/agent-library", remote: "git@github.com:team/agent-library.git" },
-	]);
 });

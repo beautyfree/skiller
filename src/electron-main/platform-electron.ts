@@ -59,6 +59,7 @@ export function createElectronPlatform(
 		quit: () => app.quit(),
 		openExternal: (url: string) => shell.openExternal(url),
 		showItemInFolder: (path: string) => shell.showItemInFolder(path),
+		trashItem: (path: string) => shell.trashItem(path),
 		pickFolder: async (opts?: FileDialogOpts) => {
 			const parent = getWindow();
 			const result = await dialog.showOpenDialog(parent, {

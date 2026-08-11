@@ -22,6 +22,18 @@ export interface SkillInstallation {
 	inherited_from?: string | null;
 }
 
+/** Device-local lifecycle facts supplied by dotagents, never stored in a synced library. */
+export interface SkillLibraryState {
+	first_seen_at: string;
+	reviewed_at: string | null;
+	ownership: "external" | "owned" | "forked" | "unknown";
+	forked_from: {
+		repository: string | null;
+		skill_path: string | null;
+		ref: string | null;
+	} | null;
+}
+
 export interface Skill {
 	id: string;
 	name: string;
@@ -46,6 +58,8 @@ export interface Skill {
 	listing_excluded: boolean;
 	/** When set, skill content is mirrored into the sync repo at this relative path. */
 	bundled_path?: string | null;
+	/** Device-local provenance and review state managed by dotagents. */
+	library_state?: SkillLibraryState | null;
 }
 
 export interface UpdateProgress {

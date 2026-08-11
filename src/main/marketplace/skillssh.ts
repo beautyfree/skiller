@@ -35,6 +35,7 @@ function parseSearchResponse(jsonStr: string): MarketplaceSkill[] {
 			description: null,
 			author: owner,
 			repository: `https://github.com/${sourcePath}`,
+			skill_path: `skills/${skillId}`,
 			installs: s.installs ?? null,
 			source: "skills.sh",
 		});
@@ -73,6 +74,7 @@ function tryParseInitialSkillsFromRsc(html: string): MarketplaceSkill[] | null {
 				description: null,
 				author: owner,
 				repository: `https://github.com/${sourcePath}`,
+				skill_path: `skills/${skillId}`,
 				installs: r.installs ?? null,
 				source: "skills.sh",
 			});
@@ -104,6 +106,7 @@ function tryDecodeRscSkill(jsonStr: string): MarketplaceSkill | null {
 		description: null,
 		author: owner,
 		repository: `https://github.com/${rsc.source}`,
+		skill_path: `skills/${rsc.skillId}`,
 		installs: rsc.installs ?? null,
 		source: "skills.sh",
 	};

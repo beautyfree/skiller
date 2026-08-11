@@ -1,4 +1,4 @@
-import type { ProvenanceEntry } from "./provenance";
+import type { LocalSkillSourceRecord } from "dotagents/source-registry";
 import type { SyncManifest } from "./sync-profile";
 
 export type ManagedExternalSkill = Extract<SyncManifest["skills"][number], { kind: "reference" | "skills_sh" }>;
@@ -37,16 +37,20 @@ export function externalSkillDirectory(path: string | null | undefined): string 
 export function classifyExternalRestore(
 	skill: ManagedExternalSkill,
 	localExists: boolean,
-	provenance: ProvenanceEntry | null | undefined,
+	provenance: LocalSkillSourceRecord | null | undefined,
 	localContentHash?: string | null,
 ): ExternalRestoreAction {
 	if (!localExists) return "create";
-	const sameOrigin = provenance?.repository?.trim() === externalSkillRepository(skill)
-		&& provenance.ref?.trim()?.toLowerCase() === skill.ref.toLowerCase()
+	const sameLocation = provenance?.repository?.trim() === externalSkillRepository(skill)
 		&& externalSkillDirectory(provenance.skill_path) === skill.skill_path;
-	if (!sameOrigin) return "conflict";
-	// Older manifests may not have a content hash. They stay conservative about
-	// origin, while v3-created references additionally detect manual edits.
-	if (skill.sha256 && localContentHash !== skill.sha256) return "conflict";
+	if (!sameLocation) return "conflict";
+	// A source commit can move because documentation or another selected skill
+	// changed while this skill's reviewed content stayed byte-for-byte identical.
+	// The content hash is stronger evidence than the old provenance ref, so this
+	// is a metadata-only update and must not force a fake skill conflict.
+	if (skill.sha256) return localContentHash === skill.sha256 ? "unchanged" : "conflict";
+	// Older manifests without a content hash remain conservative about the exact
+	// immutable revision because there is no equivalent content proof.
+	if (provenance.ref?.trim()?.toLowerCase() !== skill.ref.toLowerCase()) return "conflict";
 	return "unchanged";
 }

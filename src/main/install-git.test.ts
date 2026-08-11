@@ -32,11 +32,10 @@ async function createPinnedSkillSource(): Promise<{ repository: string; commit: 
 
 function installInCleanHome(options: { repository: string; commit: string; hash: string; home: string }): ReturnType<typeof Bun.spawnSync> {
 	const installModule = join(import.meta.dir, "install.ts");
-	const provenanceModule = join(import.meta.dir, "provenance.ts");
 	const typesModule = join(import.meta.dir, "types.ts");
 	const script = `
 import { installSkillFromGit } from ${JSON.stringify(installModule)};
-import { readProvenance } from ${JSON.stringify(provenanceModule)};
+import { readLocalSkillSources } from "dotagents/source-registry";
 import { defaultAgentConfig } from ${JSON.stringify(typesModule)};
 import { exactSourceSecurityPolicy } from "dotagents/source-policy";
 import { join } from "node:path";
@@ -49,7 +48,7 @@ const installed = await installSkillFromGit(
   ${JSON.stringify(options.commit)}, "portable-test", ${JSON.stringify(options.hash)},
   exactSourceSecurityPolicy([${JSON.stringify(options.repository)}]),
 );
-console.log(JSON.stringify({ installed, agentSkillRoot, provenance: readProvenance()["portable-test"] }));
+console.log(JSON.stringify({ installed, agentSkillRoot, provenance: readLocalSkillSources()["portable-test"] }));
 `;
 	return Bun.spawnSync({
 		cmd: [process.execPath, "-e", script],
@@ -83,7 +82,7 @@ describe("pinned Git skill restore", () => {
 		expect(readFileSync(join(output.installed, "guide.md"), "utf8")).toContain("second machine");
 		expect(readFileSync(join(output.agentSkillRoot, "portable-test", "guide.md"), "utf8")).toContain("second machine");
 		expect(output.provenance).toMatchObject({
-			source: "sync-reference",
+			source: "git",
 			repository: source.repository,
 			ref: source.commit,
 			skill_path: null,

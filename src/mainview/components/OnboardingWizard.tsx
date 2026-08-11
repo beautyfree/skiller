@@ -8,7 +8,6 @@ import {
 	Loader2,
 	Download,
 	ExternalLink,
-	FolderKanban,
 	Wand2,
 } from "lucide-react";
 import { invoke, openUrl } from "@/mainview/lib/native";
@@ -112,11 +111,6 @@ export default function OnboardingWizard({
 		navigate("/marketplace");
 	}
 
-	function goToProjects() {
-		markDoneAndClose();
-		navigate("/projects");
-	}
-
 	function goToSkills() {
 		markDoneAndClose();
 		navigate("/skills");
@@ -124,7 +118,7 @@ export default function OnboardingWizard({
 
 	return (
 		<div
-			className="modal-shell fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/40 animate-backdrop-in"
+			className="modal-shell modal-overlay fixed inset-0 z-50 flex items-center justify-center"
 			onClick={markDoneAndClose}
 		>
 			<div
@@ -141,7 +135,7 @@ export default function OnboardingWizard({
 							<img
 								src={skillerMark}
 								alt="Skiller"
-								className="size-20 select-none drop-shadow-sm"
+								className="size-20 select-none drop-shadow-sm invert dark:invert-0"
 								draggable={false}
 							/>
 							<p className="text-3xl font-[590] tracking-tight">
@@ -358,7 +352,7 @@ export default function OnboardingWizard({
 							Pick whatever fits what brought you here:
 						</p>
 
-						<div className="grid grid-cols-3 gap-2">
+						<div className="grid grid-cols-2 gap-2">
 							<button
 								type="button"
 								onClick={goToSkills}
@@ -383,19 +377,6 @@ export default function OnboardingWizard({
 								</p>
 								<p className="text-[11px] text-muted-foreground leading-snug">
 									{t("onboarding.ctaMarketplaceBody")}
-								</p>
-							</button>
-							<button
-								type="button"
-								onClick={goToProjects}
-								className="flex flex-col items-start gap-1 rounded-lg border border-border/40 bg-muted/5 px-3 py-2.5 text-left transition hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
-							>
-								<FolderKanban className="size-4 text-primary" />
-								<p className="text-sm font-medium">
-									{t("onboarding.ctaProjectsTitle")}
-								</p>
-								<p className="text-[11px] text-muted-foreground leading-snug">
-									{t("onboarding.ctaProjectsBody")}
 								</p>
 							</button>
 						</div>

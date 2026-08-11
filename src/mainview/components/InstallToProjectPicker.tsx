@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { FolderOpen, FolderPlus } from "lucide-react";
 import { Button } from "@/mainview/components/ui/button";
@@ -15,6 +16,7 @@ interface Props {
 
 export default function InstallToProjectPicker({ skillName, onInstall, onClose }: Props) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: projects } = useProjects();
   const addProject = useAddProject();
@@ -28,6 +30,7 @@ export default function InstallToProjectPicker({ skillName, onInstall, onClose }
       await onInstall(projectPath);
       await queryClient.invalidateQueries({ queryKey: ["project-skills", projectPath] });
       onClose();
+      navigate(`/projects?path=${encodeURIComponent(projectPath)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -36,15 +39,20 @@ export default function InstallToProjectPicker({ skillName, onInstall, onClose }
   }
 
   async function handleAddAndInstall() {
-    const picked = await pickFolder();
-    if (!picked) return;
-    await addProject.mutateAsync(picked);
-    await handlePick(picked);
+    setError(null);
+    try {
+      const picked = await pickFolder({ title: t("projects.pickFolderTitle") });
+      if (!picked) return;
+      await addProject.mutateAsync(picked);
+      await handlePick(picked);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   return (
     <div
-      className="modal-shell fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/40 animate-backdrop-in"
+      className="modal-shell modal-overlay fixed inset-0 z-50 flex items-center justify-center"
       onClick={onClose}
     >
       <div
@@ -66,8 +74,8 @@ export default function InstallToProjectPicker({ skillName, onInstall, onClose }
         </div>
 
         {!projects || projects.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            {t("skills.installToProjectNone")}
+          <p className="text-xs leading-5 text-muted-foreground">
+            Choose a project folder. Skiller saves this skill in <code className="font-mono text-foreground">.agents/skills</code>, so it can travel with the project's Git repository.
           </p>
         ) : (
           <div className="space-y-1 max-h-64 overflow-y-auto">
@@ -102,7 +110,7 @@ export default function InstallToProjectPicker({ skillName, onInstall, onClose }
           onClick={handleAddAndInstall}
         >
           <FolderPlus className="size-3.5" />
-          {t("skills.installToProjectAddNew")}
+          Choose project folder…
         </Button>
 
         {error && <p className="text-xs text-destructive">{error}</p>}

@@ -14,7 +14,7 @@ import type { RepoEntryJson } from "../shared/rpc-schema";
 import { computeSkillFootprint } from "../shared/skill-footprint";
 import { installSkillFromPath } from "./install";
 import { parseSkillMdFile } from "./parser";
-import { writeProvenance } from "./provenance";
+import { saveLocalSkillSource } from "dotagents/source-registry";
 import { readSettings, writeSettings } from "./settings";
 import { skillToJson } from "./skill-json";
 import type { Skill } from "./skill-types";
@@ -271,8 +271,7 @@ function installRepoSkillSync(
   const canonical = installSkillFromPath(skillPath, targetAgents, agents);
   const installedId = basename(canonical);
   const repoUrl = resolveRepoUrl(repoIdParam);
-  const sourceLabel = repoUrl ? "git" : "local";
-  writeProvenance(installedId, sourceLabel, repoUrl ?? null, skillId);
+  saveLocalSkillSource(installedId, { source: repoUrl ? "git" : "local", repository: repoUrl ?? null, skill_path: skillId, ref: null, content_sha256: null, ownership: repoUrl ? "external" : "unknown" });
 }
 
 export type RepoProgress = { stage: string; detail?: string | null };

@@ -1,7 +1,7 @@
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { userHomePath } from "./fsutil";
 
 /** Canonical shared skills directory for Skiller (~/.agents/skills). */
 export function sharedSkillsDir(): string {
-	return join(homedir(), ".agents", "skills");
+	return join(userHomePath(), ".agents", "skills");
 }

@@ -1,195 +1,87 @@
-import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { basename, isAbsolute, join, relative } from "node:path";
-import { parseSkillMdFile } from "./parser";
-import { planBundledSkillExport } from "./sync-export";
+import { basename } from "node:path";
+import { discoverSkills, type DiscoveredGitSource } from "dotagents/discovery";
+import { readLocalSkillSources } from "dotagents/source-registry";
 import { sharedSkillsDir } from "./shared-skills";
 import type { AgentConfig } from "./types";
 
 export type SyncInventoryLocationKind = "shared" | "agent-local" | "inherited";
-
-export type SyncInventoryLocation = {
-	/** Omitted for the canonical shared library: it belongs to no agent. */
-	agentSlug?: string;
-	kind: SyncInventoryLocationKind;
-};
-
+export type SyncInventoryLocation = { agentSlug?: string; kind: SyncInventoryLocationKind };
 export type SyncInventoryItem = {
-	/** Portable candidate key; becomes final only after collision review. */
-	candidateKey: string;
-	displayName: string;
-	/** Read-only frontmatter summary, shown before a user chooses it for a library. */
-	description: string | null;
-	whenToUse: string | null;
-	contentHash: string;
-	/** Local-only source for staging; never exposed to the renderer or manifest. */
-	sourcePath: string;
-	locations: SyncInventoryLocation[];
+  candidateKey: string;
+  displayName: string;
+  description: string | null;
+  whenToUse: string | null;
+  contentHash: string;
+  /** Native path remains in main process and is never sent to the renderer. */
+  sourcePath: string;
+  locations: SyncInventoryLocation[];
+  gitSource?: DiscoveredGitSource;
+  /** Portable-safe attribution for an independently editable fork. */
+  forkedFrom?: { url: string; ref?: string; skillPath?: string };
 };
-
-export type SyncInventoryCollision = {
-	displayName: string;
-	candidateKeys: string[];
-};
-
-export type SyncInventoryInvalidEntry = {
-	displayName: string;
-	reason: string;
-};
-
+export type SyncInventoryCollision = { displayName: string; candidateKeys: string[] };
+export type SyncInventoryInvalidEntry = { displayName: string; reason: string; sourcePath: string };
 export type SyncInventory = {
-	items: SyncInventoryItem[];
-	collisions: SyncInventoryCollision[];
-	invalidPaths: number;
-	invalidEntries: SyncInventoryInvalidEntry[];
-	/** SKILL.md aliases whose canonical skill is discovered elsewhere in the same library. */
-	linkedAliases: number;
+  items: SyncInventoryItem[];
+  collisions: SyncInventoryCollision[];
+  invalidPaths: number;
+  invalidEntries: SyncInventoryInvalidEntry[];
+  linkedAliases: number;
 };
+export type SyncInventoryRoot = { agentSlug?: string; path: string; kind: SyncInventoryLocationKind };
 
-type Root = { agentSlug?: string; path: string; kind: SyncInventoryLocationKind };
-
-function collectSkillRoots(root: string): string[] {
-	// Importing scanner's private traversal would make a safety-critical inventory
-	// depend on its presentation deduplication. Keep this traversal intentionally
-	// small and skip a skill's resources once its SKILL.md is found.
-	const result: string[] = [];
-	const visit = (directory: string, depth: number): void => {
-		if (depth > 8) return;
-		let entries: string[];
-		try {
-			entries = readdirSync(directory).sort();
-		} catch {
-			return;
-		}
-		for (const entry of entries) {
-			if (entry === ".git" || entry === "node_modules") continue;
-			const candidate = join(directory, entry);
-			try {
-				const stat = statSync(candidate);
-				if (!stat.isDirectory()) continue;
-				if (existsSync(join(candidate, "SKILL.md"))) result.push(candidate);
-				else visit(candidate, depth + 1);
-			} catch {
-				// An unreadable or dangling entry is not safe to sync.
-			}
-		}
-	};
-	if (existsSync(join(root, "SKILL.md"))) result.push(root);
-	visit(root, 0);
-	return result;
+function orderedLocations(locations: SyncInventoryLocation[]): SyncInventoryLocation[] {
+  const rank: Record<SyncInventoryLocationKind, number> = { shared: 0, "agent-local": 1, inherited: 2 };
+  return [...locations].sort((left, right) => rank[left.kind] - rank[right.kind] || (left.agentSlug ?? "").localeCompare(right.agentSlug ?? "", "en"));
 }
 
-function portableBaseKey(name: string): string {
-	const normalized = name
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "")
-		.slice(0, 48) || "skill";
-	return normalized;
+/** Global agent roots only. Project-local skills stay with their project Git repository. */
+export function syncInventoryRoots(configs: AgentConfig[], sharedRoot = sharedSkillsDir()): SyncInventoryRoot[] {
+  const roots: SyncInventoryRoot[] = [{ path: sharedRoot, kind: "shared" }];
+  for (const agent of configs) {
+    for (const path of agent.global_paths) roots.push({ agentSlug: agent.slug, path, kind: "agent-local" });
+    for (const readable of agent.additional_readable_paths) {
+      if (readable.source_agent !== "shared") roots.push({ agentSlug: agent.slug, path: readable.path, kind: "inherited" });
+    }
+  }
+  return roots;
 }
 
-function canonical(path: string): string | null {
-	try {
-		return realpathSync(path);
-	} catch {
-		return null;
-	}
-}
-
-function isInternalSkillMarkdownAlias(skillDir: string, root: string): boolean {
-	try {
-		const skillMarkdown = join(skillDir, "SKILL.md");
-		if (!lstatSync(skillMarkdown).isSymbolicLink()) return false;
-		const target = realpathSync(skillMarkdown);
-		const relativeTarget = relative(realpathSync(root), target);
-		return relativeTarget !== "" && !relativeTarget.startsWith("..") && !isAbsolute(relativeTarget);
-	} catch {
-		return false;
-	}
-}
-
-function inventoryErrorReason(error: unknown): string {
-	const message = error instanceof Error ? error.message : "";
-	if (message.includes("export rejects symlink")) return "Contains a linked file, so Skiller will not follow it outside this skill.";
-	if (message.includes("export exceeds")) return "Exceeds the safety limit for a portable skill bundle.";
-	if (message.includes("export requires SKILL.md")) return "Its SKILL.md file could not be read.";
-	return "Could not be read safely.";
-}
-
-/**
- * Read-only raw inventory. It deliberately groups only byte-identical skills;
- * same-name differences stay visible as collisions for a human decision.
- */
-export function scanSyncInventoryFromRoots(roots: Root[]): SyncInventory {
-	const byHash = new Map<string, SyncInventoryItem>();
-	let invalidPaths = 0;
-	const invalidEntries: SyncInventoryInvalidEntry[] = [];
-	let linkedAliases = 0;
-
-	for (const root of roots) {
-		if (!existsSync(root.path)) continue;
-		for (const skillDir of collectSkillRoots(root.path)) {
-			// A SKILL.md symlink that resolves inside this managed root is an
-			// alias, not an independently exportable skill. Its canonical source
-			// is traversed by this inventory, so do not present it as broken.
-			if (isInternalSkillMarkdownAlias(skillDir, root.path)) {
-				linkedAliases += 1;
-				continue;
-			}
-			try {
-				const actual = canonical(skillDir);
-				if (!actual) throw new Error("unresolvable skill path");
-				const parsed = parseSkillMdFile(join(actual, "SKILL.md"));
-				const displayName = parsed.name?.trim() || basename(actual);
-				const exportPlan = planBundledSkillExport("inventory-skill", actual);
-				const item = byHash.get(exportPlan.sha256) ?? {
-					candidateKey: portableBaseKey(displayName),
-					displayName,
-					description: parsed.description?.trim() || null,
-					whenToUse: parsed.when_to_use?.trim() || null,
-					contentHash: exportPlan.sha256,
-					sourcePath: actual,
-					locations: [],
-				};
-				// The root, rather than its canonical destination, defines ownership.
-				// A symlink placed in an agent's own folder is a real agent link;
-				// the canonical ~/.agents/skills root is one shared source, never one
-				// pseudo-installation per agent that happens to read it.
-				const kind = root.kind;
-				if (!item.locations.some((location) => location.agentSlug === root.agentSlug && location.kind === kind)) {
-					item.locations.push(root.agentSlug ? { agentSlug: root.agentSlug, kind } : { kind });
-				}
-				byHash.set(exportPlan.sha256, item);
-			} catch (error) {
-				invalidPaths += 1;
-				invalidEntries.push({ displayName: basename(skillDir), reason: inventoryErrorReason(error) });
-			}
-		}
-	}
-
-	const items = [...byHash.values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
-	const sameName = new Map<string, SyncInventoryItem[]>();
-	for (const item of items) {
-		const key = item.displayName.trim().toLocaleLowerCase();
-		sameName.set(key, [...(sameName.get(key) ?? []), item]);
-	}
-	const collisions = [...sameName.values()]
-		.filter((group) => group.length > 1)
-		.map((group) => {
-			// Only an actual collision gets a content-derived suffix. A normal edit
-			// of a unique skill retains its portable identity across machines.
-			for (const item of group) item.candidateKey = `${portableBaseKey(item.displayName)}-${item.contentHash.slice(0, 8)}`;
-			return { displayName: group[0].displayName, candidateKeys: group.map((item) => item.candidateKey) };
-		});
-	return { items, collisions, invalidPaths, invalidEntries, linkedAliases };
-}
-
-export function scanSyncInventory(configs: AgentConfig[]): SyncInventory {
-	const roots: Root[] = [{ path: sharedSkillsDir(), kind: "shared" }];
-	for (const agent of configs.filter((agent) => agent.detected)) {
-		for (const path of agent.global_paths) roots.push({ agentSlug: agent.slug, path, kind: "agent-local" });
-		for (const readable of agent.additional_readable_paths) {
-			if (readable.source_agent !== "shared") roots.push({ agentSlug: agent.slug, path: readable.path, kind: "inherited" });
-		}
-	}
-	return scanSyncInventoryFromRoots(roots);
+/** The sole runtime inventory path: discovery, dedupe, links and Git source evidence are dotagents-owned. */
+export async function scanSyncInventoryWithDotagents(configs: AgentConfig[], sharedRoot = sharedSkillsDir()): Promise<SyncInventory> {
+  const roots = syncInventoryRoots(configs, sharedRoot).map((root) => ({ path: root.path, kind: root.kind, ...(root.agentSlug ? { agent: root.agentSlug } : {}) }));
+  const report = await discoverSkills(roots);
+  const invalidEntries = new Map<string, SyncInventoryInvalidEntry>();
+  for (const issue of report.issues) {
+    if (issue.path) invalidEntries.set(issue.path, { displayName: basename(issue.path), reason: issue.message, sourcePath: issue.path });
+  }
+  const localSources = readLocalSkillSources();
+  return {
+    items: report.skills.map((skill) => {
+      const local = localSources[skill.name];
+      const upstream = local?.ownership === "forked" ? local.forked_from : null;
+      const forkedFrom = upstream?.repository
+        ? {
+            url: upstream.repository,
+            ...(upstream.ref ? { ref: upstream.ref } : {}),
+            ...(upstream.skill_path ? { skillPath: upstream.skill_path } : {}),
+          }
+        : undefined;
+      return {
+      candidateKey: skill.candidateKey,
+      displayName: skill.name,
+      description: skill.description,
+      whenToUse: skill.whenToUse,
+      contentHash: skill.exportHash,
+      sourcePath: skill.sourcePath,
+      locations: orderedLocations(skill.locations.map((location) => ({ kind: location.kind, ...(location.agent ? { agentSlug: location.agent } : {}) }))),
+      ...(skill.gitSource ? { gitSource: skill.gitSource } : {}),
+      ...(forkedFrom ? { forkedFrom } : {}),
+    };
+    }).sort((left, right) => left.displayName.localeCompare(right.displayName)),
+    collisions: report.collisions.map((collision) => ({ displayName: collision.name, candidateKeys: collision.candidateKeys })),
+    invalidPaths: invalidEntries.size,
+    invalidEntries: [...invalidEntries.values()].sort((left, right) => left.displayName.localeCompare(right.displayName)),
+    linkedAliases: report.linkedAliases,
+  };
 }

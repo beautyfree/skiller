@@ -39,6 +39,8 @@ export interface AppPlatform {
 	quit(): void;
 	openExternal(url: string): Promise<void> | void;
 	showItemInFolder(path: string): void;
+	/** Move one exact local path to the operating system Trash/Recycle Bin. */
+	trashItem(path: string): Promise<void>;
 	/** Single-folder picker. Resolves to absolute path or `null` if cancelled. */
 	pickFolder(opts?: FileDialogOpts): Promise<string | null>;
 	/** Single-file picker. Resolves to absolute path or `null` if cancelled. */

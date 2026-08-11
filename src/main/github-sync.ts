@@ -1,4 +1,7 @@
-import { createProviderAdapter, planProviderLibraryCreation, type RemoteConnection, type RemoteProviderAdapter } from "dotagents";
+import { GitHubTokenProviderAdapter, planProviderLibraryCreation, type GitHubRepositoryPreflight, type RemoteConnection } from "dotagents";
+
+/** Public OAuth Device Flow client id. It is not a secret. */
+export const GITHUB_DEVICE_FLOW_CLIENT_ID = 'Ov23libd9NpS8gZKtLbE'
 
 export type GitHubSyncRepositoryPlan = {
 	kind: "skiller-github-repository";
@@ -31,24 +34,31 @@ export function planGitHubSyncRepository(
 	};
 }
 
-/**
- * Uses the user's existing GitHub CLI session. Skiller never reads or stores a
- * token; the shared core creates only the reviewed private/public repository.
- */
-export async function createGitHubSyncRepository(plan: GitHubSyncRepositoryPlan): Promise<string> {
+/** Creates the reviewed repository through GitHub's API without a local CLI. */
+export async function createGitHubSyncRepository(plan: GitHubSyncRepositoryPlan, accessToken: string, signal?: AbortSignal): Promise<string> {
 	const shared = planProviderLibraryCreation("github", plan.repository, plan.visibility);
 	if (shared.planId !== plan.planId)
 		throw new Error("GitHub repository name or visibility changed after review. Review it again.");
-	return (await createProviderAdapter("github").createLibrary(shared)).remote;
+	return (await new GitHubTokenProviderAdapter(accessToken).createLibrary(shared, signal)).remote;
 }
 
-/**
- * Reads only repositories writable through the user's existing `gh` session.
- * This stays behind an explicit renderer action; Skiller never asks GitHub in
- * the background and never receives the session token.
- */
-export async function listGitHubSyncRepositories(
-	adapter: Pick<RemoteProviderAdapter, "listLibraries"> = createProviderAdapter("github"),
-): Promise<RemoteConnection[]> {
-	return adapter.listLibraries();
+/** Checks access and availability before the user reaches final creation. */
+export async function preflightGitHubSyncRepository(
+	plan: GitHubSyncRepositoryPlan,
+	accessToken: string,
+	signal?: AbortSignal,
+): Promise<GitHubRepositoryPreflight> {
+	const shared = planProviderLibraryCreation("github", plan.repository, plan.visibility);
+	if (shared.planId !== plan.planId)
+		throw new Error("GitHub repository name or visibility changed after review. Review it again.");
+	return new GitHubTokenProviderAdapter(accessToken).preflightLibrary(shared, signal);
+}
+
+export async function checkGitHubConnection(accessToken: string, signal?: AbortSignal): Promise<{ account: string }> {
+	return new GitHubTokenProviderAdapter(accessToken).checkConnection(signal);
+}
+
+/** Explicit, token-backed repository picker. The renderer never receives the token. */
+export async function listGitHubSyncRepositories(accessToken: string, signal?: AbortSignal): Promise<RemoteConnection[]> {
+	return new GitHubTokenProviderAdapter(accessToken).listLibraries(signal);
 }

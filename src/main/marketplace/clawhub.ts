@@ -9,6 +9,8 @@ type SkillDTO = {
 	displayName?: string;
 	summary?: string;
 	stats?: { downloads?: number; stars?: number };
+	canonicalUrl?: string;
+	install?: { reference?: string };
 };
 
 type SkillListResponse = { items?: SkillDTO[] };
@@ -17,9 +19,26 @@ type SearchResultDTO = {
 	slug: string;
 	displayName?: string;
 	summary?: string;
+	canonicalUrl?: string;
+	native?: { ownerHandle?: string };
+	install?: { reference?: string };
 };
 
 type SearchResponse = { results?: SearchResultDTO[] };
+
+type ClawhubCatalogSkill = {
+	slug: string;
+	canonicalUrl?: string;
+	install?: { reference?: string };
+};
+
+function clawhubRepository(dto: ClawhubCatalogSkill): string {
+	if (dto.canonicalUrl) return `https://clawhub.ai${dto.canonicalUrl}`;
+	const owner = dto.install?.reference?.split("/")[0];
+	return owner
+		? `https://clawhub.ai/${owner}/skills/${dto.slug}`
+		: `https://clawhub.ai/skills/${dto.slug}`;
+}
 
 function parseSkillsResponse(jsonStr: string): MarketplaceSkill[] {
 	try {
@@ -29,7 +48,7 @@ function parseSkillsResponse(jsonStr: string): MarketplaceSkill[] {
 				name: dto.displayName ?? dto.slug,
 				description: dto.summary ?? null,
 				author: null,
-				repository: `https://clawhub.ai/skills/${dto.slug}`,
+				repository: clawhubRepository(dto),
 				installs: dto.stats?.downloads ?? null,
 				source: "clawhub",
 			}));
@@ -47,7 +66,9 @@ function parseSearchResponse(jsonStr: string): MarketplaceSkill[] {
 			name: dto.displayName ?? dto.slug,
 			description: dto.summary ?? null,
 			author: null,
-			repository: `https://clawhub.ai/skills/${dto.slug}`,
+			// Retain the canonical owner-scoped page so previews can request the
+			// exact ClawHub skill even when several publishers use the same slug.
+			repository: clawhubRepository(dto),
 			installs: null,
 			source: "clawhub",
 		}));

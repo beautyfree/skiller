@@ -1,7 +1,6 @@
 import {
 	discoverSkills,
 	suggestImportCandidates,
-	type DiscoveredProvenance,
 	type SkillDiscoveryReport,
 	type SkillDiscoveryRoot,
 } from "dotagents/discovery";
@@ -9,35 +8,14 @@ import { skillsCliLockToProvenance, type SkillsCliLock } from "dotagents/adapter
 import type { ImportCandidate } from "dotagents/import";
 import { planImport, type ImportPlan } from "dotagents/import";
 import { readSkillsCliLock } from "./skills-cli-lock";
-import { readProvenance, type ProvenanceEntry } from "./provenance";
 import { sharedSkillsDir } from "./shared-skills";
 import type { AgentConfig } from "./types";
 
-function packageName(repository: string, skill: string): string {
-	const withoutTransport = repository.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/^git@/i, "").replace(/\.git$/i, "");
-	const normalized = withoutTransport.toLocaleLowerCase("en-US").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
-	return normalized && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalized) ? normalized : `${skill}-source`.slice(0, 64);
-}
-
-function legacyProvenance(entries: Record<string, ProvenanceEntry>): DiscoveredProvenance[] {
-	return Object.entries(entries).flatMap(([skill, entry]) => {
-		const repository = entry.repository?.trim();
-		const skillPath = entry.skill_path?.trim();
-		if (!repository || !skillPath) return [];
-		return [{
-			skill,
-			package: packageName(repository, skill),
-			url: repository,
-			ref: entry.ref?.trim() || "HEAD",
-			skillPath,
-			source: entry.source === "skills.sh" ? "skills-cli" as const : "git" as const,
-		}];
-	});
-}
-
 export function dotagentsDiscoveryRoots(configs: AgentConfig[], sharedRoot = sharedSkillsDir()): SkillDiscoveryRoot[] {
 	const roots: SkillDiscoveryRoot[] = [{ path: sharedRoot, kind: "shared" }];
-	for (const agent of configs.filter((config) => config.detected)) {
+	for (const agent of configs) {
+		// Presence of a global skill directory is sufficient for discovery, but
+		// never becomes agent-installation evidence or a materialization target.
 		for (const root of agent.global_paths) roots.push({ path: root, agent: agent.slug, kind: "agent-local" });
 		for (const readable of agent.additional_readable_paths) {
 			if (readable.source_agent !== "shared") roots.push({ path: readable.path, agent: agent.slug, kind: "inherited" });
@@ -51,16 +29,16 @@ export async function scanDotagentsSkillDiscovery(
 	options: {
 		sharedRoot?: string;
 		skillsCliLock?: SkillsCliLock | null;
-		provenance?: Record<string, ProvenanceEntry>;
 	} = {},
 ): Promise<{ report: SkillDiscoveryReport; suggestions: ImportCandidate[]; skippedSources: { skill: string; reason: string }[] }> {
 	const report = await discoverSkills(dotagentsDiscoveryRoots(configs, options.sharedRoot));
 	const skillsCli = options.skillsCliLock === undefined ? readSkillsCliLock() : options.skillsCliLock;
 	const adapted = skillsCli ? skillsCliLockToProvenance(skillsCli) : { provenance: [], skipped: [] };
-	const provenance = options.provenance ?? readProvenance();
 	return {
 		report,
-		suggestions: suggestImportCandidates(report, [...adapted.provenance, ...legacyProvenance(provenance)]),
+		// skills-cli's documented lock can refine a shared package reference. Git
+		// provenance for every other source is discovered by dotagents itself.
+		suggestions: suggestImportCandidates(report, adapted.provenance),
 		skippedSources: adapted.skipped,
 	};
 }

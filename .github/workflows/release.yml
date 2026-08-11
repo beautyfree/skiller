@@ -116,8 +116,8 @@ jobs:
       - name: Package Linux without publishing
         run: |
           bun run build
-          bunx electron-builder --linux --publish never
-          node scripts/patch-appimage-runtime.mjs artifacts
+          bun --cwd=apps/desktop x electron-builder --linux --publish never
+          bun --cwd=apps/desktop run scripts/patch-appimage-runtime.mjs ../../artifacts
 
   build-desktop:
     name: Build ${{ matrix.label }}
@@ -167,7 +167,7 @@ jobs:
       - run: bun install --frozen-lockfile
 
       - name: Rebuild native modules
-        run: bunx electron-builder install-app-deps
+        run: bun --cwd=apps/desktop x electron-builder install-app-deps
 
       - name: Import Developer ID certificate (macOS)
         if: runner.os == 'macOS'
@@ -213,15 +213,15 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
         run: |
           bun run build
-          bunx electron-builder --mac --arm64 --x64 --publish never
-          bash scripts/repack-dmg.sh arm64
-          bash scripts/repack-dmg.sh x64
+          bun --cwd=apps/desktop x electron-builder --mac --arm64 --x64 --publish never
+          bash apps/desktop/scripts/repack-dmg.sh arm64
+          bash apps/desktop/scripts/repack-dmg.sh x64
 
       - name: Build Windows app
         if: matrix.platform == 'windows'
         run: |
           bun run build
-          bunx electron-builder --win --publish never
+          bun --cwd=apps/desktop x electron-builder --win --publish never
 
       - name: Smoke-test packaged Windows app
         if: matrix.platform == 'windows'
@@ -238,8 +238,8 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           bun run build
-          bunx electron-builder --linux --publish never
-          node scripts/patch-appimage-runtime.mjs artifacts
+          bun --cwd=apps/desktop x electron-builder --linux --publish never
+          bun --cwd=apps/desktop run scripts/patch-appimage-runtime.mjs ../../artifacts
 
       - name: Smoke-test packaged Linux app
         if: matrix.platform == 'linux'

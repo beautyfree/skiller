@@ -5,9 +5,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseChangelog } from "../src/shared/release-notes.ts";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const changelogPath = join(root, "CHANGELOG.md");
-const outputPath = join(root, "src", "mainview", "release-notes.generated.json");
+const desktopRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const repositoryRoot = join(desktopRoot, "..", "..");
+const changelogPath = join(repositoryRoot, "CHANGELOG.md");
+const outputPath = join(desktopRoot, "src", "mainview", "release-notes.generated.json");
 
 const changelog = await readFile(changelogPath, "utf8");
 const notes = parseChangelog(changelog);

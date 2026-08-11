@@ -8,6 +8,18 @@ const UA =
 const RSC_PATTERN =
 	/\{[^}]*"skillId"\s*:\s*"[^"]+"[^}]*"installs"\s*:\s*\d+[^}]*\}/g;
 
+function marketplaceGatewayUrl(path: string): string | null {
+	const configured = process.env.SKILLER_MARKETPLACE_PROXY_URL?.trim();
+	if (!configured) return null;
+	try {
+		const base = new URL(configured);
+		if (base.protocol !== "https:" && !(base.protocol === "http:" && base.hostname === "localhost")) return null;
+		return new URL(path, `${base.toString().replace(/\/$/, "")}/`).toString();
+	} catch {
+		return null;
+	}
+}
+
 function parseSearchResponse(jsonStr: string): MarketplaceSkill[] {
 	type SearchSkill = {
 		source?: string;
@@ -41,6 +53,36 @@ function parseSearchResponse(jsonStr: string): MarketplaceSkill[] {
 		});
 	}
 	return out;
+}
+
+/** Official skills.sh API response used by the Skiller-owned OIDC gateway. */
+function parseSkillsApiResponse(jsonStr: string): MarketplaceSkill[] {
+	type ApiSkill = {
+		source?: string;
+		slug?: string;
+		name?: string;
+		installs?: number;
+		installUrl?: string | null;
+	};
+	let parsed: { data?: ApiSkill[] };
+	try {
+		parsed = JSON.parse(jsonStr) as { data?: ApiSkill[] };
+	} catch {
+		return [];
+	}
+	return (parsed.data ?? []).flatMap((skill) => {
+		if (!skill.source || !skill.slug) return [];
+		const owner = skill.source.split("/", 1)[0] ?? skill.source;
+		return [{
+			name: skill.name ?? skill.slug,
+			description: null,
+			author: owner,
+			repository: skill.installUrl ?? (skill.source.includes("/") ? `https://github.com/${skill.source}` : null),
+			skill_path: `skills/${skill.slug}`,
+			installs: skill.installs ?? null,
+			source: "skills.sh" as const,
+		}];
+	});
 }
 
 /** Next.js RSC embeds the full leaderboard as `initialSkills` JSON — one parse vs hundreds of regex walks. */
@@ -154,20 +196,23 @@ export async function fetchSkillssh(
 	const fresh = readCache(cacheKey);
 	if (fresh?.length) return fresh;
 
-	const url =
+	const directUrl =
 		sort === "trending"
 			? `https://skills.sh/trending?page=${page}`
 			: sort === "hot"
 				? `https://skills.sh/hot?page=${page}`
 				: `https://skills.sh/?page=${page}`;
+	const gatewayUrl = marketplaceGatewayUrl(`api/v1/leaderboard?sort=${encodeURIComponent(sort)}&page=${page}`);
+	const url = gatewayUrl ?? directUrl;
 
 	try {
 		const res = await fetch(url, {
 			headers: { "User-Agent": UA },
 			signal: fetchTimeoutSignal(60_000),
 		});
-		const html = await res.text();
-		const skills = parseLeaderboardHtml(html);
+		const body = await res.text();
+		const skills = gatewayUrl ? parseSkillsApiResponse(body) : parseLeaderboardHtml(body);
+		if (skills.length === 0) throw new Error("skills.sh returned no readable skills")
 		writeCache(cacheKey, skills, 5 * 60);
 		return skills;
 	} catch {
@@ -183,7 +228,8 @@ export async function searchSkillssh(query: string): Promise<MarketplaceSkill[]>
 	if (fresh?.length) return fresh;
 
 	const q = encodeURIComponent(query);
-	const url = `https://skills.sh/api/search?q=${q}&limit=50`;
+	const gatewayUrl = marketplaceGatewayUrl(`api/v1/search?q=${q}`);
+	const url = gatewayUrl ?? `https://skills.sh/api/search?q=${q}&limit=50`;
 
 	try {
 		const res = await fetch(url, {
@@ -191,7 +237,8 @@ export async function searchSkillssh(query: string): Promise<MarketplaceSkill[]>
 			signal: fetchTimeoutSignal(60_000),
 		});
 		const text = await res.text();
-		const skills = parseSearchResponse(text);
+		const skills = gatewayUrl ? parseSkillsApiResponse(text) : parseSearchResponse(text);
+		if (skills.length === 0) throw new Error("skills.sh returned no readable skills")
 		writeCache(cacheKey, skills, 5 * 60);
 		return skills;
 	} catch {

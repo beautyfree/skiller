@@ -13,7 +13,7 @@ on:
     # They are handled by release-please-release.yml.
     paths-ignore:
       - "CHANGELOG.md"
-      - "package.json"
+      - "apps/desktop/package.json"
       - ".release-please-manifest.json"
 
 permissions:
@@ -41,7 +41,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          manifest_version="$(jq -r '.["."]' .release-please-manifest.json)"
+          manifest_version="$(jq -r '.["apps/desktop"]' .release-please-manifest.json)"
           tag="v${manifest_version}"
 
           if ! git ls-remote --tags "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${tag}" | grep -q .; then

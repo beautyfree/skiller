@@ -124,6 +124,7 @@ import {
 import { fetchTimeoutSignal } from './marketplace/fetch-signal'
 import { fetchClawhub, searchClawhub } from './marketplace/clawhub'
 import { fetchSkillssh, searchSkillssh } from './marketplace/skillssh'
+import { fetchSkillsShGatewaySnapshot, fileFromGatewaySnapshot, filesFromGatewaySnapshot } from './marketplace/skillssh-gateway'
 import { installFromMarketplace } from './marketplace/install-from-marketplace'
 import type { MarketplaceSkill } from './marketplace-types'
 import {
@@ -1883,6 +1884,11 @@ async function fetchRemoteSkillContent(
 ): Promise<string> {
   const clawhubSource = remoteClawhubSkillSource(repoUrl)
   if (clawhubSource) return fetchClawhubSkillContent(clawhubSource, filePath)
+  if (source === 'skills.sh') {
+    const snapshot = await fetchSkillsShGatewaySnapshot(repoUrl, skillPath, skillName)
+    const content = snapshot ? fileFromGatewaySnapshot(snapshot, filePath) : null
+    if (content) return content
+  }
   const { rawBase, apiBase } = remoteGitHubSkillSource(repoUrl)
   const branches = await remoteGitHubBranches(apiBase)
   const filePaths = remoteSkillFileCandidates(skillName, skillPath, filePath)
@@ -1919,6 +1925,10 @@ async function listRemoteSkillFiles(
 ): Promise<string[]> {
   const clawhubSource = remoteClawhubSkillSource(repoUrl)
   if (clawhubSource) return listClawhubSkillFiles(clawhubSource)
+  if (source === 'skills.sh') {
+    const snapshot = await fetchSkillsShGatewaySnapshot(repoUrl, skillPath, skillName)
+    if (snapshot) return filesFromGatewaySnapshot(snapshot)
+  }
   const { apiBase } = remoteGitHubSkillSource(repoUrl)
   const explicit = normalizeRemoteSkillPath(skillPath) ?? (skillName ? `skills/${encodeURIComponent(skillName)}` : null)
   const branches = await remoteGitHubBranches(apiBase)

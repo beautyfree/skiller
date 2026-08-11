@@ -5,7 +5,9 @@ artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
 copyright: Copyright © 2026 Skiller Contributors
 
 directories:
-  output: artifacts
+  # Keep release assets at the monorepo root: CI and GitHub Releases consume
+  # this stable location, while the desktop app itself lives in apps/desktop.
+  output: ../../artifacts
   buildResources: build-resources
 
 # Package only what the app actually needs. Everything else gets pruned.

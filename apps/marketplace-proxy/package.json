@@ -1,0 +1,19 @@
+{
+  "name": "@skiller/marketplace-proxy",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "vercel build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@skiller/marketplace-contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.3",
+    "vercel": "^48.7.0"
+  },
+  "license": "SUL-1.0"
+}

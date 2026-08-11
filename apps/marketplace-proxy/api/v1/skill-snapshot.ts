@@ -1,10 +1,8 @@
-import { proxySkillsShSnapshot } from '../../../src/skillssh-proxy.js'
+import { proxySkillsShSnapshot } from '../../src/skillssh-proxy.js'
 
 export default {
   async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url)
-    const prefix = '/api/v1/skills/'
-    const identifier = decodeURIComponent(url.pathname.slice(prefix.length))
+    const identifier = new URL(request.url).searchParams.get('identifier') ?? ''
     return proxySkillsShSnapshot(identifier, {
       oidcToken: request.headers.get('x-vercel-oidc-token') ?? process.env.VERCEL_OIDC_TOKEN,
     })

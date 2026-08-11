@@ -14,7 +14,7 @@ Developer-focused setup, build, and debugging instructions for Skiller.
 ```bash
 bun install
 # Rebuild better-sqlite3 against Electron's ABI (only needed if native modules change):
-bunx electron-builder install-app-deps
+bun --cwd=apps/desktop x electron-builder install-app-deps
 ```
 
 ## Run modes
@@ -44,8 +44,8 @@ Run this before opening a pull request when touching TypeScript, preload, or mai
 
 The two configs own disjoint parts of the tree:
 
-- `tsconfig.json` → `src/mainview/**` (renderer) + shared types
-- `tsconfig.node.json` → `src/electron-main/**` + `src/preload/**` + `src/main/**` + shared types
+- `apps/desktop/tsconfig.json` → `apps/desktop/src/mainview/**` (renderer) + shared types
+- `apps/desktop/tsconfig.node.json` → `apps/desktop/src/electron-main/**` + `apps/desktop/src/preload/**` + `apps/desktop/src/main/**` + shared types
 
 They share `src/shared/**`; both type-check with `noEmit: true` so overlapping includes are fine.
 
@@ -97,7 +97,7 @@ Inside a Windows 10/11 VM:
 git clone https://github.com/beautyfree/skiller
 cd skiller
 bun install
-bunx electron-builder install-app-deps
+bun --cwd=apps/desktop x electron-builder install-app-deps
 bun run dist:win
 ```
 

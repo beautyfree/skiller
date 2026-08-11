@@ -15,7 +15,8 @@
 # Requires: create-dmg (brew install create-dmg), xcrun, codesign.
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DESKTOP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPOSITORY_DIR="$(cd "$DESKTOP_DIR/../.." && pwd)"
 
 # Normalize: accept arm64|x64 as input; the DMG filename uses that, and
 # electron-builder's output dir uses the same tokens (mac-arm64, mac-x64)
@@ -28,18 +29,18 @@ case "$RAW_ARCH" in
 	*) echo "error: unknown arch '$RAW_ARCH'" >&2; exit 1 ;;
 esac
 
-BUILD_DIR="$ROOT_DIR/artifacts/mac-${ARCH}"
-if [[ ! -d "$BUILD_DIR" && -d "$ROOT_DIR/artifacts/mac" ]]; then
-	BUILD_DIR="$ROOT_DIR/artifacts/mac"
+BUILD_DIR="$REPOSITORY_DIR/artifacts/mac-${ARCH}"
+if [[ ! -d "$BUILD_DIR" && -d "$REPOSITORY_DIR/artifacts/mac" ]]; then
+	BUILD_DIR="$REPOSITORY_DIR/artifacts/mac"
 fi
 APP_PATH="$BUILD_DIR/Skiller.app"
-BG_IMG="$ROOT_DIR/assets/dmg/background.png"
-APP_ICON="$ROOT_DIR/assets/icons/app.icns"
+BG_IMG="$DESKTOP_DIR/assets/dmg/background.png"
+APP_ICON="$DESKTOP_DIR/assets/icons/app.icns"
 
 # Version from package.json so DMG filename matches electron-updater's expected
 # artifactName (see electron-builder.yml `artifactName` field).
 VERSION="$(node -p "require('./package.json').version")"
-OUT_DMG="$ROOT_DIR/artifacts/Skiller-${VERSION}-macos-${ARCH}.dmg"
+OUT_DMG="$REPOSITORY_DIR/artifacts/Skiller-${VERSION}-macos-${ARCH}.dmg"
 
 if [[ ! -d "$APP_PATH" ]]; then
 	echo "error: $APP_PATH not found — run 'electron-builder --mac' first" >&2
@@ -52,9 +53,9 @@ fi
 
 # Load signing identity from .env so the DMG itself gets signed (create-dmg
 # signs the DMG wrapper separately from the .app inside it).
-if [[ -f "$ROOT_DIR/.env" ]]; then
+if [[ -f "$DESKTOP_DIR/.env" ]]; then
 	# shellcheck disable=SC1090
-	set -a; . "$ROOT_DIR/.env"; set +a
+	set -a; . "$DESKTOP_DIR/.env"; set +a
 fi
 
 rm -f "$OUT_DMG"

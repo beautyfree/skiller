@@ -1827,8 +1827,8 @@ function SkillDetail({
     if (!visibleSkillFiles.includes(selectedSkillFile)) setSelectedSkillFile(visibleSkillFiles[0] ?? "SKILL.md");
   }, [selectedSkillFile, visibleSkillFiles]);
 
-  // Load the selected local file. Only SKILL.md has a remote fallback because
-  // a package repository cannot safely expose an arbitrary file by name.
+  // All Skills is a local inventory. Never hide a network request behind a
+  // local preview: marketplace providers own remote content retrieval.
   const skillMdPath = `${skillRoot}/${selectedSkillFile}`;
   const { data: docContent, isLoading: docLoading } = useQuery<string | null>({
     queryKey: ["skill-content", skillMdPath, sourceRepo, selectedSkillFile],
@@ -1840,17 +1840,7 @@ function SkillDetail({
         })) as string;
         const body = extractMarkdownBody(text);
         if (body && body.trim().length > 0) return body;
-      } catch { /* local read failed, fall through */ }
-      // Fallback: fetch from remote repository if source info is available
-      if (sourceRepo && selectedSkillFile === "SKILL.md") {
-        try {
-          const text = (await invoke("fetch_remote_skill_content", {
-            repoUrl: sourceRepo,
-            skillName: skill.id,
-          })) as string;
-          return extractMarkdownBody(text);
-        } catch { /* remote also unavailable */ }
-      }
+      } catch { /* unavailable local file remains unavailable */ }
       return null;
     },
     enabled: Boolean(skillRoot) && !isStale,

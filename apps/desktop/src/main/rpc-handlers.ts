@@ -1653,23 +1653,6 @@ function readAppVersion(): string {
   }
 }
 
-function remoteGitHubSkillSource(repoUrl: string): { rawBase: string; apiBase: string } {
-  const trust = requireTrustedSource(repoUrl, exactSourceSecurityPolicy([repoUrl]))
-  if (trust.kind !== 'git') throw new Error('Skill preview requires a remote GitHub repository')
-  const repository = new URL(trust.source)
-  if (repository.protocol !== 'https:' || repository.hostname !== 'github.com') {
-    throw new Error('Remote SKILL.md preview currently supports HTTPS GitHub repositories only')
-  }
-  const parts = repository.pathname.replace(/\.git$/, '').split('/').filter(Boolean)
-  if (parts.length !== 2) throw new Error('GitHub repository must identify exactly one owner and repository')
-  const owner = encodeURIComponent(parts[0]!)
-  const name = encodeURIComponent(parts[1]!)
-  return {
-    rawBase: `https://raw.githubusercontent.com/${owner}/${name}`,
-    apiBase: `https://api.github.com/repos/${owner}/${name}`,
-  }
-}
-
 type ClawhubPreviewSource = {
   slug: string
   ownerHandle: string | null
@@ -1775,47 +1758,11 @@ async function fetchClawhubSkillContent(source: ClawhubPreviewSource, filePath?:
   return await response.text()
 }
 
-async function remoteGitHubBranches(apiBase: string): Promise<string[]> {
-  const fallbacks = ['main', 'master']
-  try {
-    const response = await fetch(apiBase, {
-      headers: { Accept: 'application/vnd.github+json' },
-      signal: fetchTimeoutSignal(10_000),
-    })
-    if (response.ok) {
-      const body = await response.json() as { default_branch?: unknown }
-      if (typeof body.default_branch === 'string' && body.default_branch.trim()) {
-        return [...new Set([body.default_branch, ...fallbacks])]
-      }
-    }
-  } catch {
-    /* A raw-content fallback below still covers public GitHub repositories. */
-  }
-  return fallbacks
-}
-
 function normalizeRemoteSkillPath(value?: string | null): string | null {
   if (!value) return null
   const segments = value.split('/').filter(Boolean)
   if (segments.length === 0 || segments.some((segment) => segment === '.' || segment === '..')) return null
   return segments.join('/')
-}
-
-function remoteSkillFileCandidates(
-  skillName?: string | null,
-  skillPath?: string | null,
-  filePath?: string | null,
-): string[] {
-  const explicit = normalizeRemoteSkillPath(skillPath)
-  const file = normalizeRemoteSkillPath(filePath) ?? 'SKILL.md'
-  const candidates: string[] = []
-  if (explicit) candidates.push(`${explicit}/${file}`)
-  if (skillName) candidates.push(`skills/${encodeURIComponent(skillName)}/${file}`)
-  // A number of single-skill repositories keep SKILL.md at their root. The
-  // preview always names its selected file, so this fallback must apply even
-  // when the caller explicitly asks for SKILL.md.
-  if (file === 'SKILL.md') candidates.push('SKILL.md')
-  return [...new Set(candidates)]
 }
 
 async function fetchRemoteSkillContent(
@@ -1834,25 +1781,7 @@ async function fetchRemoteSkillContent(
     if (content) return content
     throw new Error('Could not load this skill from the marketplace gateway')
   }
-  const { rawBase, apiBase } = remoteGitHubSkillSource(repoUrl)
-  const branches = await remoteGitHubBranches(apiBase)
-  const filePaths = remoteSkillFileCandidates(skillName, skillPath, filePath)
-
-  for (const path of filePaths) {
-    for (const branch of branches) {
-      const url = `${rawBase}/${branch}/${path}`
-      try {
-        const res = await fetch(url, { signal: fetchTimeoutSignal(10_000), redirect: 'error' })
-        if (res.ok) {
-          const text = await res.text()
-          if (text.length > 0) return text
-        }
-      } catch {
-        /* try next */
-      }
-    }
-  }
-  throw new Error('Could not fetch SKILL.md from repository')
+  throw new Error('Remote previews are available only through a supported marketplace provider')
 }
 
 async function listRemoteSkillFiles(
@@ -1869,39 +1798,7 @@ async function listRemoteSkillFiles(
     if (snapshot) return filesFromGatewaySnapshot(snapshot)
     throw new Error('Could not list this skill from the marketplace gateway')
   }
-  const { apiBase } = remoteGitHubSkillSource(repoUrl)
-  const explicit = normalizeRemoteSkillPath(skillPath) ?? (skillName ? `skills/${encodeURIComponent(skillName)}` : null)
-  const branches = await remoteGitHubBranches(apiBase)
-  for (const branch of branches) {
-    try {
-      const response = await fetch(`${apiBase}/git/trees/${branch}?recursive=1`, {
-        headers: { Accept: 'application/vnd.github+json' },
-        signal: fetchTimeoutSignal(10_000),
-      })
-      if (!response.ok) continue
-      const body = await response.json() as { tree?: Array<{ path?: string; type?: string }> }
-      const files = (body.tree ?? [])
-        .filter((entry) => entry.type === 'blob' && typeof entry.path === 'string')
-        .map((entry) => entry.path!)
-        .filter((path) => !explicit || path === `${explicit}/SKILL.md` || path.startsWith(`${explicit}/`))
-        .map((path) => explicit && path.startsWith(`${explicit}/`) ? path.slice(explicit.length + 1) : path)
-        .filter((path) => !path.split('/').some((part) => part === '.git' || part === 'node_modules'))
-        .sort((a, b) => a === 'SKILL.md' ? -1 : b === 'SKILL.md' ? 1 : a.localeCompare(b))
-        .slice(0, 128)
-      if (files.length > 0) return files
-
-      // A standalone skill repository has no skill subdirectory. Retain this
-      // as a narrow fallback rather than returning the entire repository tree.
-      const rootSkill = (body.tree ?? []).some((entry) => entry.type === 'blob' && entry.path === 'SKILL.md')
-      if (rootSkill) return ['SKILL.md']
-    } catch {
-      /* Try the conventional fallback branch. */
-    }
-  }
-  // Tree listing is optional enrichment. Raw GitHub content remains available
-  // when its API is rate-limited or a repository has an unusually large tree.
-  // Let the preview attempt its canonical entry file before declaring failure.
-  return ['SKILL.md']
+  throw new Error('Remote previews are available only through a supported marketplace provider')
 }
 
 export function createRequestHandlers(ctx: {

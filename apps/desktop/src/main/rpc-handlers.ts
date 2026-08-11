@@ -1818,63 +1818,6 @@ function remoteSkillFileCandidates(
   return [...new Set(candidates)]
 }
 
-function skillsShPreviewUrl(repoUrl: string, skillName?: string | null): string | null {
-  if (!skillName || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(skillName)) return null
-  try {
-    const repository = new URL(repoUrl)
-    if (repository.protocol !== 'https:' || repository.hostname !== 'github.com') return null
-    const parts = repository.pathname.replace(/\.git$/, '').split('/').filter(Boolean)
-    if (parts.length !== 2 || parts.some((part) => !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(part))) return null
-    return `https://skills.sh/${encodeURIComponent(parts[0]!)}/${encodeURIComponent(parts[1]!)}/${encodeURIComponent(skillName)}`
-  } catch {
-    return null
-  }
-}
-
-function decodeSkillsShHtml(value: string): string {
-  return value
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(?:p|div|h[1-6]|li|ul|ol|pre|blockquote)>/gi, '\n')
-    .replace(/<li\b[^>]*>/gi, '- ')
-    .replace(/<h1\b[^>]*>/gi, '# ')
-    .replace(/<h2\b[^>]*>/gi, '## ')
-    .replace(/<h3\b[^>]*>/gi, '### ')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, decimal: string) => String.fromCodePoint(Number.parseInt(decimal, 10)))
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
-
-async function fetchSkillsShPreview(repoUrl: string, skillName?: string | null): Promise<string | null> {
-  const url = skillsShPreviewUrl(repoUrl, skillName)
-  if (!url) return null
-  try {
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Skiller' },
-      signal: fetchTimeoutSignal(15_000),
-    })
-    if (!response.ok) return null
-    const page = await response.text()
-    const heading = '<span>SKILL.md</span>'
-    const start = page.indexOf(heading)
-    if (start < 0) return null
-    const contentStart = page.indexOf('<div class="prose', start)
-    if (contentStart < 0) return null
-    const contentEnd = page.indexOf('<div class=" lg:col-span-3"', contentStart)
-    const content = decodeSkillsShHtml(page.slice(contentStart, contentEnd < 0 ? undefined : contentEnd))
-    return content || null
-  } catch {
-    return null
-  }
-}
-
 async function fetchRemoteSkillContent(
   repoUrl: string,
   skillName?: string | null,
@@ -1888,6 +1831,7 @@ async function fetchRemoteSkillContent(
     const snapshot = await fetchSkillsShGatewaySnapshot(repoUrl, skillPath, skillName)
     const content = snapshot ? fileFromGatewaySnapshot(snapshot, filePath) : null
     if (content) return content
+    throw new Error('Could not load this skill from the marketplace gateway')
   }
   const { rawBase, apiBase } = remoteGitHubSkillSource(repoUrl)
   const branches = await remoteGitHubBranches(apiBase)
@@ -1907,13 +1851,6 @@ async function fetchRemoteSkillContent(
       }
     }
   }
-  // skills.sh is the authoritative directory for these entries. Its public
-  // detail page remains available when GitHub's unauthenticated tree API is
-  // rate-limited and a repository uses a nested, non-standard skill path.
-  if (source === 'skills.sh' && (!filePath || /^SKILL\.md$/i.test(filePath))) {
-    const preview = await fetchSkillsShPreview(repoUrl, skillName)
-    if (preview) return preview
-  }
   throw new Error('Could not fetch SKILL.md from repository')
 }
 
@@ -1928,6 +1865,7 @@ async function listRemoteSkillFiles(
   if (source === 'skills.sh') {
     const snapshot = await fetchSkillsShGatewaySnapshot(repoUrl, skillPath, skillName)
     if (snapshot) return filesFromGatewaySnapshot(snapshot)
+    throw new Error('Could not list this skill from the marketplace gateway')
   }
   const { apiBase } = remoteGitHubSkillSource(repoUrl)
   const explicit = normalizeRemoteSkillPath(skillPath) ?? (skillName ? `skills/${encodeURIComponent(skillName)}` : null)
@@ -1961,9 +1899,7 @@ async function listRemoteSkillFiles(
   // Tree listing is optional enrichment. Raw GitHub content remains available
   // when its API is rate-limited or a repository has an unusually large tree.
   // Let the preview attempt its canonical entry file before declaring failure.
-  // skills.sh still has a canonical, readable SKILL.md even when its upstream
-  // repository tree cannot be enumerated.
-  return source === 'skills.sh' ? ['SKILL.md'] : ['SKILL.md']
+  return ['SKILL.md']
 }
 
 export function createRequestHandlers(ctx: {

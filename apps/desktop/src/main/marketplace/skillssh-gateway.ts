@@ -2,16 +2,18 @@ import { fetchTimeoutSignal } from './fetch-signal'
 
 type GatewayFile = { path: string; contents: string }
 type GatewaySnapshot = { files: GatewayFile[] }
+const DEFAULT_MARKETPLACE_GATEWAY_URL = 'https://skiller-marketplace-proxy.vercel.app'
 
-function configuredGatewayBaseUrl(): string | null {
-  const value = process.env.SKILLER_MARKETPLACE_PROXY_URL?.trim()
-  if (!value) return null
+function configuredGatewayBaseUrl(): string {
+  const value = process.env.SKILLER_MARKETPLACE_PROXY_URL?.trim() || DEFAULT_MARKETPLACE_GATEWAY_URL
   try {
     const url = new URL(value)
-    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && url.hostname === 'localhost')) return null
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && url.hostname === 'localhost')) {
+      throw new Error('Marketplace gateway must use HTTPS')
+    }
     return url.toString().replace(/\/$/, '')
   } catch {
-    return null
+    throw new Error('Marketplace gateway URL is invalid')
   }
 }
 
@@ -35,8 +37,8 @@ function skillIdentifier(repoUrl: string, skillPath?: string | null, skillName?:
 }
 
 /**
- * Uses the Skiller-owned gateway only when it is explicitly configured. The
- * desktop never receives a skills.sh credential; Vercel injects it server-side.
+ * Uses the Skiller-owned gateway. The desktop never receives a skills.sh
+ * credential; Vercel injects it server-side.
  */
 export async function fetchSkillsShGatewaySnapshot(
   repoUrl: string,
@@ -45,7 +47,7 @@ export async function fetchSkillsShGatewaySnapshot(
 ): Promise<GatewaySnapshot | null> {
   const baseUrl = configuredGatewayBaseUrl()
   const identifier = skillIdentifier(repoUrl, skillPath, skillName)
-  if (!baseUrl || !identifier) return null
+  if (!identifier) return null
   try {
     const response = await fetch(`${baseUrl}/api/v1/skills/${identifier}`, {
       headers: { Accept: 'application/json' },

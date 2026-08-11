@@ -31,7 +31,7 @@ it('rejects a changed project plan before invoking GitLab', async () => {
 })
 
 it('lists existing writable GitLab projects only after the explicit chooser action', async () => {
-  const projects = await listGitLabSyncProjects({
+  const projects = await listGitLabSyncProjects('test-token', undefined, {
     listLibraries: async () => [
       { provider: 'gitlab', label: 'team/agent-library', remote: 'git@gitlab.com:team/agent-library.git' },
     ],

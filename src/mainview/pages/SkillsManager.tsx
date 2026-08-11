@@ -26,12 +26,14 @@ import {
   ChevronRight,
   ChevronDown,
   Users,
-  MoreHorizontal,
   Trash2,
   LayoutList,
   FileText,
+  File,
   Ban,
   FolderKanban,
+  FolderOpen,
+  MoreHorizontal,
   Check,
   ListChecks,
 } from "lucide-react";
@@ -52,6 +54,7 @@ import { useResizable } from "@/mainview/hooks/useResizable";
 import ResizeHandle from "@/mainview/components/ResizeHandle";
 import { InsetScrollArea } from "@/mainview/components/InsetScrollArea";
 import { Button } from "@/mainview/components/ui/button";
+import { Tooltip } from "@/mainview/components/ui/tooltip";
 import InstallToProjectPicker from "@/mainview/components/InstallToProjectPicker";
 import SearchInput from "@/mainview/components/SearchInput";
 import MarkdownContent from "@/mainview/components/MarkdownContent";
@@ -59,6 +62,11 @@ import { useToast } from "@/mainview/components/ToastProvider";
 import { cn, nativeSelectClass, nativeSelectChevronClass } from "@/mainview/lib/utils";
 import { extractMarkdownBody } from "@/mainview/lib/markdown";
 import { AgentIcon } from "@/mainview/components/AgentIcon";
+import { ScrollFade } from "@/mainview/components/ScrollFade";
+
+function isRecentlyAdded(skill: Skill): boolean {
+  return skill.library_state?.reviewed_at === null;
+}
 
 /** Deferred outside-dismiss so opening click / contextmenu does not instantly close popovers. */
 function useMenuDismissal(
@@ -430,7 +438,7 @@ export default function SkillsManager() {
 
   const detectedAgents = agents?.filter((a) => a.detected) ?? [];
   const [confirmIntent, setConfirmIntent] = useState<
-    | { kind: "uninstall_all" | "unlink_inherited"; skill: Skill }
+    | { kind: "uninstall_all" | "remove_shared" | "unlink_inherited"; skill: Skill }
     | null
   >(null);
   const [confirmRunning, setConfirmRunning] = useState(false);
@@ -454,7 +462,13 @@ export default function SkillsManager() {
           (s.description && s.description.toLowerCase().includes(q))
       );
     }
-    return list;
+    // Incoming skills deserve attention before the established toolkit, while
+    // preserving the familiar alphabetical order inside each group.
+    if (!list) return list;
+    return [...list].sort((a, b) => {
+      const freshness = Number(isRecentlyAdded(b)) - Number(isRecentlyAdded(a));
+      return freshness || a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
   }, [mergedSkills, filter, installFilter, deferredSearch]);
 
   // A collection child is removed with its top-level collection. Inherited-only
@@ -539,7 +553,6 @@ export default function SkillsManager() {
 
   async function handleUninstallAll(skill: Skill) {
     const slugs = installedAgents(skill);
-    if (!slugs.length) return;
     setBusyAgents((prev) => {
       const next = new Map(prev);
       slugs.forEach((s) => next.set(busyKey(skill.id, s), "uninstalling"));
@@ -583,7 +596,10 @@ export default function SkillsManager() {
   }
 
   function requestUninstallAll(skill: Skill) {
-    setConfirmIntent({ kind: "uninstall_all", skill });
+    setConfirmIntent({
+      kind: skill.scope.type === "SharedLibrary" ? "remove_shared" : "uninstall_all",
+      skill,
+    });
   }
 
   function requestUnlinkInherited(skill: Skill) {
@@ -681,7 +697,7 @@ export default function SkillsManager() {
     if (!confirmIntent || confirmRunning) return;
     setConfirmRunning(true);
     try {
-      if (confirmIntent.kind === "uninstall_all") {
+      if (confirmIntent.kind === "uninstall_all" || confirmIntent.kind === "remove_shared") {
         await handleUninstallAll(confirmIntent.skill);
       } else {
         await handleUnlinkInherited(confirmIntent.skill);
@@ -727,6 +743,23 @@ export default function SkillsManager() {
     } finally {
       setUpdating(false);
     }
+  }
+
+  async function handleMarkReviewed(skillId: string) {
+    await invoke("mark_skill_reviewed", { skillId });
+    await refreshAndReselect();
+  }
+
+  async function handleClaimOwnership(skillId: string) {
+    await invoke("claim_skill_ownership", { skillId });
+    await refreshAndReselect();
+  }
+
+  async function handleFork(skillId: string, forkId: string) {
+    const fork = (await invoke("fork_skill_to_library", { skillId, forkId })) as Skill;
+    await refreshAndReselect();
+    setSelectedId(fork.id);
+    setSelectedSkill(fork);
   }
 
   // ─── Update All ───
@@ -784,16 +817,19 @@ export default function SkillsManager() {
           <div className="flex min-h-[22px] min-w-0 items-center gap-1.5">
             {batchSelectionMode ? (
               <>
+                <Tooltip content={t("skills.exitSelection")}>
+                <span className="inline-flex">
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  title={t("skills.exitSelection")}
                   aria-label={t("skills.exitSelection")}
                   disabled={batchRunning}
                   onClick={exitBatchSelection}
                 >
                   <X className="size-3.5" />
                 </Button>
+                </span>
+                </Tooltip>
                 <span className="truncate text-xs font-medium tabular-nums">
                   {t("skills.selectedCount", { count: batchSelectedIds.size })}
                 </span>
@@ -835,11 +871,12 @@ export default function SkillsManager() {
               </Button>
             )}
             {!batchSelectionMode && (
+              <Tooltip content={t("skills.updateAll")}>
+              <span className="inline-flex">
               <Button
                 variant="ghost"
                 size={updatingAll ? "sm" : "icon-sm"}
                 className={updatingAll ? "gap-1.5 text-xs" : ""}
-                title={t("skills.updateAll")}
                 disabled={updatingAll || isLoading}
                 onClick={handleUpdateAll}
               >
@@ -852,6 +889,8 @@ export default function SkillsManager() {
                   </span>
                 )}
               </Button>
+              </span>
+              </Tooltip>
             )}
           </div>
         </div>
@@ -891,26 +930,29 @@ export default function SkillsManager() {
         />
 
         {filter !== "all" && agentTokenTotals && (
+          <Tooltip content={t("skills.agentTokensBarOverview")}>
           <div
             className="flex items-center justify-center gap-3 rounded-xl border border-border/50 bg-muted/25 px-2 py-1.5"
-            title={t("skills.agentTokensBarOverview")}
           >
+            <Tooltip content={t("skills.agentTokenTooltipListingSum")}>
             <div
-              className="flex cursor-help items-center gap-1.5 text-[11px] font-medium tabular-nums text-foreground/90"
-              title={t("skills.agentTokenTooltipListingSum")}
+              className="flex items-center gap-1.5 text-[11px] font-medium tabular-nums text-foreground/90"
             >
               <LayoutList className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
               <span>{formatApproxTok(agentTokenTotals.listingTok)}</span>
             </div>
+            </Tooltip>
             <span className="h-3 w-px shrink-0 bg-border" aria-hidden />
+            <Tooltip content={t("skills.agentTokenTooltipFullSum")}>
             <div
-              className="flex cursor-help items-center gap-1.5 text-[11px] font-medium tabular-nums text-foreground/90"
-              title={t("skills.agentTokenTooltipFullSum")}
+              className="flex items-center gap-1.5 text-[11px] font-medium tabular-nums text-foreground/90"
             >
               <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
               <span>{formatApproxTok(agentTokenTotals.fullTok)}</span>
             </div>
+            </Tooltip>
           </div>
+          </Tooltip>
         )}
         </div>
 
@@ -942,72 +984,6 @@ export default function SkillsManager() {
             agents={agents}
             activeAgentSlug={filter !== "all" && filter !== "installed-anywhere" ? filter : null}
             onSelect={selectSkill}
-            onReveal={revealItemInDir}
-            onUninstallAll={requestUninstallAll}
-            onUnlinkInherited={requestUnlinkInherited}
-            onUninstallFromAgent={async (skill, agentSlug) => {
-              // Composite remove: uninstall direct + detach shared if both
-              // exist. Mirrors the detail-panel smart-remove so the list
-              // menu behaves the same way.
-              const agent = detectedAgents.find((a) => a.slug === agentSlug);
-              if (!agent) return;
-              const installedOnActive = skill.installations.some(
-                (i) => i.agent_slug === agentSlug && !i.is_inherited,
-              );
-              const inheritedOnActive = skill.installations.some(
-                (i) => i.agent_slug === agentSlug && i.is_inherited,
-              );
-              const preservedAgents = detectedAgents.filter(
-                (a) =>
-                  a.slug !== agentSlug &&
-                  skill.installations.some(
-                    (i) => i.agent_slug === a.slug && i.is_inherited,
-                  ),
-              );
-              let confirmMsg: string;
-              if (installedOnActive && inheritedOnActive) {
-                confirmMsg = t("skills.removeFromAgentConfirmBoth", {
-                  skill: skill.name || skill.id,
-                  agent: agent.name,
-                  preservedNames:
-                    preservedAgents.map((a) => a.name).join(", ") ||
-                    t("skills.detachNoOthers"),
-                  preservedCount: preservedAgents.length,
-                });
-              } else if (inheritedOnActive) {
-                confirmMsg = t("skills.detachConfirm", {
-                  skill: skill.name || skill.id,
-                  agent: agent.name,
-                  preservedCount: preservedAgents.length,
-                  preservedNames:
-                    preservedAgents.map((a) => a.name).join(", ") ||
-                    t("skills.detachNoOthers"),
-                });
-              } else {
-                confirmMsg = t("skills.removeFromAgentConfirmDirect", {
-                  skill: skill.name || skill.id,
-                  agent: agent.name,
-                });
-              }
-              if (!window.confirm(confirmMsg)) return;
-              try {
-                if (installedOnActive) {
-                  await handleUninstall(skill.id, agentSlug);
-                }
-                if (inheritedOnActive) {
-                  await invoke("detach_shared_skill", {
-                    skillId: skill.id,
-                    removeFromAgent: agentSlug,
-                  });
-                }
-                await refreshAndReselect();
-              } catch (err) {
-                toast(
-                  `Remove failed: ${err instanceof Error ? err.message : String(err)}`,
-                  "destructive",
-                );
-              }
-            }}
             isSearchStale={isSearchStale}
             batchSelectionMode={batchSelectionMode}
             batchSelectedIds={batchSelectedIds}
@@ -1072,9 +1048,13 @@ export default function SkillsManager() {
             onEdit={() => setPanelMode("editor")}
             onSync={handleSync}
             onUpdate={handleUpdate}
+			onMarkReviewed={handleMarkReviewed}
+			onClaimOwnership={handleClaimOwnership}
+            onFork={handleFork}
             onUninstall={handleUninstall}
             onUninstallAll={requestUninstallAll}
             onUnlinkInherited={requestUnlinkInherited}
+            onReveal={revealItemInDir}
           />
         )
       )}
@@ -1111,6 +1091,7 @@ export default function SkillsManager() {
 }
 
 type SkillVirtualRow =
+	| { kind: "section"; title: string; key: string }
   | { kind: "standalone"; skill: SkillWithRepo; key: string }
   | {
       kind: "collection_header";
@@ -1127,10 +1108,6 @@ function SkillListGrouped({
   agents,
   activeAgentSlug,
   onSelect,
-  onReveal,
-  onUninstallAll,
-  onUnlinkInherited,
-  onUninstallFromAgent,
   isSearchStale,
   batchSelectionMode,
   batchSelectedIds,
@@ -1141,10 +1118,6 @@ function SkillListGrouped({
   agents: import("@/mainview/hooks/useAgents").AgentConfig[] | undefined;
   activeAgentSlug?: string | null;
   onSelect: (skill: SkillWithRepo) => void;
-  onReveal: (path: string) => void;
-  onUninstallAll: (skill: SkillWithRepo) => void;
-  onUnlinkInherited: (skill: SkillWithRepo) => void;
-  onUninstallFromAgent?: (skill: SkillWithRepo, agentSlug: string) => void;
   isSearchStale: boolean;
   batchSelectionMode: boolean;
   batchSelectedIds: Set<string>;
@@ -1166,6 +1139,7 @@ function SkillListGrouped({
     }
     // Find collection names that have children
     const collectionNames = new Set(children.keys());
+    const visibleIds = new Set(skills.map((skill) => skill.id));
 
     type Group =
       | { type: "standalone"; skill: SkillWithRepo }
@@ -1173,7 +1147,11 @@ function SkillListGrouped({
     const result: Group[] = [];
     for (const skill of skills) {
       if (skill.collection) {
-        // Skip child skills — they're nested under the parent
+        // Keep a matching child visible when filtering/searching has excluded
+        // its collection parent. Otherwise a correct result count could lead
+        // to an empty virtual list.
+        if (visibleIds.has(skill.collection)) continue;
+        result.push({ type: "standalone", skill });
         continue;
       }
       if (collectionNames.has(skill.id)) {
@@ -1188,6 +1166,9 @@ function SkillListGrouped({
 
   const flatRows = useMemo((): SkillVirtualRow[] => {
     const rows: SkillVirtualRow[] = [];
+		if (groups.some((group) => isRecentlyAdded(group.type === "standalone" ? group.skill : group.parent))) {
+			rows.push({ kind: "section", title: "Recently added", key: "recently-added" });
+		}
     for (const group of groups) {
       if (group.type === "standalone") {
         rows.push({
@@ -1217,10 +1198,19 @@ function SkillListGrouped({
   const virtualizer = useVirtualizer({
     count: flatRows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 88,
+    estimateSize: (index) => flatRows[index]?.kind === "section" ? 34 : 88,
     overscan: 12,
     getItemKey: (index) => flatRows[index]?.key ?? String(index),
   });
+
+  // A search can shrink a long, already-scrolled list to a handful of rows.
+  // React Virtual has no reason to reset the old offset by itself, which made
+  // the correct result count render as an empty pane. Start each new row set
+  // at its first result and remeasure its viewport.
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+    virtualizer.measure();
+  }, [flatRows, virtualizer]);
 
   const toggle = (name: string) =>
     setCollapsed((prev) => ({ ...prev, [name]: !prev[name] }));
@@ -1228,6 +1218,7 @@ function SkillListGrouped({
   useEffect(() => {
     if (selectedId == null) return;
     const idx = flatRows.findIndex((r) => {
+		if (r.kind === "section") return false;
       if (r.kind === "standalone") return r.skill.id === selectedId;
       if (r.kind === "collection_header") return r.parent.id === selectedId;
       return r.skill.id === selectedId;
@@ -1237,11 +1228,12 @@ function SkillListGrouped({
   }, [selectedId]);
 
   return (
-    <div
-      ref={scrollRef}
-      className="h-full min-h-0 overflow-y-auto transition-opacity"
-      style={{ opacity: isSearchStale ? 0.5 : 1 }}
-    >
+    <div className="relative h-full min-h-0">
+      <div
+        ref={scrollRef}
+        className="h-full min-h-0 overflow-y-auto pr-2 transition-opacity"
+        style={{ opacity: isSearchStale ? 0.5 : 1 }}
+      >
       <div
         className="relative w-full"
         style={{ height: virtualizer.getTotalSize() }}
@@ -1258,17 +1250,17 @@ function SkillListGrouped({
               style={{ transform: `translateY(${vi.start}px)` }}
             >
               <div className="pb-1">
-                {row.kind === "standalone" ? (
+                {row.kind === "section" ? (
+                  <div className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-primary">
+                    {row.title}
+                  </div>
+                ) : row.kind === "standalone" ? (
                   <SkillListItem
                     skill={row.skill}
                     selected={selectedId === row.skill.id}
                     agents={agents}
                     activeAgentSlug={activeAgentSlug}
                     onSelect={onSelect}
-                    onReveal={onReveal}
-                    onUninstallAll={onUninstallAll}
-                    onUnlinkInherited={onUnlinkInherited}
-                    onUninstallFromAgent={onUninstallFromAgent}
                     batchSelectionMode={batchSelectionMode}
                     batchSelected={batchSelectedIds.has(row.skill.id)}
                     onToggleBatch={onToggleBatch}
@@ -1281,9 +1273,6 @@ function SkillListGrouped({
                     collapsed={row.collapsed}
                     agents={agents}
                     onSelect={onSelect}
-                    onReveal={onReveal}
-                    onUninstallAll={onUninstallAll}
-                    onUnlinkInherited={onUnlinkInherited}
                     onToggle={() => toggle(row.parent.id)}
                     batchSelectionMode={batchSelectionMode}
                     batchSelected={batchSelectedIds.has(row.parent.id)}
@@ -1296,9 +1285,6 @@ function SkillListGrouped({
                       selected={selectedId === row.skill.id}
                       agents={agents}
                       onSelect={onSelect}
-                      onReveal={onReveal}
-                      onUninstallAll={onUninstallAll}
-                      onUnlinkInherited={onUnlinkInherited}
                       batchSelectionMode={batchSelectionMode}
                       batchSelected={false}
                       batchSelectable={false}
@@ -1311,6 +1297,8 @@ function SkillListGrouped({
           );
         })}
       </div>
+      </div>
+      <ScrollFade viewportRef={scrollRef} />
     </div>
   );
 }
@@ -1331,12 +1319,13 @@ function BatchSelectionCheckbox({
   className?: string;
 }) {
   return (
+    <Tooltip content={disabled ? unavailableLabel : label}>
+    <span className="inline-flex">
     <button
       type="button"
       role="checkbox"
       aria-checked={checked}
       aria-label={disabled ? unavailableLabel : label}
-      title={disabled ? unavailableLabel : label}
       disabled={disabled}
       className={cn(
         "flex size-4 shrink-0 items-center justify-center rounded-[5px] border transition-colors",
@@ -1354,6 +1343,8 @@ function BatchSelectionCheckbox({
     >
       {checked && <Check className="size-3" strokeWidth={2.5} />}
     </button>
+    </span>
+    </Tooltip>
   );
 }
 
@@ -1364,9 +1355,6 @@ const CollectionItem = memo(function CollectionItem({
   collapsed,
   agents,
   onSelect,
-  onReveal,
-  onUninstallAll,
-  onUnlinkInherited,
   onToggle,
   batchSelectionMode,
   batchSelected,
@@ -1378,42 +1366,21 @@ const CollectionItem = memo(function CollectionItem({
   collapsed: boolean;
   agents: import("@/mainview/hooks/useAgents").AgentConfig[] | undefined;
   onSelect: (skill: SkillWithRepo) => void;
-  onReveal: (path: string) => void;
-  onUninstallAll: (skill: SkillWithRepo) => void;
-  onUnlinkInherited: (skill: SkillWithRepo) => void;
   onToggle: () => void;
   batchSelectionMode: boolean;
   batchSelected: boolean;
   onToggleBatch: (skillId: string) => void;
 }) {
   const { t } = useTranslation();
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const rowRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const moreRef = useRef<HTMLButtonElement>(null);
-  const closeMenu = useCallback(() => setMenu(null), []);
-  useMenuDismissal(menu !== null, closeMenu, rowRef, menuRef);
-
   const directSlugs = installedAgents(parent);
   const hasDirectInstall = directSlugs.length > 0;
   const inheritedSlugs = parent.installations
     .filter((i) => i.is_inherited)
     .map((i) => i.agent_slug)
     .filter((s) => !directSlugs.includes(s));
-  const inheritedOnly = !hasDirectInstall && inheritedSlugs.length > 0;
-
-  function openMenuFromMoreButton() {
-    const r = moreRef.current?.getBoundingClientRect();
-    if (r) {
-      setMenu({
-        x: Math.min(r.right - 180, window.innerWidth - 188),
-        y: r.bottom + 4,
-      });
-    }
-  }
 
   return (
-    <div className="relative" ref={rowRef}>
+    <div className="relative">
       <div
         className={cn(
           "rounded-xl px-3 py-2.5 transition-all duration-200 select-none border-[0.5px]",
@@ -1423,12 +1390,6 @@ const CollectionItem = memo(function CollectionItem({
             ? "glass"
             : "border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]",
         )}
-        onContextMenu={(e) => {
-          if (batchSelectionMode) return;
-          e.preventDefault();
-          e.stopPropagation();
-          setMenu({ x: e.clientX, y: e.clientY });
-        }}
       >
         <div className="flex items-start gap-0.5 w-full">
           {batchSelectionMode && (
@@ -1484,88 +1445,23 @@ const CollectionItem = memo(function CollectionItem({
             </div>
           </button>
           {!batchSelectionMode && (
-            <>
-              <button
-                type="button"
-                ref={moreRef}
-                className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-black/[0.06] dark:hover:bg-white/[0.08] mt-0.5"
-                aria-label={t("skills.skillRowMenu")}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (menu) setMenu(null);
-                  else openMenuFromMoreButton();
-                }}
-              >
-                <MoreHorizontal className="size-4" />
-              </button>
-              <button
-                type="button"
-                className="shrink-0 p-0.5 rounded hover:bg-black/[0.06] dark:hover:bg-white/[0.08] transition-colors mt-0.5"
-                aria-expanded={!collapsed}
-                aria-label={collapsed ? t("skills.expandCollection") : t("skills.collapseCollection")}
-                onClick={(e) => { e.stopPropagation(); onToggle(); }}
-              >
-                <ChevronRight
-                  className={cn(
-                    "size-3.5 text-muted-foreground transition-transform duration-200",
-                    !collapsed && "rotate-90",
-                  )}
-                />
-              </button>
-            </>
+            <button
+              type="button"
+              className="shrink-0 p-0.5 rounded hover:bg-black/[0.06] dark:hover:bg-white/[0.08] transition-colors mt-0.5"
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? t("skills.expandCollection") : t("skills.collapseCollection")}
+              onClick={(e) => { e.stopPropagation(); onToggle(); }}
+            >
+              <ChevronRight
+                className={cn(
+                  "size-3.5 text-muted-foreground transition-transform duration-200",
+                  !collapsed && "rotate-90",
+                )}
+              />
+            </button>
           )}
         </div>
       </div>
-
-      {!batchSelectionMode && menu &&
-        createPortal(
-          <div
-            ref={menuRef}
-            className="fixed z-[300] w-[180px] rounded-xl glass-elevated p-1 shadow-lg animate-fade-in-up"
-            style={{ left: menu.x, top: menu.y }}
-            role="menu"
-          >
-            <button
-              type="button"
-              role="menuitem"
-              className="w-full px-2.5 py-1.5 text-[13px] text-left rounded-lg hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition-colors"
-              onClick={() => {
-                onReveal(parent.canonical_path);
-                setMenu(null);
-              }}
-            >
-              {t("skills.revealInFinder")}
-            </button>
-            {hasDirectInstall && (
-              <button
-                type="button"
-                role="menuitem"
-                className="w-full px-2.5 py-1.5 text-[13px] text-left rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
-                onClick={() => {
-                  onUninstallAll(parent);
-                  setMenu(null);
-                }}
-              >
-                {t("skills.uninstallAll")}
-              </button>
-            )}
-            {inheritedOnly && (
-              <button
-                type="button"
-                role="menuitem"
-                className="w-full px-2.5 py-1.5 text-[13px] text-left rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
-                onClick={() => {
-                  onUnlinkInherited(parent);
-                  setMenu(null);
-                }}
-              >
-                {t("skills.unlinkInherited")}
-              </button>
-            )}
-          </div>,
-          document.body,
-        )}
     </div>
   );
 });
@@ -1576,10 +1472,6 @@ const SkillListItem = memo(function SkillListItem({
   agents,
   activeAgentSlug,
   onSelect,
-  onReveal,
-  onUninstallAll,
-  onUnlinkInherited,
-  onUninstallFromAgent,
   batchSelectionMode,
   batchSelected,
   batchSelectable,
@@ -1592,23 +1484,12 @@ const SkillListItem = memo(function SkillListItem({
    *  the agent chip strip (redundant — every row would show the same icon). */
   activeAgentSlug?: string | null;
   onSelect: (skill: SkillWithRepo) => void;
-  onReveal: (path: string) => void;
-  onUninstallAll: (skill: SkillWithRepo) => void;
-  onUnlinkInherited: (skill: SkillWithRepo) => void;
-  onUninstallFromAgent?: (skill: SkillWithRepo, agentSlug: string) => void;
   batchSelectionMode: boolean;
   batchSelected: boolean;
   batchSelectable?: boolean;
   onToggleBatch: (skillId: string) => void;
 }) {
   const { t } = useTranslation();
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const rowRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const moreRef = useRef<HTMLButtonElement>(null);
-  const closeMenu = useCallback(() => setMenu(null), []);
-  useMenuDismissal(menu !== null, closeMenu, rowRef, menuRef);
-
   const directSlugs = directInstallSlugs(skill);
   const inheritedSlugs = skill.installations
     .filter((i) => i.is_inherited)
@@ -1618,23 +1499,13 @@ const SkillListItem = memo(function SkillListItem({
   const inheritedOnly = !hasDirectInstall && inheritedSlugs.length > 0;
   const canBatchSelect = batchSelectable ?? hasDirectInstall;
 
-  function openMenuFromMoreButton() {
-    const r = moreRef.current?.getBoundingClientRect();
-    if (r) {
-      setMenu({
-        x: Math.min(r.right - 180, window.innerWidth - 188),
-        y: r.bottom + 4,
-      });
-    }
-  }
-
   return (
-    <div className="relative" ref={rowRef}>
+    <div className="relative">
       <button
         type="button"
         className={cn(
           "w-full rounded-xl px-3 py-2.5 text-left transition-all duration-200 select-none border-[0.5px]",
-          batchSelectionMode ? "pl-10 pr-3" : "pr-9",
+          batchSelectionMode ? "pl-10 pr-3" : "pr-3",
           batchSelected
             ? "border-primary/25 bg-primary/[0.07] dark:bg-primary/[0.1]"
             : selected
@@ -1649,14 +1520,15 @@ const SkillListItem = memo(function SkillListItem({
           }
           onSelect(skill);
         }}
-        onContextMenu={(e) => {
-          if (batchSelectionMode) return;
-          e.preventDefault();
-          e.stopPropagation();
-          setMenu({ x: e.clientX, y: e.clientY });
-        }}
       >
-        <h3 className="text-sm font-medium truncate">{skill.name}</h3>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <h3 className="min-w-0 flex-1 truncate text-sm font-medium">{skill.name}</h3>
+          {isRecentlyAdded(skill) && (
+            <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+              New
+            </span>
+          )}
+        </div>
         {skill.description && (
           <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
             {skill.description}
@@ -1664,30 +1536,39 @@ const SkillListItem = memo(function SkillListItem({
         )}
         <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-medium tabular-nums text-muted-foreground/90">
 		  {skill.scope.type === "SharedLibrary" && (
-			<span className="rounded-full bg-secondary px-1.5 py-0.5 text-secondary-foreground">{t("skills.sharedDirectory")}</span>
+            <Tooltip content={t("skills.sharedLibrarySkillHint")}>
+			<span
+              className="rounded-full bg-secondary px-1.5 py-0.5 text-secondary-foreground"
+            >
+              {t("skills.sharedDirectory")}
+            </span>
+            </Tooltip>
 		  )}
+          <Tooltip content={t("skills.tokenTooltipListing")}>
           <span
-            className="inline-flex cursor-help items-center gap-0.5"
-            title={t("skills.tokenTooltipListing")}
+            className="inline-flex items-center gap-0.5"
           >
             <LayoutList className="size-3 shrink-0 opacity-80" aria-hidden />
             {formatApproxTok(approxTokensFromChars(skill.footprint_listing_slice_chars ?? 0))}
           </span>
+          </Tooltip>
           <span className="text-border">·</span>
+          <Tooltip content={t("skills.tokenTooltipFull")}>
           <span
-            className="inline-flex cursor-help items-center gap-0.5"
-            title={t("skills.tokenTooltipFull")}
+            className="inline-flex items-center gap-0.5"
           >
             <FileText className="size-3 shrink-0 opacity-80" aria-hidden />
             {formatApproxTok(approxTokensFromChars(skill.footprint_skill_md_chars ?? 0))}
           </span>
+          </Tooltip>
           {(skill.listing_excluded ?? false) && (
+            <Tooltip content={t("skills.listingExcludedTooltip")}>
             <span
-              className="inline-flex cursor-help items-center gap-0.5 text-muted-foreground/70"
-              title={t("skills.listingExcludedTooltip")}
+              className="inline-flex items-center gap-0.5 text-muted-foreground/70"
             >
               <Ban className="size-3 shrink-0" aria-hidden />
             </span>
+            </Tooltip>
           )}
         </div>
         {inheritedOnly && (
@@ -1716,106 +1597,7 @@ const SkillListItem = memo(function SkillListItem({
           onChange={() => onToggleBatch(skill.id)}
           className="absolute left-3 top-3"
         />
-      ) : (
-        <button
-          type="button"
-          ref={moreRef}
-          className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground hover:bg-black/[0.06] dark:hover:bg-white/[0.08]"
-          aria-label={t("skills.skillRowMenu")}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (menu) setMenu(null);
-            else openMenuFromMoreButton();
-          }}
-        >
-          <MoreHorizontal className="size-4" />
-        </button>
-      )}
-
-      {!batchSelectionMode && menu &&
-        createPortal(
-          <div
-            ref={menuRef}
-            className="fixed z-[300] w-[180px] rounded-xl glass-elevated p-1 shadow-lg animate-fade-in-up"
-            style={{ left: menu.x, top: menu.y }}
-            role="menu"
-          >
-            <button
-              type="button"
-              role="menuitem"
-              className="w-full px-2.5 py-1.5 text-[13px] text-left rounded-lg hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition-colors"
-              onClick={() => {
-                onReveal(skill.canonical_path);
-                setMenu(null);
-              }}
-            >
-              {t("skills.revealInFinder")}
-            </button>
-            {(() => {
-              // Row-menu destructive action, scoped to the active filter:
-              //   - filter=X, skill visible on X (direct OR inherited) →
-              //     single "Remove from X" that runs the composite flow
-              //     (uninstall direct + detach shared as needed).
-              //   - filter=All, skill has any direct install anywhere →
-              //     "Uninstall from All Agents".
-              const agent =
-                activeAgentSlug && agents
-                  ? agents.find((a) => a.slug === activeAgentSlug)
-                  : undefined;
-              if (agent && onUninstallFromAgent) {
-                const visibleOnActive = skill.installations.some(
-                  (i) => i.agent_slug === agent.slug,
-                );
-                if (visibleOnActive) {
-                  return (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="w-full px-2.5 py-1.5 text-[13px] text-left rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
-                      onClick={() => {
-                        onUninstallFromAgent(skill, agent.slug);
-                        setMenu(null);
-                      }}
-                    >
-                      {t("skills.removeFromAgent", { agent: agent.name })}
-                    </button>
-                  );
-                }
-              }
-              if (hasDirectInstall) {
-                return (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="w-full px-2.5 py-1.5 text-[13px] text-left rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
-                    onClick={() => {
-                      onUninstallAll(skill);
-                      setMenu(null);
-                    }}
-                  >
-                    {t("skills.uninstallAll")}
-                  </button>
-                );
-              }
-              return null;
-            })()}
-            {inheritedOnly && !activeAgentSlug && (
-              <button
-                type="button"
-                role="menuitem"
-                className="w-full px-2.5 py-1.5 text-[13px] text-left rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
-                onClick={() => {
-                  onUnlinkInherited(skill);
-                  setMenu(null);
-                }}
-              >
-                {t("skills.unlinkInherited")}
-              </button>
-            )}
-          </div>,
-          document.body,
-        )}
+      ) : null}
     </div>
   );
 });
@@ -1849,9 +1631,9 @@ function AgentChipsCompact({
   return (
     <div className="mt-1.5 flex items-center gap-1">
       {visible.map(({ slug, inherited }) => (
+        <Tooltip key={slug} content={inherited ? `${nameOf(slug)} (inherited)` : nameOf(slug)}>
         <span
           key={slug}
-          title={inherited ? `${nameOf(slug)} (inherited)` : nameOf(slug)}
           className={cn(
             "inline-flex size-4 items-center justify-center",
             inherited && "opacity-40",
@@ -1859,14 +1641,16 @@ function AgentChipsCompact({
         >
           <AgentIcon slug={slug} className="size-3.5" />
         </span>
+        </Tooltip>
       ))}
       {overflow > 0 && (
+        <Tooltip content={overflowTitle}>
         <span
-          title={overflowTitle}
           className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border bg-secondary px-1 text-[9px] font-medium tabular-nums text-secondary-foreground"
         >
           +{overflow}
         </span>
+        </Tooltip>
       )}
     </div>
   );
@@ -1939,10 +1723,14 @@ function SkillDetail({
   readOnly = false,
   onEdit,
   onSync,
-  onUpdate,
+	onUpdate,
+	onMarkReviewed,
+	onClaimOwnership,
+	onFork,
   onUninstall,
   onUninstallAll,
   onUnlinkInherited,
+  onReveal,
 }: {
   skill: Skill;
   detectedAgents: AgentConfig[];
@@ -1955,9 +1743,13 @@ function SkillDetail({
   onEdit: () => void;
   onSync: (skillId: string, targetAgents: string[]) => void;
   onUpdate: (skillId: string) => void;
+	onMarkReviewed: (skillId: string) => Promise<void>;
+	onClaimOwnership: (skillId: string) => Promise<void>;
+  onFork: (skillId: string, forkId: string) => Promise<void>;
   onUninstall: (skillId: string, agentSlug: string) => void;
   onUninstallAll: (skill: Skill) => void | Promise<void>;
   onUnlinkInherited: (skill: Skill) => void | Promise<void>;
+  onReveal: (path: string) => void;
 }) {
   const { t } = useTranslation();
   const directSlugs = directInstallSlugs(skill);
@@ -1973,19 +1765,68 @@ function SkillDetail({
   const sourceLabel = getSourceLabel(skill.source, t);
   const sourceRepo = getSourceRepo(skill.source);
   const metadata = skill.metadata as Record<string, unknown> | null;
+	const canImprove = skill.library_state?.ownership === "owned" || skill.library_state?.ownership === "forked";
+  const agentLinkCount = installedAgentCount(skill, detectedAgents);
 
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+	const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsHostRef = useRef<HTMLDivElement>(null);
+  const closeActions = useCallback(() => setActionsOpen(false), []);
+  useMenuDismissal(actionsOpen, closeActions, actionsHostRef);
+	const [forking, setForking] = useState(false);
+	const [forkName, setForkName] = useState(`my-${skill.id}`);
+	const [forkError, setForkError] = useState<string | null>(null);
+	const [forkPending, setForkPending] = useState(false);
+
+	useEffect(() => {
+		setForking(false);
+		setForkError(null);
+		setForkName(`my-${skill.id}`);
+	}, [skill.id]);
+
+	async function createFork() {
+		if (forkPending) return;
+		setForkPending(true);
+		setForkError(null);
+		try {
+			await onFork(skill.id, forkName.trim());
+		} catch (error) {
+			setForkError(error instanceof Error ? error.message : "Could not create this fork");
+		} finally {
+			setForkPending(false);
+		}
+	}
 
   // Defer the heavy markdown rendering so the panel paints instantly
   const deferredSkillPath = useDeferredValue(skill.canonical_path);
   const isStale = deferredSkillPath !== skill.canonical_path;
+  const skillRoot = deferredSkillPath.endsWith("SKILL.md")
+    ? deferredSkillPath.slice(0, -"SKILL.md".length).replace(/[\\/]$/, "")
+    : deferredSkillPath;
+  const [selectedSkillFile, setSelectedSkillFile] = useState("SKILL.md");
 
-  // Load SKILL.md content — try local first, fall back to remote if empty
-  const skillMdPath = deferredSkillPath.endsWith("SKILL.md")
-    ? deferredSkillPath
-    : deferredSkillPath + "/SKILL.md";
+  useEffect(() => {
+    setSelectedSkillFile("SKILL.md");
+  }, [skill.id]);
+
+  const { data: skillFiles = [], isLoading: filesLoading } = useQuery<string[]>({
+    queryKey: ["skill-files", skillRoot],
+    queryFn: () => invoke("list_skill_files", { path: skillRoot }),
+    enabled: Boolean(skillRoot) && !isStale,
+    staleTime: 60 * 1000,
+    retry: false,
+  });
+  const visibleSkillFiles = skillFiles.length > 0 ? skillFiles : ["SKILL.md"];
+
+  useEffect(() => {
+    if (!visibleSkillFiles.includes(selectedSkillFile)) setSelectedSkillFile(visibleSkillFiles[0] ?? "SKILL.md");
+  }, [selectedSkillFile, visibleSkillFiles]);
+
+  // Load the selected local file. Only SKILL.md has a remote fallback because
+  // a package repository cannot safely expose an arbitrary file by name.
+  const skillMdPath = `${skillRoot}/${selectedSkillFile}`;
   const { data: docContent, isLoading: docLoading } = useQuery<string | null>({
-    queryKey: ["skill-content", skillMdPath, sourceRepo],
+    queryKey: ["skill-content", skillMdPath, sourceRepo, selectedSkillFile],
     queryFn: async () => {
       // Try local SKILL.md first
       try {
@@ -1996,7 +1837,7 @@ function SkillDetail({
         if (body && body.trim().length > 0) return body;
       } catch { /* local read failed, fall through */ }
       // Fallback: fetch from remote repository if source info is available
-      if (sourceRepo) {
+      if (sourceRepo && selectedSkillFile === "SKILL.md") {
         try {
           const text = (await invoke("fetch_remote_skill_content", {
             repoUrl: sourceRepo,
@@ -2007,6 +1848,7 @@ function SkillDetail({
       }
       return null;
     },
+    enabled: Boolean(skillRoot) && !isStale,
     staleTime: 60 * 1000,
     retry: false,
   });
@@ -2025,9 +1867,33 @@ function SkillDetail({
       <InsetScrollArea className="min-h-0 flex-1" scrollClassName="min-h-0 p-4 space-y-5">
         {/* Header: Name & Description */}
         <div>
-          <h2 className="text-base font-[590] leading-tight">
-            {skill.name}
-          </h2>
+		  <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <h2 className="truncate text-base font-[590] leading-6">{skill.name}</h2>
+			{!readOnly && (
+              <div className="relative shrink-0" ref={actionsHostRef}>
+                <Tooltip content={t("skills.action")}>
+                <button
+                  type="button"
+                  className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-black/[0.06] hover:text-foreground dark:hover:bg-white/[0.08]"
+                  aria-label={t("skills.action")}
+                  aria-expanded={actionsOpen}
+                  onClick={() => setActionsOpen((open) => !open)}
+                >
+                  <MoreHorizontal className="size-4 translate-y-px" />
+                </button>
+                </Tooltip>
+              </div>
+			)}
+            </div>
+			<div className="ml-auto flex shrink-0 items-center gap-1">
+			{isRecentlyAdded(skill) && (
+			  <Button size="sm" variant="outline" className="shrink-0 gap-1.5" onClick={() => void onMarkReviewed(skill.id)}>
+				<Check className="size-3.5" /> Mark reviewed
+			  </Button>
+			)}
+			</div>
+		  </div>
           {skill.description && (
             <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
               {skill.description}
@@ -2096,35 +1962,38 @@ function SkillDetail({
             </span>
             <span className="self-center text-xs text-muted-foreground">{t("skills.packageSizeLabel")}</span>
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 self-center text-[11px] font-medium tabular-nums text-foreground/90">
+              <Tooltip content={t("skills.tokenTooltipListing")}>
               <span
-                className="inline-flex cursor-help items-center gap-1"
-                title={t("skills.tokenTooltipListing")}
+                className="inline-flex items-center gap-1"
               >
                 <LayoutList className="size-3 shrink-0 text-muted-foreground" aria-hidden />
                 {formatApproxTok(approxTokensFromChars(skill.footprint_listing_slice_chars ?? 0))}
               </span>
+              </Tooltip>
               <span className="text-muted-foreground/40 select-none" aria-hidden>
                 ·
               </span>
+              <Tooltip content={t("skills.tokenTooltipFull")}>
               <span
-                className="inline-flex cursor-help items-center gap-1"
-                title={t("skills.tokenTooltipFull")}
+                className="inline-flex items-center gap-1"
               >
                 <FileText className="size-3 shrink-0 text-muted-foreground" aria-hidden />
                 {formatApproxTok(approxTokensFromChars(skill.footprint_skill_md_chars ?? 0))}
               </span>
+              </Tooltip>
               {(skill.listing_excluded ?? false) && (
                 <>
                   <span className="text-muted-foreground/40 select-none" aria-hidden>
                     ·
                   </span>
+                  <Tooltip content={t("skills.listingExcludedTooltip")}>
                   <span
-                    className="inline-flex cursor-help items-center gap-0.5 font-normal text-muted-foreground"
-                    title={t("skills.listingExcludedTooltip")}
+                    className="inline-flex items-center gap-0.5 font-normal text-muted-foreground"
                   >
                     <Ban className="size-3 shrink-0" aria-hidden />
                     {t("skills.listingExcludedShort")}
                   </span>
+                  </Tooltip>
                 </>
               )}
             </div>
@@ -2156,58 +2025,77 @@ function SkillDetail({
 
         <hr className="border-border" />
 
-        {/* Agent Assignment */}
-        {skill.scope.type === "SharedLibrary" && (
-          <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
-            {t("skills.sharedLibrarySkillHint")}
-          </p>
+        {/* A shared skill is already available to compatible agents. Do not
+            turn the absence of an explicit per-agent link into a warning. */}
+        {skill.scope.type === "SharedLibrary" && agentLinkCount === 0 ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+            <Tooltip content={t("skills.sharedLibrarySkillHint")}><span>Available from .agents</span></Tooltip>
+          </div>
+        ) : (
+          <DetailSection label={skill.scope.type === "SharedLibrary" ? t("skills.agentLinksLabel", { count: agentLinkCount }) : t("skills.agentsLabel", { installed: agentLinkCount, total: detectedAgents.length })}>
+            <SkillAgentList
+              skill={skill}
+              detectedAgents={detectedAgents}
+              busyAgents={busyAgents}
+              readOnly={readOnly}
+              onInstall={(targets) => onSync(skill.id, targets)}
+              onUninstall={onUninstall}
+            />
+            {inheritedOnly && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {t("skills.inheritedOnlyUninstallInfo")}
+              </p>
+            )}
+          </DetailSection>
         )}
-        <DetailSection label={skill.scope.type === "SharedLibrary" ? t("skills.agentLinksLabel", { count: installedAgentCount(skill, detectedAgents) }) : t("skills.agentsLabel", { installed: installedAgentCount(skill, detectedAgents), total: detectedAgents.length })}>
-          <SkillAgentList
-            skill={skill}
-            detectedAgents={detectedAgents}
-            busyAgents={busyAgents}
-            readOnly={readOnly}
-            onInstall={(targets) => onSync(skill.id, targets)}
-            onUninstall={onUninstall}
-          />
-          {inheritedOnly && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              {t("skills.inheritedOnlyUninstallInfo")}
-            </p>
-          )}
-        </DetailSection>
 
-        {!readOnly && (
-          <>
-            <hr className="border-border" />
+		{canImprove && (
+		  <>
+			<hr className="border-border" />
+			<SkillImprovementPanel skillId={skill.id} />
+		  </>
+		)}
 
-            {/* Action */}
-            <DetailSection label={t("skills.action")}>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
+        {!readOnly && actionsOpen && actionsHostRef.current && createPortal(
+          <div
+            role="menu"
+            className="absolute right-0 top-[calc(100%+0.35rem)] z-30 w-64 rounded-xl border border-border/70 bg-popover p-1.5 shadow-lg"
+            onClickCapture={() => setActionsOpen(false)}
+          >
+            <div className="flex flex-col gap-1">
+				{canImprove && <Button
                   variant="outline"
                   size="sm"
-                  className="h-auto min-h-9 w-full min-w-0 justify-start gap-2 py-2 text-left whitespace-normal [text-wrap:balance]"
+                  className="h-9 w-auto shrink-0 gap-2 px-3"
                   onClick={onEdit}
                 >
                   <Pencil className="size-3.5 shrink-0" />
                   <span className="min-w-0">{t("skills.editSkillMd")}</span>
-                </Button>
+				</Button>}
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-auto min-h-9 w-full min-w-0 justify-start gap-2 py-2 text-left whitespace-normal [text-wrap:balance]"
+                  className="h-9 w-auto shrink-0 gap-2 px-3"
                   onClick={() => setProjectPickerOpen(true)}
                 >
                   <FolderKanban className="size-3.5 shrink-0" />
                   <span className="min-w-0">{t("skills.installToProject")}</span>
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 w-auto shrink-0 gap-2 px-3"
+                  onClick={() => onReveal(skill.canonical_path)}
+                >
+                  <FolderOpen className="size-3.5 shrink-0" />
+                  <span className="min-w-0">{t("skills.revealInFinder")}</span>
+                </Button>
                 {sourceRepo && (
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-auto min-h-9 w-full min-w-0 justify-start gap-2 py-2 text-left whitespace-normal [text-wrap:balance]"
+                    className="h-9 w-auto shrink-0 gap-2 px-3"
                     disabled={updating}
                     onClick={() => onUpdate(skill.id)}
                   >
@@ -2221,7 +2109,7 @@ function SkillDetail({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-auto min-h-9 w-full min-w-0 justify-start gap-2 py-2 text-left whitespace-normal [text-wrap:balance]"
+                    className="h-9 w-auto shrink-0 gap-2 px-3"
                     disabled={busyAgents.size > 0}
                     onClick={() =>
                       onSync(
@@ -2232,7 +2120,7 @@ function SkillDetail({
                   >
                     <Copy className="size-3.5 shrink-0" />
                     <span className="min-w-0">
-                      {t("skills.syncTo", { names: syncTargets.map((a) => a.name).join(", ") })}
+                      Sync to {syncTargets.length} {syncTargets.length === 1 ? "agent" : "agents"}
                     </span>
                   </Button>
                 )}
@@ -2281,7 +2169,7 @@ function SkillDetail({
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-auto min-h-9 w-full min-w-0 justify-start gap-2 border-destructive/30 py-2 text-left text-destructive whitespace-normal [text-wrap:balance] hover:bg-destructive/10 hover:text-destructive"
+                      className="h-9 w-auto shrink-0 gap-2 border-destructive/30 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
                       disabled={isBusy || busyAgents.size > 0}
                       onClick={async () => {
                         // Build a confirm string that fits the situation:
@@ -2334,47 +2222,39 @@ function SkillDetail({
                         {isBusy
                           ? t("marketplace.uninstalling")
                           : t("skills.removeFromAgent", { agent: agent.name })}
-                        {installedOnActive && inheritedOnActive && (
-                          <span className="ml-1 text-[10px] font-normal text-muted-foreground block">
-                            {t("skills.removeFromAgentHintBoth")}
-                          </span>
-                        )}
-                        {!installedOnActive && inheritedOnActive && (
-                          <span className="ml-1 text-[10px] font-normal text-muted-foreground block">
-                            {t("skills.detachHint", { count: preservedAgents.length })}
-                          </span>
-                        )}
                       </span>
                     </Button>
                   );
                 })()}
+                {!activeAgentSlug && (skill.scope.type === "SharedLibrary" || hasDirectInstall) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 w-auto shrink-0 gap-2 border-destructive/30 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    disabled={uninstallAllBusy || busyAgents.size > 0}
+                    onClick={() => void onUninstallAll(skill)}
+                  >
+                    <Trash2 className="size-3.5 shrink-0" />
+                    <span className="min-w-0">
+                      {uninstallAllBusy
+                        ? t("marketplace.uninstalling")
+                        : skill.scope.type === "SharedLibrary"
+                          ? t("skills.removeFromSharedLibrary")
+                          : t("skills.uninstallAll")}
+                    </span>
+                  </Button>
+                )}
                 {/*
                  * "Uninstall from all agents" only shows in the All-agents view.
                  * When scoped to a specific agent, offering it would be
                  * visually dominant and out of context — the user just wants
                  * to pull it out of that one agent.
                  */}
-                {hasDirectInstall && !activeAgentSlug && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-auto min-h-9 w-full min-w-0 justify-start gap-2 border-destructive/30 py-2 text-left text-destructive whitespace-normal [text-wrap:balance] hover:bg-destructive/10 hover:text-destructive"
-                    disabled={uninstallAllBusy || busyAgents.size > 0}
-                    onClick={() => {
-                      void onUninstallAll(skill);
-                    }}
-                  >
-                    <Trash2 className="size-3.5 shrink-0" />
-                    <span className="min-w-0">
-                      {uninstallAllBusy ? t("marketplace.uninstalling") : t("skills.uninstallAll")}
-                    </span>
-                  </Button>
-                )}
                 {inheritedOnly && (
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-auto min-h-9 w-full min-w-0 justify-start gap-2 border-destructive/30 py-2 text-left text-destructive whitespace-normal [text-wrap:balance] hover:bg-destructive/10 hover:text-destructive"
+                    className="h-9 w-auto shrink-0 gap-2 border-destructive/30 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
                     disabled={busyAgents.size > 0}
                     onClick={() => {
                       void onUnlinkInherited(skill);
@@ -2384,28 +2264,54 @@ function SkillDetail({
                     <span className="min-w-0">{t("skills.unlinkInherited")}</span>
                   </Button>
                 )}
-              </div>
-
-            </DetailSection>
-          </>
+            </div>
+          </div>,
+          actionsHostRef.current,
         )}
 
         <hr className="border-border" />
 
-        {/* Documentation — deferred so detail panel renders first */}
-        <DetailSection label={t("skills.skillContent")}>
-          {isStale || docLoading ? (
-            <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin" />
-              {t("skills.loading")}
-            </div>
-          ) : docContent ? (
-            <MarkdownContent content={docContent} />
-          ) : (
-            <p className="text-xs text-muted-foreground italic">
-              {t("skills.noContent")}
-            </p>
+        {/* Ownership, provenance, and copy controls belong beside the content
+            they describe—not in a second status block above the detail. */}
+        <section className="rounded-lg border border-border/70 bg-muted/[0.18] px-3 py-2.5">
+          {skill.library_state?.ownership === "owned" && (
+            <p className="text-xs leading-5 text-muted-foreground"><span className="font-medium text-foreground">Your skill.</span> Improvements stay on this computer until you choose to share them.</p>
           )}
+          {skill.library_state?.ownership === "forked" && (
+            <p className="text-xs leading-5 text-muted-foreground"><span className="font-medium text-foreground">Editable copy.</span> The original source is retained for reference; this copy is yours to evolve.</p>
+          )}
+          {skill.library_state?.ownership === "external" && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs leading-5 text-muted-foreground">External skill{sourceRepo ? <> from <button type="button" onClick={() => openUrl(sourceRepo)} className="font-medium text-primary hover:underline">its original source</button></> : ''}. Make an editable copy when you want to adapt it.</p>
+              {!forking ? (
+                <Button size="sm" variant="outline" className="h-8 shrink-0 gap-1.5" onClick={() => setForking(true)}><Copy className="size-3.5" />Make editable copy</Button>
+              ) : (
+                <div className="w-full rounded-lg border border-border bg-background/70 p-3">
+                  <label className="block text-xs font-medium">Name for your copy<input value={forkName} onChange={(event) => setForkName(event.target.value)} className="mt-1.5 h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
+                  {forkError && <p className="mt-2 text-xs text-destructive">{forkError}</p>}
+                  <div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="ghost" disabled={forkPending} onClick={() => setForking(false)}>Cancel</Button><Button size="sm" disabled={forkPending || !forkName.trim()} onClick={() => void createFork()}>{forkPending && <Loader2 className="size-3.5 animate-spin" />}Create editable copy</Button></div>
+                </div>
+              )}
+            </div>
+          )}
+          {(!skill.library_state || skill.library_state.ownership === "unknown") && (
+            <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs leading-5 text-muted-foreground">Local skill with no recorded source. Mark it as yours before improving it.</p><Button size="sm" variant="outline" className="h-8 shrink-0" onClick={() => void onClaimOwnership(skill.id)}>This is my skill</Button></div>
+          )}
+        </section>
+
+        {/* Package contents — deferred so the surrounding detail paints first. */}
+        <DetailSection label={t("skills.skillContent")}>
+          <div className="overflow-hidden rounded-xl border border-border/70 bg-muted/[0.12]">
+            <div className="flex min-h-[22rem]">
+              <nav className="w-44 shrink-0 overflow-y-auto border-r border-border/70 bg-muted/[0.18] py-2" aria-label="Files in this skill">
+                <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Files</p>
+                {filesLoading || isStale ? <div className="space-y-2 px-3 py-2 animate-pulse"><div className="h-3 w-20 rounded bg-muted" /><div className="h-3 w-28 rounded bg-muted/70" /></div> : visibleSkillFiles.map((file) => <button key={file} type="button" onClick={() => setSelectedSkillFile(file)} className={`flex w-full items-center gap-2 px-3 py-2 text-left font-mono text-[11px] transition-colors ${selectedSkillFile === file ? "bg-primary/[0.12] text-foreground" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"}`}><File className="size-3.5 shrink-0" /><span className="min-w-0 truncate">{file}</span></button>)}
+              </nav>
+              <div className="min-w-0 flex-1 overflow-y-auto px-5 py-4">
+                {isStale || filesLoading || docLoading ? <div className="space-y-3 animate-pulse"><div className="h-4 w-40 rounded bg-muted" /><div className="h-3 w-full rounded bg-muted/70" /><div className="h-3 w-5/6 rounded bg-muted/70" /></div> : docContent ? <MarkdownContent content={docContent} /> : <p className="text-xs text-muted-foreground italic">{t("skills.noContent")}</p>}
+              </div>
+            </div>
+          </div>
         </DetailSection>
       </InsetScrollArea>
 
@@ -2445,8 +2351,8 @@ function BatchUninstallConfirmDialog({
   const remaining = skills.length - preview.length;
 
   return (
-    <div className="modal-shell fixed inset-0 z-[320] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} />
+    <div className="modal-shell modal-overlay fixed inset-0 z-[320] flex items-center justify-center">
+      <div className="absolute inset-0" onClick={onCancel} />
       <div className="modal-panel relative z-10 w-[min(32rem,calc(100vw-2rem))] rounded-2xl glass-panel border border-border/50 p-5 shadow-xl">
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 className="text-sm font-[590]">
@@ -2481,7 +2387,7 @@ function BatchUninstallConfirmDialog({
         <p className="text-[11px] leading-relaxed text-muted-foreground">
           {t("skills.batchConfirmInheritedHint")}
         </p>
-        <div className="mt-4 flex justify-end gap-2">
+      <div className="mt-4 flex justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onCancel} disabled={pending}>
             {t("common.cancel")}
           </Button>
@@ -2511,7 +2417,7 @@ function SkillNameConfirmDialog({
   onConfirm,
 }: {
   open: boolean;
-  actionKind: "uninstall_all" | "unlink_inherited";
+  actionKind: "uninstall_all" | "remove_shared" | "unlink_inherited";
   skillName: string;
   pending: boolean;
   onCancel: () => void;
@@ -2531,15 +2437,20 @@ function SkillNameConfirmDialog({
   const normalizedTyped = typed.trim();
   const expected = skillName.trim();
   const matches = normalizedTyped.length > 0 && normalizedTyped === expected;
+  const isSharedRemoval = actionKind === "remove_shared";
   const isUninstall = actionKind === "uninstall_all";
 
   return (
-    <div className="modal-shell fixed inset-0 z-[320] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} />
+    <div className="modal-shell modal-overlay fixed inset-0 z-[320] flex items-center justify-center">
+      <div className="absolute inset-0" onClick={onCancel} />
       <div className="modal-panel relative z-10 w-[min(32rem,calc(100vw-2rem))] rounded-2xl glass-panel border border-border/50 p-5 shadow-xl">
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 className="text-sm font-[590]">
-            {isUninstall ? t("skills.confirmUninstallTitle") : t("skills.confirmUnlinkTitle")}
+            {isSharedRemoval
+              ? t("skills.confirmRemoveSharedTitle")
+              : isUninstall
+                ? t("skills.confirmUninstallTitle")
+                : t("skills.confirmUnlinkTitle")}
           </h2>
           <button
             type="button"
@@ -2552,9 +2463,11 @@ function SkillNameConfirmDialog({
           </button>
         </div>
         <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
-          {isUninstall
-            ? t("skills.confirmUninstallBody")
-            : t("skills.confirmUnlinkBody")}
+          {isSharedRemoval
+            ? t("skills.confirmRemoveSharedBody")
+            : isUninstall
+              ? t("skills.confirmUninstallBody")
+              : t("skills.confirmUnlinkBody")}
         </p>
         <p className="mb-2 text-xs text-muted-foreground">
           {t("skills.typeSkillNamePrompt", { name: skillName })}
@@ -2584,13 +2497,95 @@ function SkillNameConfirmDialog({
           >
             {pending
               ? t("skills.runningAction")
-              : isUninstall
-                ? t("skills.uninstallAll")
-                : t("skills.unlinkInherited")}
+              : isSharedRemoval
+                ? t("skills.removeFromSharedLibrary")
+                : isUninstall
+                  ? t("skills.uninstallAll")
+                  : t("skills.unlinkInherited")}
           </Button>
         </div>
       </div>
     </div>
+  );
+}
+
+function SkillImprovementPanel({ skillId }: { skillId: string }) {
+  const queryClient = useQueryClient();
+  const { data: notes = [] } = useQuery<{ id: string; created_at: string; prompt: string; actual: string; expected: string }[]>({
+    queryKey: ["skill-improvement-notes", skillId],
+    queryFn: () => invoke("list_skill_improvement_notes", { skillId }) as Promise<{ id: string; created_at: string; prompt: string; actual: string; expected: string }[]>,
+  });
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState({ prompt: "", actual: "", expected: "" });
+
+  async function save() {
+    if (!draft.prompt.trim() || !draft.actual.trim() || !draft.expected.trim() || saving) return;
+    setSaving(true);
+    try {
+      await invoke("add_skill_improvement_note", { skillId, ...draft });
+      await queryClient.invalidateQueries({ queryKey: ["skill-improvement-notes", skillId] });
+      setDraft({ prompt: "", actual: "", expected: "" });
+      setOpen(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <DetailSection label="Improve this skill">
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Capture a real miss while it is fresh. These notes stay on this computer and are never synced automatically.
+      </p>
+      {!open ? (
+        <>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className="text-xs text-muted-foreground">{notes.length ? `${notes.length} private observation${notes.length === 1 ? "" : "s"}` : "No observations yet"}</span>
+            <Button size="sm" variant="outline" onClick={() => setOpen(true)}>Capture feedback</Button>
+          </div>
+          {notes.length > 0 && (
+            <details className="mt-3 rounded-lg border border-border/70 bg-muted/[0.18] px-3 py-2.5">
+              <summary className="cursor-pointer text-xs font-medium text-foreground marker:text-muted-foreground">
+                View saved observations
+              </summary>
+              <div className="mt-3 space-y-3">
+                {notes.map((note) => (
+                  <article key={note.id} className="border-l-2 border-primary/30 pl-3 text-xs leading-relaxed">
+                    <p className="font-medium text-foreground">{note.prompt}</p>
+                    <p className="mt-1 text-muted-foreground"><span className="font-medium text-foreground/80">Observed:</span> {note.actual}</p>
+                    <p className="mt-1 text-muted-foreground"><span className="font-medium text-foreground/80">Expected:</span> {note.expected}</p>
+                  </article>
+                ))}
+              </div>
+            </details>
+          )}
+        </>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {([
+            ["prompt", "What did you ask for?"],
+            ["actual", "What happened instead?"],
+            ["expected", "What should happen next time?"],
+          ] as const).map(([field, label]) => (
+            <label key={field} className="block space-y-1.5 text-xs font-medium text-foreground">
+              {label}
+              <textarea
+                value={draft[field]}
+                rows={field === "actual" ? 3 : 2}
+                onChange={(event) => setDraft((current) => ({ ...current, [field]: event.target.value }))}
+                className="w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-sm font-normal leading-relaxed outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/15"
+              />
+            </label>
+          ))}
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="ghost" disabled={saving} onClick={() => setOpen(false)}>Cancel</Button>
+            <Button size="sm" disabled={saving || !draft.prompt.trim() || !draft.actual.trim() || !draft.expected.trim()} onClick={() => void save()}>
+              {saving && <Loader2 className="size-3.5 animate-spin" />} Save private observation
+            </Button>
+          </div>
+        </div>
+      )}
+    </DetailSection>
   );
 }
 
@@ -2669,14 +2664,15 @@ function SkillEditor({
       {/* Header — z-20 to sit above the title-bar drag overlay (z-10) */}
       <div className="relative z-20 flex shrink-0 items-center justify-between px-4 py-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Tooltip content={t("skills.backToDetail")}>
           <Button
             variant="ghost"
             size="icon"
             onClick={onBack}
-            title={t("skills.backToDetail")}
           >
             <ArrowLeft className="size-4" />
           </Button>
+          </Tooltip>
           <div className="min-w-0 flex-1">
             <h3 className="text-sm font-medium truncate">{skill.name}</h3>
             <p className="text-[11px] text-muted-foreground font-mono truncate mt-0.5">

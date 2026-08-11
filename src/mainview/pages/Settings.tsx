@@ -17,6 +17,7 @@ import type { AppUpdateStatusJson } from '@/shared/rpc-schema'
 import { useAccentColor } from '@/mainview/hooks/useAccentColor'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/mainview/components/ui/button'
+import { Tooltip } from '@/mainview/components/ui/tooltip'
 import { useToast } from '@/mainview/components/ToastProvider'
 import { useRepos, useRemoveRepo, useSyncRepo } from '@/mainview/hooks/useRepos'
 
@@ -770,10 +771,11 @@ export default function SettingsPage() {
                       </div>
                       <div className="flex items-center gap-1">
                         {!isLocal && (
+                          <Tooltip content={t('repos.sync')}>
+                          <span className="inline-flex">
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            title={t('repos.sync')}
                             disabled={syncRepo.isPending}
                             onClick={() => {
                               syncRepo.mutate(repo.id)
@@ -785,11 +787,14 @@ export default function SettingsPage() {
                               }`}
                             />
                           </Button>
+                          </span>
+                          </Tooltip>
                         )}
+                        <Tooltip content={t('repos.remove')}>
+                        <span className="inline-flex">
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          title={t('repos.remove')}
                           disabled={removeRepo.isPending}
                           onClick={() => {
                             removeRepo.mutate(repo.id)
@@ -797,6 +802,8 @@ export default function SettingsPage() {
                         >
                           <Trash2 className="size-3" />
                         </Button>
+                        </span>
+                        </Tooltip>
                       </div>
                     </div>
                     <p className="text-muted-foreground font-mono break-all">

@@ -1,4 +1,7 @@
-import { createProviderAdapter, planProviderLibraryCreation, type RemoteConnection, type RemoteProviderAdapter } from "dotagents";
+import { GitLabTokenProviderAdapter, planProviderLibraryCreation, type GitLabProjectPreflight, type RemoteConnection } from "dotagents";
+
+/** Public Device Flow client id. GitLab native clients do not use a secret. */
+export const GITLAB_DEVICE_FLOW_CLIENT_ID = '9dee80d3aa4a816814c1153a11fbd2dac53b3f1a80b6e16f09d43424e418f1a9'
 
 export type GitLabSyncProjectPlan = {
   kind: 'skiller-gitlab-project'
@@ -29,20 +32,31 @@ export function planGitLabSyncProject(
 }
 
 /**
- * Delegates sign-in and creation to the shared provider adapter. Skiller never
- * receives or persists the GitLab token, and `--skipGitInit` prevents a CLI
- * side effect in Skiller's own working directory.
+ * Creates the reviewed project through GitLab's API without relying on `glab`.
  */
-export async function createGitLabSyncProject(plan: GitLabSyncProjectPlan): Promise<string> {
+export async function createGitLabSyncProject(plan: GitLabSyncProjectPlan, accessToken: string, signal?: AbortSignal): Promise<string> {
   const shared = planProviderLibraryCreation('gitlab', plan.project, plan.visibility)
   if (shared.planId !== plan.planId)
     throw new Error('GitLab project name or visibility changed after review. Review it again.')
-  return (await createProviderAdapter('gitlab').createLibrary(shared)).remote
+  return (await new GitLabTokenProviderAdapter(accessToken).createLibrary(shared, signal)).remote
 }
 
-/** See the explicit GitLab chooser action in Sync Center. No token enters Skiller. */
+export async function preflightGitLabSyncProject(plan: GitLabSyncProjectPlan, accessToken: string, signal?: AbortSignal): Promise<GitLabProjectPreflight> {
+  const shared = planProviderLibraryCreation('gitlab', plan.project, plan.visibility)
+  if (shared.planId !== plan.planId)
+    throw new Error('GitLab project name or visibility changed after review.')
+  return new GitLabTokenProviderAdapter(accessToken).preflightLibrary(shared, signal)
+}
+
+export async function checkGitLabConnection(accessToken: string, signal?: AbortSignal): Promise<{ account: string }> {
+  return new GitLabTokenProviderAdapter(accessToken).checkConnection(signal)
+}
+
+/** Explicit, token-backed project picker. The renderer never receives the token. */
 export async function listGitLabSyncProjects(
-  adapter: Pick<RemoteProviderAdapter, 'listLibraries'> = createProviderAdapter('gitlab'),
+  accessToken: string,
+  signal?: AbortSignal,
+  client: Pick<GitLabTokenProviderAdapter, 'listLibraries'> = new GitLabTokenProviderAdapter(accessToken),
 ): Promise<RemoteConnection[]> {
-  return adapter.listLibraries()
+  return client.listLibraries(signal)
 }

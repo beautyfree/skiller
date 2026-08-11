@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { basename, join, sep } from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "@iarna/toml";
 import type { AgentConfig } from "./types";
-import { removeProvenance } from "./provenance";
+import { removeLocalSkillSource } from "dotagents/source-registry";
 import { sharedSkillsDir } from "./shared-skills";
 import { linkOrCopy } from "./fsutil";
 
@@ -90,7 +90,7 @@ export function uninstallSkill(skillId: string, agentSlug: string, agents: Agent
 		});
 		if (!stillReferenced) {
 			removeEntry(canonical);
-			removeProvenance(skillId);
+			removeLocalSkillSource(skillId);
 		}
 	}
 
@@ -121,7 +121,7 @@ export function uninstallSkillFromAll(skillId: string, agents: AgentConfig[]): v
 	uninstallDirectSkillFromAll(skillId, agents);
 	const canonical = join(sharedSkillsDir(), skillId);
 	removeEntry(canonical);
-	removeProvenance(skillId);
+	removeLocalSkillSource(skillId);
 }
 
 /**

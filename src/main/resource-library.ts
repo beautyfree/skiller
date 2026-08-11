@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, readFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs'
+import { basename, join, relative, resolve } from 'node:path'
 import { applyResourceAdoption, planResourceAdoption, type AdoptResourcePlan } from 'dotagents/adopt'
+import { parsePortableConfig } from 'dotagents/config'
 import { doctorLibrary } from 'dotagents/doctor'
 import { applyDoctorRepair, planDoctorRepair, type DoctorRepairPlan } from 'dotagents/repair'
 import { resourceManifestSchema, type ResourceDescriptor } from 'dotagents/resource-model'
@@ -13,10 +14,16 @@ import type {
   DotagentsLibraryHealthJson,
   DotagentsLibraryRepairPreviewJson,
   DotagentsResourceOverviewJson,
+  DotagentsResourceContentJson,
   DotagentsResourceSelectionJson,
 } from '../shared/rpc-schema'
 
 const TOKEN_TTL_MS = 15 * 60_000
+const PREVIEWABLE_RESOURCE_EXTENSIONS = new Set(['.md', '.mdx', '.txt', '.json', '.yaml', '.yml', '.toml', '.js', '.ts', '.tsx', '.jsx', '.sh', '.py', '.css', '.html'])
+const PREVIEWABLE_IMAGE_MIME_TYPES: Record<string, string> = {
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
+}
+const IMAGE_PREVIEW_BYTES = 4 * 1024 * 1024
 
 type Selection = { id: string; kind: DotagentsResourceKindJson; path: string; name: string; createdAt: number }
 type Planned = { plan: AdoptResourcePlan; profileId: string; sourceName: string; createdAt: number }
@@ -54,6 +61,52 @@ function readResources(workspace: string): ResourceDescriptor[] {
   return resourceManifestSchema.parse(JSON.parse(readFileSync(file, 'utf8'))).resources
 }
 
+function compactSourceName(source: string): string {
+  try {
+    const url = new URL(source)
+    const segments = url.pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/i, '').split('/').filter(Boolean)
+    return [url.hostname, ...segments.slice(0, 2)].join('/') || url.hostname
+  } catch {
+    // SSH remotes are valid portable origins too. Keep the label bounded and
+    // presentation-only; config parsing has already rejected credentials.
+    return source.replace(/^git@/, '').replace(/:/, '/').replace(/\.git$/i, '').slice(0, 96)
+  }
+}
+
+function sourceUrl(source: string): string | null {
+  try {
+    const url = new URL(source)
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString().replace(/\.git$/i, '') : null
+  } catch {
+    const match = source.match(/^git@github\.com:([^/]+\/[^/]+?)(?:\.git)?$/i)
+    return match ? `https://github.com/${match[1]}` : null
+  }
+}
+
+function skillSourceLabels(workspace: string): Map<string, { label: string; url?: string }> {
+  const configPath = join(workspace, 'dotagents.yaml')
+  if (!existsSync(configPath)) return new Map()
+  try {
+    const metadata = lstatSync(configPath)
+    if (metadata.isSymbolicLink() || !metadata.isFile() || metadata.size > 1024 * 1024) return new Map()
+    const config = parsePortableConfig(readFileSync(configPath, 'utf8'))
+    return new Map(Object.entries(config.skills).map(([skill, policy]) => {
+      if (policy.distribution === 'snapshot' && policy.snapshot) {
+        return [skill, { label: compactSourceName(policy.snapshot.url), ...(sourceUrl(policy.snapshot.url) ? { url: sourceUrl(policy.snapshot.url)! } : {}) }]
+      }
+      if (policy.distribution === 'vendored' && policy.origin) {
+        return [skill, { label: compactSourceName(policy.origin.url), ...(sourceUrl(policy.origin.url) ? { url: sourceUrl(policy.origin.url)! } : {}) }]
+      }
+      if (policy.distribution === 'dependency') return [skill, { label: 'Pinned dependency' }]
+      return [skill, { label: 'This library' }]
+    }))
+  } catch {
+    // A malformed portable config is reported by Library Health. The contents
+    // view remains usable and simply avoids inventing provenance.
+    return new Map()
+  }
+}
+
 export function readResourceLibraryOverview(input: {
   workspace: string
   profileId: string
@@ -63,18 +116,93 @@ export function readResourceLibraryOverview(input: {
   const parsed = parseLibraryManifest(readFileSync(join(input.workspace, 'skills.json'), 'utf8'))
   if (!parsed.ok) throw new Error('The canonical library manifest needs repair before resources can be managed')
   const v2 = readResources(input.workspace)
+  const sourceLabels = skillSourceLabels(input.workspace)
   const resources: DotagentsResourceOverviewJson['resources'] = parsed.value.skills.map((skillPath) => {
     const parts = skillPath.split('/')
     const id = parts[parts.length - 1] ?? skillPath
-    return { key: `skill:${id}`, kind: 'skill', id, path: skillPath, source: 'skill-library' }
+    const provenance = sourceLabels.get(id)
+    return { key: `skill:${id}`, kind: 'skill', id, path: skillPath, source: 'skill-library', source_label: provenance?.label ?? 'This library', ...(provenance?.url ? { source_url: provenance.url } : {}) }
   })
   for (const resource of v2) {
     const key = `${resource.kind}:${resource.id}`
     if (resources.some((entry) => entry.key === key)) continue
-    resources.push({ key, kind: resource.kind, id: resource.id, path: resource.path, source: 'resource-v2' })
+    resources.push({ key, kind: resource.kind, id: resource.id, path: resource.path, source: 'resource-v2', source_label: 'Library resource' })
   }
   resources.sort((left, right) => left.key.localeCompare(right.key, 'en'))
   return { profile_id: input.profileId, mode: input.mode, changed: input.changed, resources }
+}
+
+/** Returns one bounded, regular library file for the renderer's read-only preview. */
+export function readResourceLibraryContent(input: {
+  workspace: string
+  profileId: string
+  mode: 'private' | 'team' | 'public'
+  changed: boolean
+  key: string
+  file?: string
+}): DotagentsResourceContentJson {
+  const overview = readResourceLibraryOverview(input)
+  const resource = overview.resources.find((entry) => entry.key === input.key)
+  if (!resource) throw new Error('This library item no longer exists. Refresh the library and try again.')
+  const candidate = resolve(input.workspace, resource.path)
+  const withinWorkspace = relative(input.workspace, candidate)
+  if (withinWorkspace.startsWith('..') || withinWorkspace === '') throw new Error('This library item has an unsafe path')
+  const candidateMetadata = lstatSync(candidate)
+  if (candidateMetadata.isSymbolicLink()) throw new Error('This library item is linked outside the library and cannot be previewed')
+  const resourceRoot = candidateMetadata.isDirectory() ? candidate : null
+  const files = resourceRoot ? previewableFiles(resourceRoot) : [basename(candidate)]
+  if (files.length === 0) throw new Error('This library item has no supported text files to preview')
+  const requestedFile = input.file?.trim()
+  if (requestedFile && (!resourceRoot ? requestedFile !== basename(candidate) : !files.includes(requestedFile))) {
+    throw new Error('This file is not available in the selected library item')
+  }
+  const contentPath = resourceRoot ? resolve(resourceRoot, requestedFile ?? files[0]!) : candidate
+  if (resourceRoot && !isWithin(resourceRoot, contentPath)) throw new Error('This library item has an unsafe file path')
+  const metadata = lstatSync(contentPath)
+  if (metadata.isSymbolicLink() || !metadata.isFile()) throw new Error('This library item has no regular Markdown file to preview')
+  const extension = contentPath.slice(contentPath.lastIndexOf('.')).toLowerCase()
+  const imageMimeType = PREVIEWABLE_IMAGE_MIME_TYPES[extension]
+  if (metadata.size > (imageMimeType ? IMAGE_PREVIEW_BYTES : 256 * 1024)) throw new Error('This library file is too large to preview safely')
+  return {
+    profile_id: input.profileId,
+    key: resource.key,
+    kind: resource.kind,
+    id: resource.id,
+    path: resource.path,
+    files,
+    content_path: relative(input.workspace, contentPath),
+    content: imageMimeType ? '' : readFileSync(contentPath, 'utf8'),
+    ...(imageMimeType ? { image_data_url: `data:${imageMimeType};base64,${readFileSync(contentPath).toString('base64')}` } : {}),
+  }
+}
+
+function isWithin(root: string, path: string): boolean {
+  const remainder = relative(root, path)
+  return remainder !== '' && !remainder.startsWith('..') && !remainder.includes('..' + '/')
+}
+
+function previewableFiles(root: string): string[] {
+  const files: string[] = []
+  const walk = (directory: string, relativeDirectory: string, depth: number) => {
+    if (depth > 6 || files.length >= 128) return
+    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name, 'en'))) {
+      if (files.length >= 128 || entry.isSymbolicLink()) continue
+      const absolute = join(directory, entry.name)
+      const portable = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name
+      if (entry.isDirectory()) {
+        walk(absolute, portable, depth + 1)
+        continue
+      }
+      if (!entry.isFile()) continue
+      const metadata = lstatSync(absolute)
+      const extension = portable.slice(portable.lastIndexOf('.')).toLowerCase()
+      const isText = PREVIEWABLE_RESOURCE_EXTENSIONS.has(extension)
+      const isImage = extension in PREVIEWABLE_IMAGE_MIME_TYPES
+      if ((isText && metadata.size <= 256 * 1024) || (isImage && metadata.size <= IMAGE_PREVIEW_BYTES)) files.push(portable)
+    }
+  }
+  walk(root, '', 0)
+  return files.sort((left, right) => (left === 'SKILL.md' ? -1 : right === 'SKILL.md' ? 1 : left.localeCompare(right, 'en')))
 }
 
 export class ResourceAdoptionSession {

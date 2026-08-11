@@ -439,6 +439,17 @@ html.skiller-macos-vibrancy.dark .glass-inset {
   padding: 1rem;
 }
 
+/* A single, stable backdrop for every dialog. Dialog content may be replaced
+   in one React update (for example, a chooser leading to a wizard), but this
+   layer must never fade out and reveal the page between those panels. */
+.modal-overlay {
+  background-color: rgb(0 0 0 / 0.25);
+}
+
+.dark .modal-overlay {
+  background-color: rgb(0 0 0 / 0.45);
+}
+
 .modal-panel {
   max-height: calc(100dvh - 2rem);
   overflow-y: auto;
@@ -449,10 +460,18 @@ html.skiller-macos-vibrancy.dark .glass-inset {
   overflow: hidden;
 }
 
+/* Dialogs use a classic dimmed backdrop. Keep their surface readable without
+   turning the content underneath into a moving, blurred layer. */
+.modal-shell .glass-elevated,
+.modal-shell .glass-panel {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 /* ─── Scrollbar (thin — WebKit/Electron) ─── */
 ::-webkit-scrollbar {
-  width: 3px;
-  height: 3px;
+  width: 6px !important;
+  height: 6px !important;
 }
 
 ::-webkit-scrollbar-track {
@@ -477,7 +496,8 @@ html.skiller-macos-vibrancy.dark .glass-inset {
 }
 
 .sidebar-scrollbar::-webkit-scrollbar {
-  width: 2px;
+  width: 4px !important;
+  height: 4px !important;
 }
 
 .sidebar-scrollbar::-webkit-scrollbar-thumb {
@@ -505,6 +525,24 @@ html {
 html.dark {
   scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
 }
+
+/* Internal panels (virtualized lists, review panes, and dialogs) own their
+   scroll containers. Keep them at the same narrow width as the shell instead
+   of falling back to the platform's wide default gutter. */
+:where(*) {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.14) transparent;
+}
+
+.dark :where(*) {
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+:where(*)::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+
 
 /* ─────────────────────────────────────────────
    Glass Material System
@@ -855,18 +893,6 @@ html.skiller-macos-vibrancy.dark .glass-surface-tint.glass-stat {
   animation: skiller-update-progress-sweep 1.15s ease-in-out infinite;
 }
 
-@keyframes backdrop-in {
-  from {
-    opacity: 0;
-    backdrop-filter: blur(0);
-  }
-
-  to {
-    opacity: 1;
-    backdrop-filter: blur(8px);
-  }
-}
-
 @keyframes modal-in {
   from {
     opacity: 0;
@@ -879,12 +905,6 @@ html.skiller-macos-vibrancy.dark .glass-surface-tint.glass-stat {
     transform: scale(1) translateY(0);
     filter: blur(0);
   }
-}
-
-.animate-backdrop-in {
-  animation: backdrop-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 
 .animate-modal-in {

@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { classifyThreeWaySkill, makeSyncLedger, readSyncLedgerAt, writeSyncLedgerAt } from "./sync-ledger";
+import {
+	classifyThreeWaySkill,
+	bootstrapSyncLedgerFromManifest,
+	makeSyncLedger,
+	readSyncLedgerAt,
+	recordSyncLedgerDeviceChoices,
+	writeSyncLedgerAt,
+} from "./sync-ledger";
 
 const cleanup: string[] = [];
 afterEach(() => cleanup.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true })));
@@ -43,5 +50,28 @@ describe("sync three-way ledger", () => {
 			repository: "https://github.com/example/skills.git",
 			ref: "a".repeat(40),
 		});
+	});
+
+	it("bootstraps a missing device ledger from bundled manifest skills only", () => {
+		const ledger = bootstrapSyncLedgerFromManifest("profile", [
+			{ kind: "bundled", id: "writing", sha256: "a".repeat(64) },
+			{ kind: "reference", id: "external", sha256: "b".repeat(64) },
+		], null);
+		expect(ledger.skills).toEqual({ writing: { sha256: "a".repeat(64) } });
+
+		const existing = makeSyncLedger("profile", [{ id: "kept", sha256: "c".repeat(64) }]);
+		expect(bootstrapSyncLedgerFromManifest("profile", [], existing)).toBe(existing);
+	});
+
+	it("records an undone restore as a reviewed per-device choice", () => {
+		const remote = "b".repeat(64);
+		const ledger = recordSyncLedgerDeviceChoices(
+			"profile",
+			makeSyncLedger("profile", [{ id: "existing", sha256: "a".repeat(64) }]),
+			[{ id: "writing", remoteSha256: remote }],
+		);
+		expect(ledger.skills.existing).toEqual({ sha256: "a".repeat(64) });
+		expect(ledger.skills.writing).toEqual({ sha256: remote, kept_remote_sha256: remote });
+		expect(classifyThreeWaySkill("writing", remote, null, remote, remote).action).toBe("kept-local");
 	});
 });

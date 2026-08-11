@@ -1,29 +1,32 @@
-import {
-	mergeSkillerSyncPublishUpdate,
-	planSkillerSyncPublish,
-	type SkillerBundledPublishCandidate,
-	type SkillerReferencePublishCandidate,
-	type SkillerSkillsShPublishCandidate,
-	type SkillerSyncPublishCandidate,
-	type SkillerSyncPublishPlan,
-	type SkillerVendoredPublishCandidate,
-} from "./legacy-skiller-sync";
+import { planLibraryPublish, type ForkOrigin, type LibraryPublishCandidate, type SnapshotOrigin, type VendoredOrigin } from "dotagents";
 import {
 	applyLibraryUpdatePlan,
 	planLibraryUpdate,
 	type LibraryUpdatePlan,
 } from "dotagents/library-update";
 import {
-	stringifySyncManifest,
 	type SyncManifest,
+	createSyncManifest,
+	validateSyncManifest,
 } from "./sync-profile";
 
-export type BundledSkillCandidate = SkillerBundledPublishCandidate;
-export type ReferenceSkillCandidate = SkillerReferencePublishCandidate;
-export type SkillsShSkillCandidate = SkillerSkillsShPublishCandidate;
-export type VendoredSkillCandidate = SkillerVendoredPublishCandidate;
-export type SyncPublishCandidate = SkillerSyncPublishCandidate;
-export type SyncPublishPlan = SkillerSyncPublishPlan;
+export type BundledSkillCandidate = { kind?: "bundled"; id: string; sourcePath: string; forkedFrom?: ForkOrigin; installationAgentSlugs?: string[] };
+export type ReferenceSkillCandidate = { kind: "reference"; id: string; repository: string; ref: string; skillPath: string; contentHash?: string; installationAgentSlugs?: string[] };
+export type SkillsShSkillCandidate = { kind: "skills_sh"; id: string; sourceUrl: string; ref: string; skillPath: string; contentHash?: string; installationAgentSlugs?: string[] };
+export type VendoredSkillCandidate = { kind: "vendored"; id: string; sourcePath: string; origin: VendoredOrigin; installationAgentSlugs?: string[] };
+export type SnapshotSkillCandidate = { kind: "snapshot"; id: string; sourcePath: string; origin: SnapshotOrigin; installationAgentSlugs?: string[] };
+export type SyncPublishCandidate = BundledSkillCandidate | ReferenceSkillCandidate | SkillsShSkillCandidate | VendoredSkillCandidate | SnapshotSkillCandidate;
+export type SyncPublishPlan = {
+  kind: "dotagents-library-publish";
+  planId: string;
+  manifest: SyncManifest;
+  bundledSkills: ReturnType<typeof planLibraryPublish>["bundledSkills"];
+  bundledDistributions: ReturnType<typeof planLibraryPublish>["bundledDistributions"];
+  vendoredOrigins: ReturnType<typeof planLibraryPublish>["vendoredOrigins"];
+  snapshotOrigins: ReturnType<typeof planLibraryPublish>["snapshotOrigins"];
+  forkedFrom: ReturnType<typeof planLibraryPublish>["forkedFrom"];
+  secretFindings: ReturnType<typeof planLibraryPublish>["secretFindings"];
+};
 
 /**
  * Applies a reviewed subset update to an already-fetched manifest.  This is
@@ -34,9 +37,15 @@ export type SyncPublishPlan = SkillerSyncPublishPlan;
 export function mergeBundledUpdateIntoManifest(
 	base: SyncManifest,
 	update: SyncPublishPlan,
-	options: { allowSourceConversion?: boolean } = {},
+	options: { allowSourceConversion?: boolean; allowNew?: boolean } = {},
 ): SyncPublishPlan {
-	return mergeSkillerSyncPublishUpdate(base, update, options);
+	const replacement = new Map(update.manifest.skills.map((skill) => [skill.id, skill]));
+	for (const skill of update.manifest.skills) {
+		const previous = base.skills.find((item) => item.id === skill.id);
+		if ((!previous && !options.allowNew) || (previous && (!options.allowSourceConversion && (previous.kind !== "bundled" || skill.kind !== "bundled"))))
+			throw new Error(`Granular sync update is not a known bundled skill: ${skill.id}`);
+	}
+	return { ...update, manifest: validateSyncManifest({ ...base, skills: [...base.skills.map((skill) => replacement.get(skill.id) ?? skill), ...update.manifest.skills.filter((skill) => !base.skills.some((existing) => existing.id === skill.id))] }) };
 }
 
 export function createSyncPublishPlan(
@@ -45,23 +54,29 @@ export function createSyncPublishPlan(
 	candidates: SyncPublishCandidate[],
 	agentPolicy?: SyncManifest["agent_policy"],
 ): SyncPublishPlan {
-	return planSkillerSyncPublish(profileId, mode, candidates, agentPolicy);
-}
-
-/**
- * Writes a previously reviewed plan into the managed Git worktree. This never
- * stages, commits, or pushes; those remain explicit operations in SyncWorkspace.
- */
-export function applySyncPublishPlan(workspacePath: string, plan: SyncPublishPlan): void {
-	applySyncPublishFiles(workspacePath, plan, {
-		"skiller-sync.yaml": stringifySyncManifest(plan.manifest),
+	const coreCandidates: LibraryPublishCandidate[] = candidates.map((candidate) => {
+		if (candidate.kind === "reference") return { kind: "git", id: candidate.id, repository: candidate.repository, ref: candidate.ref, skillPath: candidate.skillPath, ...(candidate.contentHash ? { contentHash: candidate.contentHash } : {}), ...(candidate.installationAgentSlugs ? { installationAgentSlugs: candidate.installationAgentSlugs } : {}) };
+		if (candidate.kind === "skills_sh") return { kind: "skills-cli", id: candidate.id, sourceUrl: candidate.sourceUrl, ref: candidate.ref, skillPath: candidate.skillPath, ...(candidate.contentHash ? { contentHash: candidate.contentHash } : {}), ...(candidate.installationAgentSlugs ? { installationAgentSlugs: candidate.installationAgentSlugs } : {}) };
+		if (candidate.kind === "vendored") return { kind: "vendored", id: candidate.id, sourcePath: candidate.sourcePath, origin: candidate.origin, ...(candidate.installationAgentSlugs ? { installationAgentSlugs: candidate.installationAgentSlugs } : {}) };
+		if (candidate.kind === "snapshot") return { kind: "snapshot", id: candidate.id, sourcePath: candidate.sourcePath, origin: candidate.origin, ...(candidate.installationAgentSlugs ? { installationAgentSlugs: candidate.installationAgentSlugs } : {}) };
+		return { kind: "owned", id: candidate.id, sourcePath: candidate.sourcePath, ...(candidate.forkedFrom ? { forkedFrom: candidate.forkedFrom } : {}), ...(candidate.installationAgentSlugs ? { installationAgentSlugs: candidate.installationAgentSlugs } : {}) };
 	});
+	const core = planLibraryPublish(coreCandidates);
+	const manifest = createSyncManifest(profileId, mode, agentPolicy);
+	manifest.skills = candidates.map((candidate) => {
+		const installations = candidate.installationAgentSlugs?.length ? [...new Set(candidate.installationAgentSlugs)].sort() : undefined;
+		if (candidate.kind === "reference") return { id: candidate.id, kind: "reference" as const, repository: candidate.repository, ref: candidate.ref, skill_path: candidate.skillPath, ...(candidate.contentHash ? { sha256: candidate.contentHash } : {}), ...(installations ? { installations } : {}) };
+		if (candidate.kind === "skills_sh") return { id: candidate.id, kind: "skills_sh" as const, source_url: candidate.sourceUrl, ref: candidate.ref, skill_path: candidate.skillPath, ...(candidate.contentHash ? { sha256: candidate.contentHash } : {}), ...(installations ? { installations } : {}) };
+		const bundled = core.bundledSkills.find((entry) => entry.id === candidate.id);
+		if (!bundled) throw new Error(`Missing bundled export plan: ${candidate.id}`);
+		return { id: candidate.id, kind: "bundled" as const, path: bundled.bundledPath, sha256: bundled.sha256, ...(installations ? { installations } : {}) };
+	});
+  return { kind: "dotagents-library-publish", planId: core.planId, manifest: validateSyncManifest(manifest), bundledSkills: core.bundledSkills, bundledDistributions: core.bundledDistributions, vendoredOrigins: core.vendoredOrigins, snapshotOrigins: core.snapshotOrigins, forkedFrom: core.forkedFrom, secretFindings: core.secretFindings };
 }
 
 /**
  * Applies reviewed skill bundles plus an explicit set of portable root files.
- * Canonical dotagents publication uses this with skills.json/skills.lock/config;
- * the legacy wrapper above remains read/write compatible for existing profiles.
+ * Canonical dotagents publication uses this with skills.json/skills.lock/config.
  */
 export function applySyncPublishFiles(
 	workspacePath: string,

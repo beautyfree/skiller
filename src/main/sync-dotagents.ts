@@ -5,22 +5,21 @@ import { randomUUID } from "node:crypto";
 import { parseLibraryLock, parseLibraryManifest } from "dotagents/library";
 import { libraryManifestSchema, type LibraryLock, type LibraryManifest } from "dotagents/schema";
 import { localConfigSchema, mergeConfig, parseLocalConfig, parsePortableConfig, resolveSkillAgentSelection, type LocalConfig } from "dotagents/config";
-import { GitDependencyResolver } from "dotagents";
-import { planResolveDependencies } from "dotagents/sources";
+import { planCanonicalLibraryPublication } from "dotagents/canonical-library";
+import type { LibraryPublishCandidate } from "dotagents/library-publish";
+import { SCOPE_DESCRIPTOR_FILE, readPortableScopeDescriptor, type PortableScope } from "dotagents/scope";
 import {
   DENY_ALL_SOURCE_SECURITY_POLICY,
-  exactSourceSecurityPolicy,
   parseSourceSecurityPolicy,
   type SourceSecurityPolicy,
   type SourceSecurityPolicyInput,
 } from "dotagents/source-policy";
 import type { SyncManifest } from "./sync-profile";
-import { createSyncManifest, parseSyncManifest, validateSyncManifest } from "./sync-profile";
+import { createSyncManifest, validateSyncManifest } from "./sync-profile";
 import type { SyncPublishPlan } from "./sync-publish";
 import { planBundledSkillExport } from "./sync-export";
 
 const CANONICAL_MANIFEST = "skills.json";
-const LEGACY_MANIFEST = "skiller-sync.yaml";
 const LOCAL_CONFIG = "dotagents.local.yaml";
 
 type CanonicalSkillerMetadata = {
@@ -48,6 +47,17 @@ export type CanonicalSyncLibraryOptions = {
   /** Device cache outside the portable repository during preflight. */
   cacheRoot?: string;
 };
+
+function defaultPortableScope(mode: SyncManifest["profile"]["mode"]): PortableScope {
+  return mode === "team" ? "project" : "personal";
+}
+
+function portableLibraryReadme(name: string, skillNames: string[]): string {
+  const skills = skillNames.length
+    ? skillNames.map((skill) => `- \`${skill}\``).join("\n")
+    : "- No skills have been added yet.";
+  return `# ${name}\n\nA portable AI-agent toolkit powered by [dotagents](https://github.com/beautyfree/dotagents).\n\n## Included skills\n\n${skills}\n\n## Use this library\n\nInstall dotagents and run its guided setup. Choose your Git provider, select this repository, review the plan, and confirm.\n\n\`\`\`sh\nnpm install -g dotagents\ndotagents setup\n\`\`\`\n\nOn another computer, run \`dotagents setup\` again and select the same repository. Local agent choices and credentials stay on each device.\n`;
+}
 
 function canonicalMetadata(value: unknown, fallbackProfileId: string): CanonicalSkillerMetadata {
   // A generic dotagents library is still a valid Sync Center library. Skiller's
@@ -184,14 +194,11 @@ export async function planCanonicalSyncLibrary(
   options: CanonicalSyncLibraryOptions = {},
 ): Promise<CanonicalSyncLibraryPlan> {
   let existingLicense: string | undefined;
-  let existingConfig: ReturnType<typeof parsePortableConfig> | null = null;
   const existingManifestPath = join(workspace, CANONICAL_MANIFEST);
   if (existsSync(existingManifestPath)) {
     const existing = parseLibraryManifest(readFileSync(existingManifestPath, "utf8"));
     if (existing.ok) existingLicense = existing.value.license;
   }
-  const existingConfigPath = join(workspace, "dotagents.yaml");
-  if (existsSync(existingConfigPath)) existingConfig = parsePortableConfig(readFileSync(existingConfigPath, "utf8"));
   const license = options.license ?? existingLicense;
   const dependencies: LibraryManifest["dependencies"] = {};
   const sourceKinds: CanonicalSkillerMetadata["source_kinds"] = {};
@@ -205,7 +212,7 @@ export async function planCanonicalSyncLibrary(
     sourceKinds[skill.id] = skill.kind;
     if (skill.sha256) contentHashes[skill.id] = skill.sha256;
   }
-  const metadata: CanonicalSkillerMetadata = {
+  const dependencyMetadata: CanonicalSkillerMetadata = {
     schema_version: 1,
     profile: plan.manifest.profile,
     agent_policy: plan.manifest.agent_policy,
@@ -213,62 +220,105 @@ export async function planCanonicalSyncLibrary(
     content_hashes: contentHashes,
     installations,
   };
+  const canonicalCandidates: LibraryPublishCandidate[] = plan.manifest.skills.map((skill) => {
+    if (skill.kind === "reference") return {
+      kind: "git",
+      id: skill.id,
+      repository: skill.repository,
+      ref: skill.ref,
+      skillPath: skill.skill_path,
+      ...(skill.sha256 ? { contentHash: skill.sha256 } : {}),
+      ...(skill.installations?.length ? { installationAgentSlugs: skill.installations } : {}),
+    };
+    if (skill.kind === "skills_sh") return {
+      kind: "skills-cli",
+      id: skill.id,
+      sourceUrl: skill.source_url,
+      ref: skill.ref,
+      skillPath: skill.skill_path,
+      ...(skill.sha256 ? { contentHash: skill.sha256 } : {}),
+      ...(skill.installations?.length ? { installationAgentSlugs: skill.installations } : {}),
+    };
+    const bundled = plan.bundledSkills.find((entry) => entry.id === skill.id);
+    if (!bundled) throw new Error(`Canonical publish plan has no bundled source for ${skill.id}`);
+    const base = { id: skill.id, sourcePath: bundled.sourcePath, ...(plan.forkedFrom[skill.id] ? { forkedFrom: plan.forkedFrom[skill.id] } : {}), ...(skill.installations?.length ? { installationAgentSlugs: skill.installations } : {}) };
+    if (plan.vendoredOrigins[skill.id]) return { kind: "vendored", ...base, origin: plan.vendoredOrigins[skill.id]! };
+    if (plan.snapshotOrigins[skill.id]) return { kind: "snapshot", ...base, origin: plan.snapshotOrigins[skill.id]! };
+    return { kind: "owned", ...base };
+  });
+  // dotagents owns dependency resolution, export planning and portable config.
+  // Skiller adds only its opaque UI routing metadata below.
+  const canonicalCore = await planCanonicalLibraryPublication({
+    root: workspace,
+    name: plan.manifest.profile.id,
+    candidates: canonicalCandidates,
+    ...(license ? { license } : {}),
+    sourcePolicy: options.sourcePolicy,
+    cacheRoot: options.cacheRoot,
+    generatedBy: "dotagents",
+  });
   const manifest = libraryManifestSchema.parse({
     schema_version: 1,
     name: plan.manifest.profile.id,
     version: "0.1.0",
-    description: "A portable agent skill library managed by Skiller and beautyfree/dotagents.",
+    description: "A portable AI-agent skill library powered by dotagents.",
     ...(license ? { license } : {}),
     skills: plan.manifest.skills.filter((skill) => skill.kind === "bundled").map((skill) => skill.path).sort(),
     dependencies,
-    metadata: { skiller_sync: metadata },
+    metadata: { skiller_sync: dependencyMetadata },
   });
-  const resolution = await planResolveDependencies(
-    manifest,
-    new GitDependencyResolver({
-      cacheRoot: options.cacheRoot ?? join(workspace, ".dotagents", "cache", "git"),
-      sourcePolicy: options.sourcePolicy ?? exactSourceSecurityPolicy(Object.values(dependencies).map((dependency) => dependency.url)),
-    }),
-    null,
-    "dotagents via Skiller",
-  );
-  const config = {
+  const resolution = { lock: canonicalCore.lock, sourcePolicy: canonicalCore.sourcePolicy, planId: canonicalCore.planId };
+  // A dependency key names the source package, not necessarily the skill it
+  // contains. Portable routing and provenance must follow the resolved skill
+  // name so a package such as `gamma-source` can correctly install `gamma`,
+  // and one package can expose several independently addressable skills.
+  const resolvedMetadata: CanonicalSkillerMetadata = {
     schema_version: 1,
-    defaults: { include: "all" },
-    skills: Object.fromEntries(plan.manifest.skills.map((skill) => {
-      const explicitDistribution = plan.bundledDistributions[skill.id];
-      const previousPolicy = existingConfig?.skills[skill.id];
-      const vendoredOrigin = plan.vendoredOrigins[skill.id]
-        ?? (!explicitDistribution && previousPolicy?.distribution === "vendored" ? previousPolicy.origin : undefined);
-      return [skill.id, {
-        ...(skill.installations?.length ? { agents: [...new Set(skill.installations)].sort() } : {}),
-        ...(skill.kind !== "bundled"
-          ? { distribution: "dependency" as const }
-          : vendoredOrigin
-            ? { distribution: "vendored" as const, origin: vendoredOrigin }
-            : {}),
-      }];
-    })),
+    profile: plan.manifest.profile,
+    agent_policy: plan.manifest.agent_policy,
+    source_kinds: {},
+    content_hashes: {},
+    installations: {},
   };
+  for (const skill of plan.manifest.skills) {
+    if (skill.kind === "bundled" && skill.installations?.length) {
+      resolvedMetadata.installations[skill.id] = [...new Set(skill.installations)].sort();
+    }
+  }
+  for (const [dependency, resolved] of Object.entries(resolution.lock.resolved)) {
+    for (const skill of resolved.skills) {
+      resolvedMetadata.source_kinds[skill.name] = sourceKinds[dependency] ?? "reference";
+      if (contentHashes[dependency]) resolvedMetadata.content_hashes[skill.name] = contentHashes[dependency]!;
+      if (installations[dependency]?.length) resolvedMetadata.installations[skill.name] = installations[dependency]!;
+    }
+  }
+  const resolvedManifest = libraryManifestSchema.parse({
+    ...manifest,
+    metadata: { skiller_sync: resolvedMetadata },
+  });
+  const existingReadme = join(workspace, "README.md");
+  const existingScope = join(workspace, SCOPE_DESCRIPTOR_FILE);
+  const storedScope = existsSync(existingScope) ? readPortableScopeDescriptor(workspace) : null;
+  const portableScope = storedScope?.scope
+    ?? (isCanonicalSyncLibrary(workspace) ? null : defaultPortableScope(plan.manifest.profile.mode));
+  const skillNames = plan.manifest.skills.map((skill) => skill.id).sort((left, right) => left.localeCompare(right, "en"));
   return {
-    manifest,
+    manifest: resolvedManifest,
     lock: resolution.lock,
     sourcePolicy: resolution.sourcePolicy,
     resolutionPlanId: resolution.planId,
     portableFiles: {
-      "skills.json": `${JSON.stringify(manifest, null, 2)}\n`,
-      "skills.lock": `${JSON.stringify(resolution.lock, null, 2)}\n`,
-      "dotagents.yaml": stringify(config, { lineWidth: 100 }),
-      ".gitignore": "dotagents.local.yaml\n.dotagents/\n",
-      "README.md": `# ${manifest.name}\n\nA portable agent skill library managed by [Skiller](https://github.com/beautyfree/skiller) and [beautyfree/dotagents](https://github.com/beautyfree/dotagents).\n`,
+      ...canonicalCore.portableFiles,
+      "skills.json": `${JSON.stringify(resolvedManifest, null, 2)}\n`,
+      ...(portableScope ? { [SCOPE_DESCRIPTOR_FILE]: `${JSON.stringify({ schema_version: 1, scope: portableScope }, null, 2)}\n` } : {}),
+      ...(!existsSync(existingReadme) ? { "README.md": portableLibraryReadme(resolvedManifest.name, skillNames) } : {}),
     },
   };
 }
 
 export function readSyncManifestFromWorkspace(workspace: string): SyncManifest {
-  const legacy = join(workspace, LEGACY_MANIFEST);
-  if (existsSync(legacy)) {
-    return parseSyncManifest(readFileSync(legacy, "utf8"));
+  if (!isCanonicalSyncLibrary(workspace)) {
+    throw new Error("This library uses an unsupported legacy format. Recreate or migrate it with dotagents before connecting.");
   }
   const manifestResult = parseLibraryManifest(readFileSync(join(workspace, CANONICAL_MANIFEST), "utf8"));
   if (!manifestResult.ok) throw new Error(manifestResult.issues.map((issue) => issue.message).join("; "));
@@ -301,15 +351,15 @@ export function readSyncManifestFromWorkspace(workspace: string): SyncManifest {
         ...(metadata.installations[id]?.length ? { installations: metadata.installations[id] } : {}),
       };
     }),
-    ...Object.entries(lock.resolved).flatMap(([dependency, resolved]) => resolved.skills.map((skill) => {
-      const id = dependency;
-      const kind = metadata.source_kinds[dependency] ?? "reference";
+    ...Object.values(lock.resolved).flatMap((resolved) => resolved.skills.map((skill) => {
+      const id = skill.name;
+      const kind = metadata.source_kinds[id] ?? "reference";
       const common = {
         id,
         ref: resolved.commit,
         skill_path: skill.path,
-        ...(metadata.content_hashes[dependency] ? { sha256: metadata.content_hashes[dependency] } : {}),
-        ...(metadata.installations[dependency]?.length ? { installations: metadata.installations[dependency] } : {}),
+        ...(metadata.content_hashes[id] ? { sha256: metadata.content_hashes[id] } : {}),
+        ...(metadata.installations[id]?.length ? { installations: metadata.installations[id] } : {}),
       };
       return kind === "skills_sh"
         ? { ...common, kind: "skills_sh" as const, source_url: resolved.url }

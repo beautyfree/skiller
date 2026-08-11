@@ -10,6 +10,7 @@ import { readSyncManifestFromWorkspace } from "./sync-dotagents";
 import { syncJournalPath } from "./sync-journal";
 import type { SyncManifest } from "./sync-profile";
 import type { SyncExportFinding } from "./sync-export";
+	import { syncWorkspacePath } from "./sync-workspace";
 
 export type SyncRestoreAction = "create" | "unchanged" | "conflict";
 
@@ -21,6 +22,7 @@ export type SyncRestoreEntry = {
 	threeWayAction: ThreeWayAction;
 	remoteSha256: string;
 	localSha256: string | null;
+	localState: "absent" | "directory" | "linked-directory" | "file" | "symlink" | "unsupported";
 	reason?: string;
 };
 
@@ -38,7 +40,7 @@ export type SyncRestorePlan = {
 export function syncRestorePlanId(plan: SyncRestorePlan): string {
 	return computePlanId({
 		kind: "skiller-reconciliation",
-		schemaVersion: 1,
+		schemaVersion: 2,
 		manifest: plan.manifest,
 		entries: plan.entries.map((entry) => ({
 			id: entry.id,
@@ -46,6 +48,8 @@ export function syncRestorePlanId(plan: SyncRestorePlan): string {
 			threeWayAction: entry.threeWayAction,
 			remoteSha256: entry.remoteSha256,
 			localSha256: entry.localSha256,
+			localState: entry.localState,
+			reason: entry.reason ?? null,
 		})),
 		secretFindings: plan.secretFindings,
 	});
@@ -101,6 +105,7 @@ export function createSyncRestorePlan(
 			threeWayAction: entry.action,
 			remoteSha256: entry.remoteIntegrity,
 			localSha256: entry.localIntegrity,
+			localState: entry.expectedTarget.kind,
 			...(entry.reason ? { reason: entry.reason } : {}),
 		})),
 		secretFindings: corePlan.secretFindings.map((finding) => ({
@@ -120,6 +125,12 @@ export function applySyncRestorePlan(plan: SyncRestorePlan, selectedIds: string[
 		selectedIds
 			.filter((skill) => plan.corePlan.operations.some((operation) => operation.skill === skill && operation.action !== "unchanged"))
 			.map((skill) => ({ skill, action: "take-remote" })),
-		profileId ? { journalPath: syncJournalPath(profileId) } : {},
+		profileId
+			? {
+				journalPath: syncJournalPath(profileId),
+				historyRoot: syncWorkspacePath(profileId),
+				historyOperation: "restore-library-skills",
+			}
+			: {},
 	);
 }

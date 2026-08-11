@@ -22,6 +22,21 @@ export type SkillInstallationJson = {
   inherited_from?: string | null;
 };
 
+export type SkillLibraryStateJson = {
+  first_seen_at: string;
+  reviewed_at: string | null;
+  ownership: "external" | "owned" | "forked" | "unknown";
+  forked_from: { repository: string | null; skill_path: string | null; ref: string | null } | null;
+};
+
+export type SkillImprovementNoteJson = {
+  id: string;
+  created_at: string;
+  prompt: string;
+  actual: string;
+  expected: string;
+};
+
 export type SkillJson = {
   id: string;
   name: string;
@@ -40,6 +55,7 @@ export type SkillJson = {
   listing_excluded?: boolean | null;
   /** When set, the skill content is mirrored into the sync repo at this relative path. */
   bundled_path?: string | null;
+  library_state?: SkillLibraryStateJson | null;
 };
 
 export type AgentConfigJson = {
@@ -219,6 +235,8 @@ export type AppSettingsJson = {
   assumed_context_window_chars?: number | null;
   /** Product telemetry and analytics (PostHog). Default true when omitted. */
   analytics_enabled?: boolean | null;
+	/** Device-local library selection. Never written into a portable library. */
+	active_sync_profile_id?: string | null;
   /** One-time GitHub star prompt cadence metadata. */
   github_star_prompt?: {
     first_seen_at?: string | null;
@@ -236,6 +254,7 @@ export type MarketplaceSkillJson = {
   description?: string | null;
   author?: string | null;
   repository?: string | null;
+  skill_path?: string | null;
   installs?: number | null;
   source: string;
 };
@@ -361,7 +380,10 @@ export type SyncPublishPreviewJson = {
   unresolved_sources?: {
     id: string;
     kind: "reference" | "skills_sh";
-    reason: "unverified" | "too-new";
+    /** Credential-free normalized Git source shared by every affected skill. */
+    source: string;
+    requested_ref: string;
+    reason: "authentication" | "timeout" | "invalid-source" | "missing-skill" | "unavailable" | "too-new";
     age_minutes?: number;
     minimum_age_minutes?: number;
   }[];
@@ -397,6 +419,10 @@ export type SyncGitLabProjectPreviewJson = {
   visibility: "private" | "public";
 };
 
+export type SyncGitDestinationPreviewJson = {
+	remote_identity: string;
+};
+
 /** A credential-free remote the user explicitly asked the provider CLI to list. */
 export type SyncProviderLibraryJson = {
   provider: "github" | "gitlab";
@@ -404,11 +430,29 @@ export type SyncProviderLibraryJson = {
   remote_url: string;
 };
 
+export type SyncProviderProblemJson = {
+  kind: "authentication" | "cli-missing" | "unavailable" | "conflict" | "permission" | "created-unresolved" | "unknown";
+};
+
+export type SyncProviderLibrariesResultJson = {
+  libraries: SyncProviderLibraryJson[];
+  problem: SyncProviderProblemJson | null;
+};
+
+export type SyncProviderCreateResultJson = {
+  remoteUrl: string | null;
+  problem: SyncProviderProblemJson | null;
+};
+
 export type SyncProfileStatusJson = {
   profile_id: string;
   mode: "private" | "team" | "public";
   skill_count: number;
+	/** Reviewed per-device choices that intentionally differ from the saved library. */
+	device_choice_count: number;
   remote_url: string | null;
+  /** Credential-free HTTPS identity suitable for display and sharing. */
+  remote_identity: string | null;
   branch: string;
   changed: boolean;
   ahead: number;
@@ -417,6 +461,7 @@ export type SyncProfileStatusJson = {
 	last_checked_at: string | null;
 	/** Authentication/network problem from the last check, never credential text. */
 	check_error: string | null;
+	check_error_kind: "authentication" | "unavailable" | "invalid-source" | null;
 	/** True when this device has not yet approved the profile's current remote. */
 	remote_trust_required: boolean;
 };
@@ -425,6 +470,23 @@ export type SyncRemoteTrustPreviewJson = {
 	plan_id: string;
 	remote_identity: string;
 	minimum_release_age_minutes: number;
+};
+
+export type SyncDisconnectPreviewJson = {
+	plan_id: string;
+	profile_id: string;
+	remote_identity: string | null;
+	can_disconnect: boolean;
+	blockers: string[];
+};
+
+export type SyncLocalPublishPreviewJson = {
+  plan_id: string;
+  files: string[];
+  has_blockers: boolean;
+  secret_findings: { file: string; rule: string; line: number; column: number }[];
+  unsafe_paths: string[];
+  audit_errors: { code: string; message: string; remediation: string; field?: string }[];
 };
 
 export type SyncInventoryJson = {
@@ -443,8 +505,22 @@ export type SyncInventoryJson = {
   }[];
   collisions: { display_name: string; candidate_keys: string[] }[];
   invalid_paths: number;
-	invalid_entries: { display_name: string; reason: string }[];
+	invalid_entries: { invalid_id: string; display_name: string; reason: string }[];
 	linked_aliases: number;
+};
+
+export type SyncConflictComparisonJson = {
+	local_state: "absent" | "directory" | "file" | "symlink" | "unsupported";
+	local_file_count: number | null;
+	library_file_count: number;
+	changed_files: string[];
+	only_on_computer: string[];
+	only_in_library: string[];
+	unchanged_file_count: number;
+	local_skill_md?: string;
+	library_skill_md?: string;
+	local_skill_md_truncated?: boolean;
+	library_skill_md_truncated?: boolean;
 };
 
 export type SyncThreeWayReviewJson = {
@@ -454,6 +530,10 @@ export type SyncThreeWayReviewJson = {
   /** Stable identifier of the exact no-write reconciliation preview. */
   reconciliation_plan_id: string;
   reconciliation_engine: "dotagents";
+  /** The remote changed only library documentation or other non-managed files. */
+  library_update_only: boolean;
+  /** Safe, repository-relative file names changed by that library-only update. */
+  library_update_files: string[];
   dependency_changes: {
     dependency: string;
     action: "added" | "updated" | "removed";
@@ -470,6 +550,10 @@ export type SyncThreeWayReviewJson = {
     action: "take-remote" | "publish-local" | "unchanged" | "kept-local" | "conflict" | "unmanaged";
 		/** Present for externally sourced skills so a conflict is actionable. */
 		source?: { repository: string; ref: string };
+		/** Detected agents that will receive this skill if its library version is applied. */
+		target_agents: string[];
+		/** Portable, read-only comparison for bundled conflicts. Machine paths are never returned. */
+		comparison?: SyncConflictComparisonJson;
   }[];
 };
 
@@ -478,7 +562,9 @@ export type SyncHistoryEntryJson = {
   operation: string;
   source_plan_id: string;
   completed_at: string;
+  undone_at: string | null;
   undo_available: boolean;
+	undo_unavailable_reason: "sensitive-previous-content" | "unsupported-previous-target" | null;
   changes: { path: string; item_kind: "file" | "skill" }[];
 };
 
@@ -507,7 +593,73 @@ export type DotagentsResourceOverviewJson = {
     id: string;
     path: string;
     source: "skill-library" | "resource-v2";
+    /** Short portable provenance label; never exposes a local machine path. */
+    source_label: string;
+    /** Safe HTTPS provenance URL when the library recorded one. */
+    source_url?: string;
   }[];
+};
+
+export type DotagentsResourceContentJson = {
+  profile_id: string;
+  key: string;
+  kind: DotagentsResourceKindJson;
+  id: string;
+  path: string;
+  files: string[];
+  content_path: string;
+  content: string;
+  /** Present for a bounded raster image; never exposes a machine path. */
+  image_data_url?: string;
+};
+
+/**
+ * A redacted, read-only comparison between the active library and the agent
+ * folders Skiller can currently see. This is deliberately separate from Git
+ * status: it represents work that happened in the user's toolkit itself.
+ */
+export type DotagentsLibraryLocalChangesJson = {
+  profile_id: string;
+  scanned_at: string;
+  changes: {
+    id: string;
+    display_name: string;
+    kind: "new-local" | "changed-local" | "missing-local";
+    detail: string;
+  }[];
+};
+
+/** A path-free, read-only Git-style detail view for one local toolkit change. */
+export type DotagentsLibraryLocalChangePreviewJson = {
+  profile_id: string;
+  id: string;
+  kind: "new-local" | "changed-local" | "missing-local";
+  /** Portable relative files present on this computer for an untracked skill. */
+  local_files: string[];
+  /** Present when a saved bundled skill was modified locally. */
+  comparison?: SyncConflictComparisonJson;
+  /** Present after selecting a file in the local-change inspector. */
+  file_preview?: {
+    path: string;
+    status: "added" | "modified" | "deleted";
+    /** A compact, safe unified view. It never includes a machine path. */
+    diff?: string;
+    /** Current (or, for a deletion, saved) bounded raster image. */
+    image_data_url?: string;
+    unavailable_reason?: string;
+  };
+};
+
+export type DotagentsLibraryNewLocalPreviewJson = {
+  profile_id: string;
+  plan_id: string;
+  /** Existing bundled skills that this reviewed private plan would update. */
+  updated_skill_ids: string[];
+  skills: { id: string; display_name: string; files: number; paths: string[] }[];
+  linked_skills: { id: string; display_name: string; source: "Git" | "skills.sh" }[];
+  skipped_skills: { id: string; display_name: string; reason: string }[];
+  secret_findings: { skill_id: string; rule: string; file: string; line: number }[];
+  has_blockers: boolean;
 };
 
 export type DotagentsLibraryHealthJson = {
@@ -907,6 +1059,11 @@ export type AppRPCSchema = {
       read_skills_cli_lock: { params?: void; response: SkillsCliLockJson };
       scan_all_skills: { params?: void; response: SkillJson[] };
       scan_agent_skills: { params: { agentSlug: string }; response: SkillJson[] };
+		mark_skill_reviewed: { params: { skillId: string }; response: void };
+		claim_skill_ownership: { params: { skillId: string }; response: void };
+		list_skill_improvement_notes: { params: { skillId: string }; response: SkillImprovementNoteJson[] };
+		add_skill_improvement_note: { params: { skillId: string; prompt: string; actual: string; expected: string }; response: SkillImprovementNoteJson };
+		fork_skill_to_library: { params: { skillId: string; forkId: string }; response: SkillJson };
       skill_quality_overview: { params?: void; response: SkillQualityOverviewJson };
       skill_quality_reveal_file: { params: { qualityId: string; relativePath: string }; response: void };
       skill_quality_reveal_folder: { params: { qualityId: string }; response: void };
@@ -914,35 +1071,70 @@ export type AppRPCSchema = {
       skill_quality_dry_start: { params: { request: SkillQualityEvalPreviewRequestJson; expectedPlanId: string }; response: SkillQualityDryRunReportJson };
       skill_quality_measured_start: { params: { request: SkillQualityEvalPreviewRequestJson; expectedPlanId: string }; response: SkillQualityMeasuredReportJson };
       list_sync_profiles: { params?: void; response: SyncProfileStatusJson[] };
-	  refresh_sync_profiles: { params?: void; response: SyncProfileStatusJson[] };
+	  refresh_sync_profiles: { params?: { requestId?: string }; response: SyncProfileStatusJson[] };
+	  sync_select_profile: { params: { profileId: string }; response: { selected: boolean } };
+	  sync_disconnect_preview: { params: { profileId: string }; response: SyncDisconnectPreviewJson };
+	  sync_disconnect_apply: { params: { profileId: string; planId: string }; response: { disconnected: boolean } };
 	  sync_remote_trust_preview: { params: { profileId: string; minimumReleaseAgeMinutes?: number }; response: SyncRemoteTrustPreviewJson };
 	  sync_remote_trust_apply: { params: { profileId: string; planId: string; minimumReleaseAgeMinutes: number }; response: void };
       scan_sync_inventory: { params?: void; response: SyncInventoryJson };
 		get_sync_skill_preview: { params: { skillId: string }; response: SyncSkillPreviewJson };
 		reveal_sync_secret_finding: { params: { skillId: string; relativePath: string }; response: void };
+		reveal_sync_invalid_entry: { params: { invalidId: string }; response: void };
       sync_center_publish_preview: {
         params?: {
+          requestId?: string;
           selectedKeys?: string[];
           decisions?: SyncLibraryDecisionJson[];
-          mode?: "private" | "public";
+          mode?: "private" | "team" | "public";
           minimumReleaseAgeMinutes?: number;
         };
         response: SyncPublishPreviewJson;
       };
+      sync_center_publish_preview_cancel: { params: { requestId: string }; response: { cancelled: boolean } };
+		sync_git_destination_preview: { params: { remoteUrl: string; requestId?: string }; response: SyncGitDestinationPreviewJson };
+      sync_local_publish_preview: { params: { profileId: string }; response: SyncLocalPublishPreviewJson };
+      sync_local_publish_apply: {
+        params: { profileId: string; planId: string };
+        response: { commit: string | null; pushed: boolean };
+      };
+      sync_push_pending: { params: { profileId: string }; response: { pushed: boolean } };
       sync_center_publish: {
         params: {
           remoteUrl: string;
           selectedKeys?: string[];
           decisions?: SyncLibraryDecisionJson[];
-          mode: "private" | "public";
+          mode: "private" | "team" | "public";
           license?: "MIT" | "Apache-2.0" | "CC0-1.0";
           planId: string;
           sourceAuthorizationId: string;
           minimumReleaseAgeMinutes: number;
         };
-        response: { commit: string | null; pushed: boolean };
+        response: { profile_id: string; commit: string | null; pushed: boolean };
       };
-      sync_three_way_review: { params: { profileId: string }; response: SyncThreeWayReviewJson };
+      sync_provider_sign_in_start: {
+		params: { provider: "github" | "gitlab"; requestId: string };
+        response:
+          | { started: true; verification_url: string; user_code: string; expires_in: number }
+          | { started: false; problem: SyncProviderProblemJson };
+      };
+      sync_provider_sign_in_finish: {
+		params: { provider: "github" | "gitlab"; requestId: string };
+        response:
+          | { connected: true; account: string | null; problem: null }
+          | { connected: false; account: null; problem: SyncProviderProblemJson };
+      };
+      sync_provider_check: {
+        params: { provider: "github" | "gitlab"; requestId?: string };
+        response:
+          | { connected: true; account: string; problem: null }
+          | { connected: false; account: null; problem: SyncProviderProblemJson };
+      };
+      sync_three_way_review: { params: { profileId: string; requestId?: string }; response: SyncThreeWayReviewJson };
+		sync_external_conflict_preview: {
+			params: { profileId: string; skillId: string; workspacePlanId: string; reconciliationPlanId: string; requestId?: string };
+			response: SyncConflictComparisonJson;
+		};
       sync_history: { params: { profileId: string }; response: SyncHistoryEntryJson[] };
       sync_undo_preview: { params: { profileId: string; historyId: string }; response: SyncUndoPreviewJson };
       sync_undo_apply: {
@@ -950,6 +1142,11 @@ export type AppRPCSchema = {
         response: { restored: string[] };
       };
       dotagents_resource_overview: { params: { profileId: string }; response: DotagentsResourceOverviewJson };
+      dotagents_library_local_changes: { params: { profileId: string }; response: DotagentsLibraryLocalChangesJson };
+		dotagents_library_local_change_preview: { params: { profileId: string; skillId: string; file?: string }; response: DotagentsLibraryLocalChangePreviewJson };
+      dotagents_library_new_local_preview: { params: { profileId: string; skillIds: string[] }; response: DotagentsLibraryNewLocalPreviewJson };
+      dotagents_library_new_local_apply: { params: { profileId: string; planId: string }; response: { pushed: boolean } };
+      dotagents_resource_content: { params: { profileId: string; key: string; file?: string }; response: DotagentsResourceContentJson };
       dotagents_library_health: { params: { profileId: string }; response: DotagentsLibraryHealthJson };
       dotagents_library_repair_preview: {
         params: { profileId: string; selectedCodes: string[] };
@@ -992,28 +1189,40 @@ export type AppRPCSchema = {
       dotagents_resource_adopt_preview: { params: DotagentsResourceAdoptionRequestJson; response: DotagentsResourceAdoptionPreviewJson };
       dotagents_resource_adopt_apply: { params: { planId: string }; response: { history_id: string; resource_key: string } };
       sync_apply_remote_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { restored: string[] } };
-	  sync_apply_conflicting_remote_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { restored: string[] } };
+      sync_accept_remote_library_update: { params: { profileId: string; workspacePlanId: string; reconciliationPlanId: string }; response: { updated: boolean } };
+      sync_apply_conflicting_remote_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { restored: string[] } };
       sync_publish_local_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { commit: string | null; pushed: boolean } };
 	  sync_adopt_local_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { commit: string | null; pushed: boolean } };
 	  sync_keep_local_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { kept: string[] } };
 	  sync_keep_external_local_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { kept: string[] } };
-      sync_recovery_status: { params: { profileId: string }; response: { pending: boolean } };
+      sync_recovery_status: {
+        params: { profileId: string };
+        response: {
+          pending: boolean;
+          operations: Array<{
+            kind: "restore" | "library-update";
+            item_count: number | null;
+            changed_item_count: number | null;
+          }>;
+        };
+      };
       sync_recovery_rollback: { params: { profileId: string }; response: { recovered: boolean } };
       sync_center_connect: {
-        params: { profileId: string; remoteUrl: string; agentSlugs: string[]; planId: string; minimumReleaseAgeMinutes: number };
+		params: { profileId: string; remoteUrl: string; agentSlugs: string[]; planId: string; minimumReleaseAgeMinutes: number; requestId?: string };
         response: SyncProfileStatusJson;
       };
       sync_center_connect_preview: {
-        params: { remoteUrl: string; agentSlugs: string[]; minimumReleaseAgeMinutes: number };
+        params: { remoteUrl: string; agentSlugs: string[]; minimumReleaseAgeMinutes: number; requestId?: string };
         response: SyncConnectPreviewJson;
       };
+      sync_library_check_cancel: { params: { requestId: string }; response: { cancelled: boolean } };
       sync_github_create_repo_preview: {
         params: { repository: string; visibility: "private" | "public" };
         response: SyncGitHubRepositoryPreviewJson;
       };
       sync_github_create_repo: {
         params: { repository: string; visibility: "private" | "public"; planId: string };
-        response: { remoteUrl: string };
+        response: SyncProviderCreateResultJson;
       };
       sync_gitlab_create_project_preview: {
         params: { project: string; visibility: "private" | "public" };
@@ -1021,11 +1230,15 @@ export type AppRPCSchema = {
       };
       sync_gitlab_create_project: {
         params: { project: string; visibility: "private" | "public"; planId: string };
-        response: { remoteUrl: string };
+        response: SyncProviderCreateResultJson;
       };
       sync_provider_libraries: {
-        params: { provider: "github" | "gitlab" };
-        response: SyncProviderLibraryJson[];
+        params: { provider: "github" | "gitlab"; requestId?: string };
+        response: SyncProviderLibrariesResultJson;
+      };
+      sync_provider_libraries_cancel: {
+        params: { requestId: string };
+        response: { cancelled: boolean };
       };
       install_skill: { params: { source: SkillSourceParam; targetAgents: string[] }; response: void };
       uninstall_skill: { params: { skillId: string; agentSlug: string }; response: void };
@@ -1061,10 +1274,12 @@ export type AppRPCSchema = {
 	  unlink_inherited_skill: { params: { skillId: string }; response: void };
       update_skill: { params: { skillId: string }; response: void };
       update_all_skills: { params?: void; response: UpdateAllResultJson };
+      list_skill_files: { params: { path: string }; response: string[] };
       read_skill_content: { params: { path: string }; response: string };
       write_skill_content: { params: { path: string; content: string }; response: void };
       install_from_git: { params: { repoUrl: string; skillRelativePath: string; targetAgents: string[] }; response: void };
-      fetch_remote_skill_content: { params: { repoUrl: string; skillName?: string | null }; response: string };
+      fetch_remote_skill_content: { params: { repoUrl: string; skillName?: string | null; skillPath?: string | null; filePath?: string | null; source?: string | null }; response: string };
+      list_remote_skill_files: { params: { repoUrl: string; skillName?: string | null; skillPath?: string | null; source?: string | null }; response: string[] };
       fetch_skillssh: { params: { sort: string; page: number }; response: MarketplaceSkillJson[] };
       fetch_clawhub: { params: { endpoint: string; params: Record<string, string> }; response: MarketplaceSkillJson[] };
       search_marketplace: { params: { query: string; source: string }; response: MarketplaceSkillJson[] };

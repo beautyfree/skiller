@@ -11,6 +11,27 @@ const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
 
 describe("Skiller shared discovery adapter", () => {
+	it("includes a direct global skill from an agent marked skills-only", async () => {
+		const root = mkdtempSync(join(tmpdir(), "skiller-dotagents-direct-global-"));
+		roots.push(root);
+		const agentSkills = join(root, ".claude", "skills");
+		const direct = join(agentSkills, "direct-writing");
+		mkdirSync(direct, { recursive: true });
+		writeFileSync(join(direct, "SKILL.md"), "---\nname: direct-writing\ndescription: Installed directly.\n---\n# Direct\n");
+		const agent = defaultAgentConfig({
+			slug: "claude-code",
+			name: "Claude Code",
+			detected: false,
+			detection_reason: "skills-only",
+			global_paths: [agentSkills],
+		});
+
+		const result = await scanDotagentsSkillDiscovery([agent], { sharedRoot: join(root, ".agents", "skills"), skillsCliLock: null });
+		expect(result.report.skills).toEqual([
+			expect.objectContaining({ name: "direct-writing", locations: [{ kind: "agent-local", agent: "claude-code" }] }),
+		]);
+	});
+
 	it("uses dotagents deduplication and Skills CLI provenance for a safe default", async () => {
 		const root = mkdtempSync(join(tmpdir(), "skiller-dotagents-discovery-"));
 		roots.push(root);
@@ -24,7 +45,6 @@ describe("Skiller shared discovery adapter", () => {
 		const agent = defaultAgentConfig({ slug: "codex", name: "Codex", detected: true, detection_reason: "marker", global_paths: [agentSkills] });
 		const result = await scanDotagentsSkillDiscovery([agent], {
 			sharedRoot: shared,
-			provenance: {},
 			skillsCliLock: {
 				path: join(root, ".skill-lock.json"),
 				version: 3,
@@ -37,7 +57,7 @@ describe("Skiller shared discovery adapter", () => {
 
 		const library = join(root, "library");
 		await applyInitializeLibraryPlan(planInitializeLibrary(library, "portable-library"));
-		const options = { sharedRoot: shared, provenance: {}, skillsCliLock: {
+		const options = { sharedRoot: shared, skillsCliLock: {
 			path: join(root, ".skill-lock.json"), version: 3 as const,
 			skills: [{ name: "writing", source: "owner/repo", source_type: "github", source_url: "https://github.com/owner/repo", ref: "main", skill_path: "skills/writing", updated_at: "" }],
 		} };

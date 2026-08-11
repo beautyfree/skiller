@@ -2,6 +2,7 @@ import { memo, type ReactNode } from "react";
 import { Trash2 } from "lucide-react";
 import { revealItemInDir } from "@/mainview/lib/native";
 import { Button } from "@/mainview/components/ui/button";
+import { Tooltip } from "@/mainview/components/ui/tooltip";
 import { AgentIcon } from "@/mainview/components/AgentIcon";
 import { cn } from "@/mainview/lib/utils";
 
@@ -72,37 +73,44 @@ export const AgentRow = memo(function AgentRow({
           {tags}
         </div>
         {path && (
+          <Tooltip content={revealTitle ?? "Reveal in Finder"}>
           <button
             className="mt-1 break-all text-left font-mono text-[10px] leading-relaxed text-muted-foreground/70 transition-colors hover:text-primary cursor-pointer"
-            title={revealTitle}
             onClick={() => revealItemInDir(path)}
           >
             {path}
           </button>
+          </Tooltip>
         )}
       </div>
       {/* Right: action */}
       {action ?? (
         isInstalled && onUninstall ? (
+          <Tooltip content={uninstallTitle ?? "Remove"}>
+          <span className="inline-flex">
           <button
             className="flex items-center justify-center size-6 rounded-md text-destructive/60 hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50 shrink-0"
-            title={uninstallTitle}
             disabled={disabled}
             onClick={onUninstall}
           >
             <Trash2 className="size-3" aria-hidden="true" />
           </button>
+          </span>
+          </Tooltip>
         ) : !isActive && onInstall ? (
+          <Tooltip content={installTitle ?? installLabel}>
+          <span className="inline-flex">
           <Button
             variant="outline"
             size="xs"
             className="shrink-0 h-5 px-2 text-[10px]"
-            title={installTitle}
             disabled={disabled}
             onClick={onInstall}
           >
             {installLabel}
           </Button>
+          </span>
+          </Tooltip>
         ) : null
       )}
     </div>

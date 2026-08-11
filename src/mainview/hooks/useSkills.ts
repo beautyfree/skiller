@@ -10,6 +10,13 @@ export interface SkillInstallation {
   inherited_from: string | null;
 }
 
+export interface SkillLibraryState {
+  first_seen_at: string;
+  reviewed_at: string | null;
+  ownership: "external" | "owned" | "forked" | "unknown";
+  forked_from: { repository: string | null; skill_path: string | null; ref: string | null } | null;
+}
+
 export type SkillScope =
 	| { type: "SharedLibrary" }
   | { type: "SharedGlobal" }
@@ -34,6 +41,7 @@ export interface Skill {
   listing_excluded?: boolean;
   /** When set, skill is mirrored into the sync repo at this relative path (Phase-4 bundling). */
   bundled_path?: string | null;
+  library_state?: SkillLibraryState | null;
 }
 
 export function installedAgents(skill: Skill): string[] {
@@ -49,10 +57,11 @@ export function agentPath(skill: Skill, agentSlug: string): string | undefined {
   return skill.installations.find((i) => i.agent_slug === agentSlug)?.path;
 }
 
-export function useSkills() {
+export function useSkills(options: { enabled?: boolean } = {}) {
   return useQuery<Skill[]>({
     queryKey: ["skills"],
     queryFn: async () => (await invoke("scan_all_skills")) as Skill[],
+    enabled: options.enabled ?? true,
     staleTime: 30 * 1000, // filesystem scan is cheap but avoid on every mount
   });
 }

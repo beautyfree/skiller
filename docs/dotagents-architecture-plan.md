@@ -16,6 +16,10 @@ operations, additional resource kinds, and Skill Quality Center, is governed by
 
 `beautyfree/dotagents` is a TypeScript library and headless CLI for maintaining one canonical agent library, normally cloned at `~/.agents`, and materializing reviewed views into the native locations of supported agents.
 
+Its inventory boundary is global-only: `~/.agents/skills` plus the known
+global skill roots of supported agents. Project-local skill directories remain
+part of their own Git repositories and are intentionally outside dotagents.
+
 Skiller remains the desktop product. It imports the same core package used by the CLI and adds discovery UX, review, Git provider setup, conflict resolution, background status, and release integration. Skiller must not keep a second implementation of manifest parsing, source resolution, secret scanning, reconciliation, or materialization planning.
 
 The first useful release must support this complete story:

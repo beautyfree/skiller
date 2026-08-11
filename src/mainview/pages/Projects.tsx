@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link as RouterLink } from "react-router-dom";
+import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import {
   FolderOpen,
   FolderPlus,
@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/mainview/components/ui/button";
+import { Tooltip } from "@/mainview/components/ui/tooltip";
 import { invoke, pickFolder, revealItemInDir } from "@/mainview/lib/native";
 import ImportWizard from "@/mainview/components/ImportWizard";
 import ProjectSkillDetailModal from "@/mainview/components/ProjectSkillDetailModal";
@@ -46,7 +47,14 @@ export default function ProjectsPage() {
   const removeFolder = useRemoveProjectFolder();
   const renameFolder = useRenameProjectFolder();
   const setGroup = useSetProjectGroup();
+  const [searchParams] = useSearchParams();
   const [selected, setSelected] = useState<string | null>(null);
+  const requestedProjectPath = searchParams.get("path");
+
+  useEffect(() => {
+    if (selected || !requestedProjectPath || !projects?.some((project) => project.path === requestedProjectPath)) return;
+    setSelected(requestedProjectPath);
+  }, [projects, requestedProjectPath, selected]);
 
   const sidebar = useResizable({
     initial: 260,
@@ -101,14 +109,15 @@ export default function ProjectsPage() {
         <div className="flex items-center justify-between gap-2 px-3 py-3">
           <h2 className="text-sm font-[590]">{t("projects.title")}</h2>
           <div className="flex items-center gap-1">
+            <Tooltip content={t("projects.newFolder")}>
             <Button
               size="sm"
               variant="ghost"
               onClick={requestNewFolder}
-              title={t("projects.newFolder")}
             >
               <FolderPlus className="size-3.5" />
             </Button>
+            </Tooltip>
             <Button size="sm" variant="outline" onClick={handleAddProject}>
               <FolderPlus className="size-3.5" />
               {t("projects.add")}
@@ -432,10 +441,10 @@ function ProjectTree({
               <span className="text-[10px] tabular-nums text-muted-foreground/60">
                 {items.length}
               </span>
+              <Tooltip content={t("projects.removeFolder")}>
               <button
                 type="button"
                 className="opacity-0 group-hover:opacity-100 ml-1 text-muted-foreground hover:text-destructive transition-opacity"
-                title={t("projects.removeFolder")}
                 onClick={(e) => {
                   e.stopPropagation();
                   onRemoveFolder(name);
@@ -443,6 +452,7 @@ function ProjectTree({
               >
                 <X className="size-3" />
               </button>
+              </Tooltip>
             </div>
             {!isCollapsed && (
               <div className="pl-4 space-y-0.5 pt-0.5 pb-0.5">
@@ -656,14 +666,15 @@ function ProjectDetail({ project }: { project: Project }) {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 space-y-1">
           <h1 className="text-lg font-[590]">{project.name}</h1>
+          <Tooltip content={t("projects.revealInFinder")}>
           <button
             type="button"
             className="text-xs text-muted-foreground hover:text-foreground font-mono truncate block max-w-full"
             onClick={() => revealItemInDir(project.path)}
-            title={t("projects.revealInFinder")}
           >
             {project.path}
           </button>
+          </Tooltip>
         </div>
         <div className="flex shrink-0 gap-2">
           <Button size="sm" variant="outline" onClick={() => setWizardMode("git")}>
@@ -829,7 +840,7 @@ function CopyFromInstalledPicker({
 
   return (
     <div
-      className="modal-shell fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/40 animate-backdrop-in"
+      className="modal-shell modal-overlay fixed inset-0 z-50 flex items-center justify-center"
       onClick={onClose}
     >
       <div

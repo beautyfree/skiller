@@ -57,6 +57,7 @@ export function skillToJson(s: Skill): SkillJson {
 		footprint_skill_md_chars: s.footprint_skill_md_chars,
 		listing_excluded: s.listing_excluded,
 		bundled_path: s.bundled_path ?? null,
+		library_state: s.library_state ?? null,
 	};
 }
 
@@ -91,6 +92,7 @@ export function marketplaceSkillToJson(m: import("./marketplace-types").Marketpl
 		description: m.description ?? null,
 		author: m.author ?? null,
 		repository: m.repository ?? null,
+		skill_path: m.skill_path ?? null,
 		installs: m.installs ?? null,
 		source: m.source,
 	};

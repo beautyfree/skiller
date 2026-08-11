@@ -1,3 +1,5 @@
+import { useRef } from "react";
+import { ScrollFade } from "@/mainview/components/ScrollFade";
 import { cn } from "@/mainview/lib/utils";
 import { SCROLLBAR_EDGE_INSET } from "@/mainview/lib/shell-chrome";
 
@@ -22,18 +24,21 @@ export function InsetScrollArea({
   children,
 }: InsetScrollAreaProps) {
   const outer = cn("min-h-0 min-w-0", SCROLLBAR_EDGE_INSET, className);
+  const viewportRef = useRef<HTMLDivElement>(null);
 
   if (!scroll) {
     return <div className={outer}>{children}</div>;
   }
 
   return (
-    <div className={outer}>
+    <div className={cn("relative", outer)}>
       <div
+        ref={viewportRef}
         className={cn("h-full min-h-0 overflow-y-auto", scrollClassName)}
       >
         {children}
       </div>
+      <ScrollFade viewportRef={viewportRef} />
     </div>
   );
 }

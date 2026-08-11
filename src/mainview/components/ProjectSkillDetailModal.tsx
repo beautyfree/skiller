@@ -73,7 +73,7 @@ export default function ProjectSkillDetailModal({ projectPath, skill, onClose }:
 
   return (
     <div
-      className="modal-shell fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/40 animate-backdrop-in"
+      className="modal-shell modal-overlay fixed inset-0 z-50 flex items-center justify-center"
       onClick={() => {
         if (dirty) return;
         onClose();

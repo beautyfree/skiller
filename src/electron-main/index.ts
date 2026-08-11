@@ -10,6 +10,7 @@ import {
 	BrowserWindow,
 	Menu,
 	nativeImage,
+	screen,
 	shell,
 	Tray,
 	ipcMain,
@@ -30,13 +31,25 @@ import {
 	syncMacOSChromeFromSettings,
 } from "./window-effects-macos";
 
+// A live QA run must not share renderer storage (onboarding, theme, or cached
+// queries) with a person's installed application. The main data root already
+// supports this override; give Electron's own userData the same boundary.
+const qaDataRoot = process.env.SKILLER_TEST_DATA_ROOT?.trim();
+if (qaDataRoot) app.setPath("userData", join(qaDataRoot, "electron"));
+
 const TRPC_PORT = Number(process.env.AGENTSKILLS_TRPC_PORT ?? 17888);
-const DEFAULT_WINDOW_FRAME = {
-	x: 120,
-	y: 100,
-	width: 1440,
-	height: 900,
-} as const;
+const DEFAULT_WINDOW_WIDTH = 1600;
+const DEFAULT_WINDOW_HEIGHT = 1080;
+
+function defaultWindowFrame() {
+	const workArea = screen.getPrimaryDisplay().workArea;
+	return {
+		x: Math.round(workArea.x + (workArea.width - DEFAULT_WINDOW_WIDTH) / 2),
+		y: Math.round(workArea.y + (workArea.height - DEFAULT_WINDOW_HEIGHT) / 2),
+		width: DEFAULT_WINDOW_WIDTH,
+		height: DEFAULT_WINDOW_HEIGHT,
+	};
+}
 
 let mainWindow: BrowserWindow | undefined;
 let tray: Tray | undefined;
@@ -111,13 +124,14 @@ const TITLE_BAR_HEIGHT = 36;
 function createMainWindow(): BrowserWindow {
 	const isMac = process.platform === "darwin";
 	const wantVibrancy = isMac && effectiveMacOSWindowBlur();
+	const frame = defaultWindowFrame();
 
 	const win = new BrowserWindow({
 		title: "Skiller",
-		width: DEFAULT_WINDOW_FRAME.width,
-		height: DEFAULT_WINDOW_FRAME.height,
-		x: DEFAULT_WINDOW_FRAME.x,
-		y: DEFAULT_WINDOW_FRAME.y,
+		width: frame.width,
+		height: frame.height,
+		x: frame.x,
+		y: frame.y,
 		show: false,
 		autoHideMenuBar: true,
 		// macOS — traffic-light inset matches the old libMacWindowEffects

@@ -14,7 +14,7 @@ import type { AgentConfig } from "./types";
 import { copyDirRecursive, expandHome, linkOrCopy, removePath } from "./fsutil";
 import { isSymlink } from "./fsutil";
 import { getTemplatesDir } from "./paths";
-import { readProvenance, writeProvenance } from "./provenance";
+import { readLocalSkillSources, saveLocalSkillSource } from "dotagents/source-registry";
 import { sharedSkillsDir } from "./shared-skills";
 import { planBundledSkillExport } from "./sync-export";
 import type { SourceSecurityPolicyInput } from "dotagents/source-policy";
@@ -140,13 +140,10 @@ export function installSkillFromPath(
     }
   }
 
-  // Preserve any existing provenance from a prior git-based install. Only
-  // write a minimal "local" stub when there's nothing recorded — callers
-  // like installSkillFromGit override this with the real repo info right
-  // after. Without this, a skill installed from a local folder has no
-  // provenance at all and later update_skill fails with "no provenance".
-  if (!readProvenance()[skillName]) {
-    writeProvenance(skillName, "local", sourceSkillDir, null, null);
+  // Device-local update metadata belongs to dotagents, never in the shared
+  // skill directory that Agent Library scans and may publish.
+  if (!readLocalSkillSources()[skillName]) {
+    saveLocalSkillSource(skillName, { source: "local", repository: sourceSkillDir, skill_path: null, ref: null, content_sha256: null, ownership: "owned" });
   }
 
   return canonicalDir;
@@ -209,6 +206,7 @@ export async function prepareGitSkillInstall(
   targetSkillName?: string,
   expectedContentHash?: string,
   sourcePolicy: SourceSecurityPolicyInput = {},
+	signal?: AbortSignal,
 ): Promise<PreparedGitSkillInstall> {
   const tempDir = join(
     tmpdir(),
@@ -220,6 +218,7 @@ export async function prepareGitSkillInstall(
       tempDir,
       ref,
       sourcePolicy,
+			signal,
     );
 
     const source = join(tempDir, skillRelativePath);
@@ -255,6 +254,7 @@ export function installPreparedGitSkill(
   agents: AgentConfig[],
   sourceLabel: string,
 ): string {
+	void sourceLabel
   const installed = installSkillFromPath(
     prepared.sourceDir,
     targetAgentSlugs,
@@ -263,13 +263,15 @@ export function installPreparedGitSkill(
   );
   const skillId = basename(installed);
   const rel = prepared.skillRelativePath.trim();
-  writeProvenance(
-    skillId,
-    sourceLabel,
-    prepared.repository,
-    !rel || rel === "." ? null : rel,
-    prepared.resolvedSha,
-  );
+	const contentSha256 = planBundledSkillExport(skillId, prepared.sourceDir).sha256;
+  saveLocalSkillSource(skillId, {
+    source: "git",
+    repository: prepared.repository,
+    skill_path: !rel || rel === "." ? null : rel,
+		ref: prepared.resolvedSha,
+		content_sha256: contentSha256,
+		ownership: "external",
+	});
   return installed;
 }
 

@@ -14,8 +14,6 @@ import SkillsManager from './pages/SkillsManager'
 import Marketplace from './pages/Marketplace'
 import ProjectsPage from './pages/Projects'
 import SettingsPage from './pages/Settings'
-import SyncCenter from './pages/SyncCenter'
-import QualityCenter from './pages/QualityCenter'
 import ResourceLibrary from './pages/ResourceLibrary'
 import OnboardingWizard from './components/OnboardingWizard'
 import { useTheme } from './hooks/useTheme'
@@ -49,6 +47,10 @@ function AppInner() {
   // from Settings). Guarded by a localStorage flag — we respect privacy mode
   // by falling back to "not done" if storage throws, which still shows once.
   const [onboardingOpen, setOnboardingOpen] = useState(() => {
+    // Only the isolated Electron QA harness sets this build-time flag. It
+    // avoids driving an onboarding modal during visual regression checks while
+    // keeping every normal first launch unchanged.
+    if (import.meta.env.VITE_SKIP_ONBOARDING === '1') return false
     try {
       return localStorage.getItem('skiller.onboarding.done') !== '1'
     } catch {
@@ -353,9 +355,12 @@ function AppInner() {
           <Route path="skills" element={<SkillsManager />} />
           <Route path="marketplace" element={<Marketplace />} />
           <Route path="projects" element={<ProjectsPage />} />
-          <Route path="sync" element={<SyncCenter />} />
-          <Route path="quality" element={<QualityCenter />} />
+		  {/* Old Quality bookmarks now open the unified skills workspace. */}
+          <Route path="quality" element={<Navigate to="/skills" replace />} />
           <Route path="library" element={<ResourceLibrary />} />
+          {/* Kept only as a migration route for bookmarks from the pre-unified UI.
+              Agent Library is the one destination for contents and sync state. */}
+          <Route path="sync" element={<Navigate to="/library" replace />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>

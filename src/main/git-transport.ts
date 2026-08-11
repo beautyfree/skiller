@@ -19,14 +19,17 @@ export async function checkoutReviewedGitSource(
   target: string,
   requestedRef: string | null | undefined,
   sourcePolicy: SourceSecurityPolicyInput,
+	signal?: AbortSignal,
 ): Promise<GitClonePlan> {
   const plan = await planGitCheckout(
     remote,
     target,
     requestedRef?.trim() || "HEAD",
     sourcePolicy,
-  );
-  await applyGitClonePlan(plan);
+		undefined,
+		{ signal },
+	);
+  await applyGitClonePlan(plan, undefined, { signal });
   return plan;
 }
 

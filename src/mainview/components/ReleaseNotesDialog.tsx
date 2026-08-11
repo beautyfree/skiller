@@ -56,7 +56,7 @@ export default function ReleaseNotesDialog({ open, notes, initialVersion, onClos
 	if (!open || !note) return null;
 
 	return (
-		<div className="modal-shell fixed inset-0 z-[110] flex items-center justify-center bg-black/25 dark:bg-black/40 animate-backdrop-in" onMouseDown={onClose}>
+		<div className="modal-shell modal-overlay fixed inset-0 z-[110] flex items-center justify-center" onMouseDown={onClose}>
 			<div role="dialog" aria-modal="true" aria-labelledby="release-notes-title" className="modal-panel-flex flex h-[min(78dvh,42rem)] w-[min(42rem,calc(100vw-2rem))] flex-col rounded-3xl outline-none animate-modal-in glass-elevated" onMouseDown={(event) => event.stopPropagation()}>
 				<div className="flex shrink-0 items-start justify-between gap-3 px-6 pb-3 pt-5">
 					<div>

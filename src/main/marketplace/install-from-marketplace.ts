@@ -1,11 +1,11 @@
-import { basename, join } from "node:path";
-import { rmSync } from "node:fs";
+import { basename, join, resolve, sep } from "node:path";
+import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { AgentConfig } from "../types";
 import type { MarketplaceSkill } from "../marketplace-types";
 import { discoverSkillDirs } from "../scanner";
 import { installSkillFromPath } from "../install";
-import { writeProvenance } from "../provenance";
+import { saveLocalSkillSource } from "dotagents/source-registry";
 import type { SourceSecurityPolicyInput } from "dotagents/source-policy";
 import { checkoutReviewedGitSource } from "../git-transport";
 
@@ -68,19 +68,32 @@ export async function installFromMarketplace(
       "HEAD",
       sourcePolicy,
     );
-    const skillDir = findSkillInRepo(tempDir, skill.name);
+    const explicitSkillPath = skill.skill_path?.trim();
+    const candidateFromSource = explicitSkillPath
+      ? resolve(tempDir, explicitSkillPath)
+      : null;
+    const skillDir = candidateFromSource?.startsWith(`${resolve(tempDir)}${sep}`) &&
+      existsSync(join(candidateFromSource, "SKILL.md"))
+      ? candidateFromSource
+      : findSkillInRepo(tempDir, skill.name);
     const canonical = skillDir
       ? installSkillFromPath(skillDir, targetAgents, agents)
       : installSkillFromPath(tempDir, targetAgents, agents);
 
     const skillId = basename(canonical);
-    writeProvenance(
-      skillId,
-      skill.source,
-      repoUrl,
-      null,
-      checkout.resolvedCommit,
-    );
+		const source = skill.source === "skills.sh"
+			? "skills.sh"
+			: skill.source === "clawhub"
+				? "clawhub"
+				: repoUrl ? "git" : "local";
+    saveLocalSkillSource(skillId, {
+			source,
+      repository: repoUrl ?? null,
+      skill_path: explicitSkillPath && explicitSkillPath !== "." ? explicitSkillPath : null,
+      ref: checkout.resolvedCommit,
+      content_sha256: null,
+			ownership: source === "local" ? "unknown" : "external",
+    });
   } finally {
     try {
       rmSync(tempDir, { recursive: true, force: true });

@@ -11,12 +11,25 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, sep } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+
+const TEST_HOME_ENV = "SKILLER_TEST_HOME";
+
+export function userHomePathFor(actualHome: string, env: NodeJS.ProcessEnv): string {
+	const overridden = env[TEST_HOME_ENV]?.trim();
+	if (!overridden) return actualHome;
+	if (!isAbsolute(overridden)) throw new Error(`${TEST_HOME_ENV} must be an absolute path`);
+	return resolve(overridden);
+}
+
+export function userHomePath(): string {
+	return userHomePathFor(homedir(), process.env);
+}
 
 export function expandHome(path: string): string {
 	if (path.startsWith("~/")) {
 		const stripped = path.slice(2).replace(/\//g, sep);
-		return join(homedir(), stripped);
+		return join(userHomePath(), stripped);
 	}
 	return path;
 }

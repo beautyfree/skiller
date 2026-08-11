@@ -12,25 +12,24 @@ import {
   Settings,
   GitBranch,
   FolderOpen,
-  FolderKanban,
   Copy,
-  Cloud,
   Trash2,
   ChevronRight,
   MessageCircle,
-  FlaskConical,
   LibraryBig,
+  X,
 } from 'lucide-react'
 import { AgentIcon } from '@/mainview/components/AgentIcon'
 import { Button } from '@/mainview/components/ui/button'
+import { Tooltip } from '@/mainview/components/ui/tooltip'
 import ImportWizard from '@/mainview/components/ImportWizard'
 import { InsetScrollArea } from '@/mainview/components/InsetScrollArea'
+import { ScrollFade } from '@/mainview/components/ScrollFade'
 import { WINDOW_EDGE_INSET_RIGHT } from '@/mainview/lib/shell-chrome'
 import { useResizable } from '@/mainview/hooks/useResizable'
 import ResizeHandle from '@/mainview/components/ResizeHandle'
 import { useAgents } from '@/mainview/hooks/useAgents'
 import { useSkills, allAgents } from '@/mainview/hooks/useSkills'
-import { useProjects } from '@/mainview/hooks/useProjects'
 import type { SyncProfileStatusJson } from '@/shared/rpc-schema'
 import skillerMark from '@/mainview/assets/brand/skiller-mark.png'
 
@@ -48,6 +47,51 @@ const NAV_LINK_INACTIVE = `${NAV_LINK_BASE} text-sidebar-foreground/80 hover:tex
 
 function navLinkClass({ isActive }: { isActive: boolean }) {
   return isActive ? NAV_LINK_ACTIVE : NAV_LINK_INACTIVE
+}
+
+function ImportChoiceDialog({
+  open,
+  onClose,
+  onGit,
+  onLocal,
+}: {
+  open: boolean
+  onClose: () => void
+  onGit: () => void
+  onLocal: () => void
+}) {
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [onClose, open])
+
+  if (!open) return null
+
+  return <div className="modal-shell modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
+    <button type="button" className="absolute inset-0 cursor-default" aria-label="Close import options" onClick={onClose} />
+    <section role="dialog" aria-modal="true" aria-labelledby="import-choice-title" className="modal-panel relative z-10 w-[min(38rem,calc(100vw-2rem))] overflow-hidden rounded-2xl outline-none animate-modal-in glass-elevated">
+      <header className="flex items-start justify-between gap-4 border-b border-border/70 px-5 py-4">
+        <div><h2 id="import-choice-title" className="text-lg font-semibold tracking-[-0.025em]">Import skills</h2><p className="mt-1 text-sm leading-5 text-muted-foreground">Choose where the skills live now.</p></div>
+        <Button size="icon-sm" variant="ghost" aria-label="Close" onClick={onClose}><X className="size-4" /></Button>
+      </header>
+      <div className="grid gap-3 p-5 sm:grid-cols-2">
+        <button type="button" onClick={onGit} className="group min-h-36 rounded-xl border border-border/70 p-4 text-left outline-none transition-colors hover:border-primary/45 hover:bg-muted/35 focus-visible:ring-2 focus-visible:ring-ring/50">
+          <GitBranch className="size-5 text-primary" aria-hidden="true" />
+          <p className="mt-5 text-sm font-semibold">From Git</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">Clone or connect a Git repository that contains skills.</p>
+        </button>
+        <button type="button" onClick={onLocal} className="group min-h-36 rounded-xl border border-border/70 p-4 text-left outline-none transition-colors hover:border-primary/45 hover:bg-muted/35 focus-visible:ring-2 focus-visible:ring-ring/50">
+          <FolderOpen className="size-5 text-primary" aria-hidden="true" />
+          <p className="mt-5 text-sm font-semibold">From this computer</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">Choose a folder that already contains skills.</p>
+        </button>
+      </div>
+    </section>
+  </div>
 }
 
 const TITLE_BAR_DRAG_HEIGHT = 36
@@ -85,12 +129,18 @@ function LayoutInner({
   onGithubStarPromptCta,
 }: LayoutProps) {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const [importMode, setImportMode] = useState<'git' | 'local' | null>(null)
+  const [importChoiceOpen, setImportChoiceOpen] = useState(false)
   const [importLocalPath, setImportLocalPath] = useState<string | null>(null)
   const pickingFolder = useRef(false)
+  const agentSidebarScrollRef = useRef<HTMLDivElement>(null)
+  const location = useLocation()
   const { data: agents, isLoading: agentsLoading } = useAgents()
-  const { data: skills, isLoading: skillsLoading } = useSkills()
-  const { data: projects } = useProjects()
+  // Do not start the heavyweight global All Skills scan while the user is in
+  // Agent Library. Its own inventory is independent and should be the first
+  // thing the main process is free to answer.
+  const { data: skills } = useSkills({ enabled: location.pathname !== '/library' })
   const { data: syncProfiles } = useQuery<SyncProfileStatusJson[]>({
     queryKey: ['sync-profiles'],
     // Safe metadata check only: no local skills are touched, no merge/commit
@@ -98,9 +148,21 @@ function LayoutInner({
     queryFn: () => invoke('refresh_sync_profiles'),
     refetchInterval: 5 * 60_000,
   })
+  const warmAgentLibrary = useCallback(() => {
+    const profileId = syncProfiles?.[0]?.profile_id
+    if (!profileId) return
+    // Starting this on pointer/focus intent keeps Agent Library responsive
+    // without competing with the normal app startup scan. The page consumes
+    // this exact React Query entry, so opening it does not launch a second
+    // inventory comparison.
+    void queryClient.prefetchQuery({
+      queryKey: ['dotagents-library-local-changes', profileId],
+      queryFn: () => invoke('dotagents_library_local_changes', { profileId }),
+      staleTime: 30_000,
+    })
+  }, [queryClient, syncProfiles])
   const syncNeedsReview = Boolean(syncProfiles?.some((profile) => profile.changed || profile.ahead > 0 || profile.behind > 0 || profile.check_error))
   const [searchParams] = useSearchParams()
-	const location = useLocation()
 
   const detectedAgents = useMemo(
     () => agents?.filter((a) => a.detected) ?? [],
@@ -171,7 +233,11 @@ function LayoutInner({
   }, [])
 
   const activeAgentSlug = searchParams.get('agent')
-  const loading = agentsLoading || skillsLoading
+  // A full skill scan can take several seconds on a mature setup. It must not
+  // turn every route into a global skeleton: Agent Library has its own
+  // purpose-built snapshot and can be useful before the All Skills index is
+  // ready. Agent discovery remains the only navigation prerequisite.
+  const loading = agentsLoading
 
   return (
     <div className="layout-root box-border flex h-screen flex-col overflow-hidden">
@@ -188,8 +254,13 @@ function LayoutInner({
         {/* Decorative only: stays within the native drag surface on every OS. */}
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="flex items-center gap-1.5" aria-label="Skiller">
-            <span className="grid size-[19px] place-items-center rounded-[5px] bg-[#20242d] shadow-[0_1px_2px_rgba(0,0,0,0.16)]">
-              <img src={skillerMark} alt="" draggable={false} className="size-[15px] object-contain" />
+            <span className="grid size-[19px] place-items-center">
+              <img
+                src={skillerMark}
+                alt=""
+                draggable={false}
+                className="size-[16px] object-contain invert dark:invert-0"
+              />
             </span>
             <span className="relative top-px inline-block text-[14px] font-bold leading-none tracking-[-0.055em] text-foreground/90 [font-family:'Bricolage_Grotesque',sans-serif]">Skiller</span>
           </div>
@@ -228,19 +299,10 @@ function LayoutInner({
                   variant="outline"
                   size="sm"
                   className="w-full justify-start gap-2 rounded-md border-dashed"
-                  onClick={() => setImportMode('git')}
+                  onClick={() => setImportChoiceOpen(true)}
                 >
                   <GitBranch className="size-3.5" aria-hidden="true" />
-                  {t('repos.importRepo')}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full justify-start gap-2 rounded-md border-dashed"
-                  onClick={handleImportLocal}
-                >
-                  <FolderOpen className="size-3.5" aria-hidden="true" />
-                  {t('repos.importLocal')}
+                  Import skills
                 </Button>
               </div>
 
@@ -280,24 +342,16 @@ function LayoutInner({
                       {t('sidebar.marketplace')}
                     </NavLink>
 
-                    <NavLink to="/projects" className={navLinkClass}>
-                      <FolderKanban className="size-4" aria-hidden="true" />
-                      {t('sidebar.projects')}
-                      {projects && projects.length > 0 && (
-                        <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/60">
-                          {projects.length}
-                        </span>
-                      )}
-                    </NavLink>
-
-                    <NavLink to="/quality" className={navLinkClass}>
-                      <FlaskConical className="size-4" aria-hidden="true" />
-                      Quality
-                    </NavLink>
-
-                    <NavLink to="/library" className={navLinkClass}>
+                    <NavLink
+                      to="/library"
+                      className={navLinkClass}
+                      onPointerEnter={warmAgentLibrary}
+                      onFocus={warmAgentLibrary}
+                      onClick={() => window.dispatchEvent(new Event('skiller:open-agent-library'))}
+                    >
                       <LibraryBig className="size-4" aria-hidden="true" />
                       Agent Library
+                      {syncNeedsReview && <Tooltip content="Library changes need review" side="right"><span className="ml-auto size-1.5 rounded-full bg-amber-500" /></Tooltip>}
                     </NavLink>
 
                   </div>
@@ -308,8 +362,9 @@ function LayoutInner({
                     <h2 className="mb-2 shrink-0 px-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
                       {t('sidebar.agents')}
                     </h2>
-                    <div className="sidebar-scrollbar min-h-0 flex-1 overflow-y-auto pr-1">
-                      <div className="flex flex-col gap-0.5">
+                    <div className="relative min-h-0 flex-1">
+                      <div ref={agentSidebarScrollRef} className="sidebar-scrollbar h-full min-h-0 overflow-y-auto pr-1">
+                        <div className="flex flex-col gap-0.5">
                         {detectedAgents.map((agent) => {
                           const count = skillCountByAgent.get(agent.slug) ?? 0
                           const breakdown = skillBreakdownByAgent.get(
@@ -342,7 +397,9 @@ function LayoutInner({
                             />
                           )
                         })}
+                        </div>
                       </div>
+                      <ScrollFade viewportRef={agentSidebarScrollRef} surface="sidebar" />
                     </div>
                   </div>
                 )}
@@ -350,11 +407,6 @@ function LayoutInner({
                 {detectedAgents.length === 0 && <div className="flex-1 min-h-2" />}
 
                 <div className="shrink-0 flex flex-col gap-0.5 border-t border-border/50 pt-2">
-                  <NavLink to="/sync" className={navLinkClass} onClick={() => window.dispatchEvent(new Event('skiller:sync-home'))}>
-                    <Cloud className="size-4" aria-hidden="true" />
-                    Sync Center
-                    {syncNeedsReview && <span className="ml-auto size-1.5 rounded-full bg-amber-500" title="Sync changes need review" />}
-                  </NavLink>
                   <NavLink to="/settings" className={navLinkClass}>
                     <Settings className="size-4" aria-hidden="true" />
                     {t('sidebar.settings')}
@@ -370,7 +422,7 @@ function LayoutInner({
         {/* Main column: inset rounded panel — separate from sidebar; footer stays on canvas */}
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <main className="main-workspace-panel relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-border bg-card shadow-(--ds-shadow-layered-subtle) select-none">
-            <InsetScrollArea className="min-h-0 flex-1 pr-0" scroll={!['/sync', '/quality', '/library'].includes(location.pathname)}>
+<InsetScrollArea className="min-h-0 flex-1 pr-0" scroll={location.pathname !== '/library'}>
               {loading ? (
                 <div className="space-y-4 px-6 py-6 animate-pulse">
                   <div className="grid grid-cols-3 gap-4">
@@ -442,6 +494,18 @@ function LayoutInner({
           }}
         />
       )}
+      <ImportChoiceDialog
+        open={importChoiceOpen}
+        onClose={() => setImportChoiceOpen(false)}
+        onGit={() => {
+          setImportChoiceOpen(false)
+          setImportMode('git')
+        }}
+        onLocal={() => {
+          setImportChoiceOpen(false)
+          void handleImportLocal()
+        }}
+      />
     </div>
   )
 }
@@ -644,10 +708,10 @@ function AgentSidebarRow({
 
   return (
     <>
+      <Tooltip content={tooltip} side="right">
       <NavLink
         to={`/skills?agent=${agent.slug}`}
         className={() => navLinkClass({ isActive })}
-        title={tooltip}
         onContextMenu={openContextMenu}
       >
         <AgentIcon slug={agent.slug} />
@@ -656,6 +720,7 @@ function AgentSidebarRow({
           {busy ? '…' : totalCount}
         </span>
       </NavLink>
+      </Tooltip>
       {menu &&
         createPortal(
           <div

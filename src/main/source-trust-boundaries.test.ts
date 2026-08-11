@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { installFromMarketplace } from "./marketplace/install-from-marketplace";
 import { installSkillToProjectFromGit } from "./projects";
 import { addSkillRepo } from "./repos";
-import { RepoSession } from "./update";
+import { SkillSourceSession } from "dotagents/source-session";
 
 const roots: string[] = [];
 
@@ -24,7 +24,7 @@ describe("legacy remote skill boundaries", () => {
 		]) {
 			const source = readFileSync(join(import.meta.dir, relativePath), "utf8");
 			expect(source).not.toMatch(/simpleGit\s*\(\s*\)\s*\.clone|\.pull\s*\(/);
-			expect(source).toMatch(/checkoutReviewedGitSource|fastForwardReviewedGitSource/);
+			expect(source).toMatch(/checkoutReviewedGitSource|fastForwardReviewedGitSource|SkillSourceSession/);
 		}
 	});
 
@@ -46,6 +46,8 @@ describe("legacy remote skill boundaries", () => {
 		await expect(addSkillRepo(source, () => undefined)).rejects.toThrow(
 			"blocked because no device trust decision",
 		);
-		await expect(RepoSession.open(source)).rejects.toThrow("blocked because no device trust decision");
+		await expect(SkillSourceSession.open({ repository: source, sourcePolicy: {} })).rejects.toThrow(
+			"blocked because no device trust decision",
+		);
 	});
 });

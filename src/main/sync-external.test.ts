@@ -45,6 +45,18 @@ describe("external sync restore policy", () => {
 		expect(classifyExternalRestore(pinned, true, provenance, pinned.sha256)).toBe("unchanged");
 	});
 
+	it("treats a new source commit with identical reviewed content as metadata-only", () => {
+		const pinned = { ...gitSkill, ref: "b".repeat(40), sha256: "c".repeat(64) };
+		const provenance = {
+			source: "sync-reference",
+			repository: gitSkill.repository,
+			ref: gitSkill.ref,
+			skill_path: gitSkill.skill_path,
+		};
+		expect(classifyExternalRestore(pinned, true, provenance, pinned.sha256)).toBe("unchanged");
+		expect(classifyExternalRestore(pinned, true, provenance, "d".repeat(64))).toBe("conflict");
+	});
+
 	it("normalizes lockfile paths that point at SKILL.md", () => {
 		expect(externalSkillDirectory("SKILL.md")).toBe(".");
 		expect(externalSkillDirectory(".claude/skills/adapt/SKILL.md")).toBe(".claude/skills/adapt");

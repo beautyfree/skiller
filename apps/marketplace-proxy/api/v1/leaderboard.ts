@@ -3,7 +3,8 @@ import { proxySkillsShCatalog } from '../../src/catalog-proxy.js'
 export default {
   async fetch(request: Request): Promise<Response> {
     const requestUrl = new URL(request.url)
-    const sort = requestUrl.searchParams.get('sort') ?? 'newest'
+    const requestedSort = requestUrl.searchParams.get('sort') ?? 'all-time'
+    const sort = requestedSort === 'all-time' ? 'newest' : requestedSort
     const page = Number(requestUrl.searchParams.get('page') ?? '1')
     if (!['newest', 'trending', 'hot'].includes(sort) || !Number.isInteger(page) || page < 1 || page > 100) {
       return Response.json({ error: 'Invalid leaderboard request.', code: 'invalid_skill_identifier' }, { status: 400 })

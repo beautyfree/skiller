@@ -931,23 +931,6 @@ html.skiller-macos-vibrancy.dark .glass-surface-tint.glass-stat {
   border-radius: 6px;
 }
 
-@keyframes skiller-overflow-marquee {
-  from { transform: translate3d(0, 0, 0); }
-  to { transform: translate3d(calc(-1 * var(--skiller-marquee-distance)), 0, 0); }
-}
-
-.skiller-overflow-marquee-track {
-  display: inline-flex;
-  gap: 20px;
-  min-width: max-content;
-  animation: skiller-overflow-marquee var(--skiller-marquee-duration, 6s) linear infinite;
-  will-change: transform;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .skiller-overflow-marquee-track { animation: none; }
-}
-
 .dark .animate-skeleton {
   background: linear-gradient(90deg,
       rgba(255, 255, 255, 0.04) 25%,

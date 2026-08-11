@@ -27,6 +27,7 @@ artifacts
 /electron.vite.config.js
 *.local
 .playwright-mcp
+.vercel
 
 # Editor directories and files
 .vscode/

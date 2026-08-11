@@ -58,14 +58,22 @@ Skiller auto-detects any of these the moment they're installed — no setup requ
 
 ### Skills CLI compatibility
 
-Project skills use the shared `.agents/skills/` convention wherever an agent supports it. The universal-agent snapshot is pinned in [`agents/skills-sh-universal.json`](agents/skills-sh-universal.json) to the upstream [Skills CLI](https://github.com/vercel-labs/skills) commit; maintainers refresh it deliberately with:
+Project skills use the shared `.agents/skills/` convention wherever an agent supports it. The universal-agent snapshot is pinned in [`apps/desktop/agents/skills-sh-universal.json`](apps/desktop/agents/skills-sh-universal.json) to the upstream [Skills CLI](https://github.com/vercel-labs/skills) commit; maintainers refresh it deliberately with:
 
 ```bash
-node scripts/sync-skills-sh-universal-agents.mjs --refresh --ref <immutable-commit-sha>
-node scripts/sync-skills-sh-universal-agents.mjs --check
+node apps/desktop/scripts/sync-skills-sh-universal-agents.mjs --refresh --ref <immutable-commit-sha>
+node apps/desktop/scripts/sync-skills-sh-universal-agents.mjs --check
 ```
 
 Skiller also reads the Skills CLI v3 global `.skill-lock.json` (`$XDG_STATE_HOME/skills/.skill-lock.json` or `~/.agents/.skill-lock.json`) through its local API. It is strictly read-only, so Skills CLI remains the owner of update history and selected agents. Runtime agent context is exposed separately using `AI_AGENT` and `@vercel/detect-agent`; it never marks an agent as installed or changes install targets.
+
+## Repository layout
+
+- `apps/desktop` — the Electron application.
+- `apps/marketplace-proxy` — the optional Vercel gateway for skills.sh. It keeps OIDC credentials server-side and caches catalog, search, and file-preview responses.
+- `packages/marketplace-contracts` — the response contract shared by the gateway and its client boundary.
+
+`dotagents` remains an independent package: it owns portable agent-library behavior, not Marketplace discovery.
 
 ## Product Tour
 

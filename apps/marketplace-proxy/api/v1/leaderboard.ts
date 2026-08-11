@@ -1,5 +1,5 @@
-import { proxySkillsShCatalog } from '../../src/catalog-proxy'
-import { getRequestHeader, getRequestUrl, sendResponse } from '../../src/vercel-handler'
+import { proxySkillsShCatalog } from '../../src/catalog-proxy.js'
+import { getRequestHeader, getRequestUrl, sendResponse } from '../../src/vercel-handler.js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 export default async function handler(request: VercelRequest, response: VercelResponse): Promise<void> {

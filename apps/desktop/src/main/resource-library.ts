@@ -170,7 +170,7 @@ export function readResourceLibraryContent(input: {
     id: resource.id,
     path: resource.path,
     files,
-    content_path: relative(input.workspace, contentPath),
+    content_path: relative(input.workspace, contentPath).replace(/\\/g, '/'),
     content: imageMimeType ? '' : readFileSync(contentPath, 'utf8'),
     ...(imageMimeType ? { image_data_url: `data:${imageMimeType};base64,${readFileSync(contentPath).toString('base64')}` } : {}),
   }

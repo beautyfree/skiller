@@ -7,7 +7,6 @@ import {
   Loader2,
   ExternalLink,
   User,
-  Tag,
   Check,
   File,
   FolderKanban,
@@ -55,8 +54,6 @@ export default function Marketplace() {
   const [clawhubSort, setClawhubSort] = useState("default");
   const [searchQuery, setSearchQuery] = useState("");
   const [busyAgents, setBusyAgents] = useState<Map<string, BusyOp>>(new Map());
-  const [resolvedSummaries, setResolvedSummaries] = useState<Record<string, string>>({});
-  const requestedSummaries = useRef(new Set<string>());
   // selectedKey drives list highlight (instant); detail uses deferred key
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const { data: agents } = useAgents();
@@ -92,11 +89,6 @@ export default function Marketplace() {
   const sorts = source === "skills.sh" ? SKILLSSH_SORTS : CLAWHUB_SORTS;
   const setSort = source === "skills.sh" ? setSkillsshSort : setClawhubSort;
   const deferredSelectedKey = useDeferredValue(selectedKey);
-
-  const rememberSummary = useCallback((skill: MarketplaceSkill, summary: string) => {
-    const key = skillKey(skill);
-    setResolvedSummaries((current) => current[key] === summary ? current : { ...current, [key]: summary });
-  }, []);
 
   const {
     data: items,
@@ -161,49 +153,6 @@ export default function Marketplace() {
       return skillKey(list[index]);
     },
   });
-  const visibleSkillIndexes = virtualizer.getVirtualItems().slice(0, 12).map((item) => item.index).join(",");
-
-  // skills.sh's catalog intentionally contains only discovery metadata. Load a
-  // compact summary from SKILL.md only for rows the person can currently see;
-  // React Query deduplicates this with the detail-panel request and the gateway
-  // caches the snapshot, so opening the marketplace never fans out to the full
-  // catalog.
-  useEffect(() => {
-    if (source !== "skills.sh" || !items?.length) return;
-    const visibleSkills = virtualizer
-      .getVirtualItems()
-      .slice(0, 12)
-      .map((item) => items[item.index])
-      .filter((skill): skill is MarketplaceSkill => Boolean(skill?.repository))
-      .filter((skill) => !skill.description && !resolvedSummaries[skillKey(skill)])
-      .filter((skill) => !requestedSummaries.current.has(skillKey(skill)));
-    if (!visibleSkills.length) return;
-
-    for (const skill of visibleSkills) requestedSummaries.current.add(skillKey(skill));
-    void Promise.all(visibleSkills.map(async (skill) => {
-      const skillPath = skill.skill_path ?? `skills/${skill.name}`;
-      try {
-        const markdown = await queryClient.fetchQuery({
-          queryKey: ["skill-content", skill.repository, skill.catalog_id, skillPath, "SKILL.md"],
-          queryFn: async () => (await invoke("fetch_remote_skill_content", {
-            repoUrl: skill.repository!,
-            skillName: skill.name,
-            skillPath,
-            filePath: "SKILL.md",
-            source: skill.source,
-            catalogId: skill.catalog_id,
-          })) as string,
-          staleTime: 30 * 60 * 1000,
-          retry: false,
-        });
-        const summary = extractMarketplaceSummary(markdown);
-        if (summary) rememberSummary(skill, summary);
-      } catch {
-        // A missing description must not make the catalogue itself look broken.
-      }
-    }));
-  }, [items, queryClient, rememberSummary, resolvedSummaries, source, visibleSkillIndexes, virtualizer]);
-
   useEffect(() => {
     if (!selectedKey || !items?.length) return;
     const idx = items.findIndex((s) => skillKey(s) === selectedKey);
@@ -390,7 +339,7 @@ export default function Marketplace() {
                     <div className="pb-1">
                       <MarketplaceListItem
                         skill={skill}
-                        summary={resolvedSummaries[k]}
+                        summary={skill.description ?? undefined}
                         selected={selectedKey === k}
                         onSelect={setSelectedKey}
                       />
@@ -415,8 +364,7 @@ export default function Marketplace() {
         ) : selectedKey && selectedSkill ? (
           <MarketplaceSkillDetail
             skill={selectedSkill}
-            summary={resolvedSummaries[skillKey(selectedSkill)]}
-            onSummaryResolved={rememberSummary}
+            summary={undefined}
             busyAgents={busyAgents}
             detectedAgents={detectedAgents}
             localSkills={localSkills}
@@ -489,7 +437,6 @@ const MarketplaceListItem = memo(function MarketplaceListItem({
 function MarketplaceSkillDetail({
   skill,
   summary,
-  onSummaryResolved,
   busyAgents,
   detectedAgents,
   localSkills,
@@ -498,7 +445,6 @@ function MarketplaceSkillDetail({
 }: {
   skill: MarketplaceSkill;
   summary?: string;
-  onSummaryResolved: (skill: MarketplaceSkill, summary: string) => void;
   busyAgents: Map<string, BusyOp>;
   detectedAgents: AgentConfig[];
   localSkills: Skill[] | undefined;
@@ -613,10 +559,6 @@ function MarketplaceSkillDetail({
   const remoteContent = remoteDocument ? extractMarkdownBody(remoteDocument) : null;
   const remoteSummary = remoteDocument ? extractFrontmatterDescription(remoteDocument) : null;
 
-  useEffect(() => {
-    if (!skill.description && remoteSummary) onSummaryResolved(skill, remoteSummary);
-  }, [skill, remoteSummary, onSummaryResolved]);
-
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
@@ -655,11 +597,6 @@ function MarketplaceSkillDetail({
                     {skill.repository && (
                       <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => openUrl(skill.repository!)}>
                         <ExternalLink className="size-3.5" />{t("marketplace.viewRepository")}
-                      </Button>
-                    )}
-                    {skill.source === "skills.sh" && skill.url && (
-                      <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => openUrl(skill.url!)}>
-                        <Tag className="size-3.5" />{t("marketplace.viewOnSkillsSh")}
                       </Button>
                     )}
                   </div>
@@ -718,15 +655,6 @@ function MarketplaceSkillDetail({
             <span className="inline-flex items-center rounded-md bg-secondary px-2 py-0.5 text-[10px] font-medium">
               {skill.source}
             </span>
-            {skill.source === "skills.sh" && skill.url && (
-              <button
-                type="button"
-                onClick={() => openUrl(skill.url!)}
-                className="inline-flex items-center gap-1 text-xs text-primary transition-colors hover:underline"
-              >
-                View on skills.sh <ExternalLink className="size-3" />
-              </button>
-            )}
             {skill.installs != null && (
               <span className="text-xs text-muted-foreground tabular-nums">
                 {formatInstalls(skill.installs)} {t("marketplace.installs").toLowerCase()}
@@ -778,6 +706,17 @@ function MarketplaceSkillDetail({
                 >
                   {skill.repository}
                   <ExternalLink className="size-3 shrink-0 mt-0.5" />
+                </button>
+              </InfoRow>
+            )}
+            {skill.url && (
+              <InfoRow label="URL">
+                <button
+                  className="inline-flex items-start gap-1 break-all text-left font-mono text-xs text-primary hover:underline"
+                  onClick={() => openUrl(skill.url!)}
+                >
+                  {skill.url}
+                  <ExternalLink className="mt-0.5 size-3 shrink-0" />
                 </button>
               </InfoRow>
             )}
@@ -878,19 +817,6 @@ function extractFrontmatterDescription(markdown: string): string | null {
   if (!match) return null;
   const value = match[1].trim().replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, "$1$2").trim();
   return value || null;
-}
-
-function extractMarketplaceSummary(markdown: string): string | null {
-  const frontmatter = extractFrontmatterDescription(markdown);
-  if (frontmatter) return frontmatter;
-
-  const body = extractMarkdownBody(markdown)
-    .replace(/^#{1,6}\s+.*$/gm, "")
-    .replace(/^>\s?/gm, "")
-    .trim();
-  const paragraph = body.split(/\n\s*\n/).find((value) => value.trim().length > 0)?.trim() ?? "";
-  const normalized = paragraph.replace(/\s+/g, " ").trim();
-  return normalized ? normalized.slice(0, 220) : null;
 }
 
 function InfoSection({

@@ -425,7 +425,7 @@ function LayoutInner({
 <InsetScrollArea className="min-h-0 flex-1 pr-0" scroll={location.pathname !== '/library'}>
               {loading ? (
                 <div className="space-y-4 px-6 py-6 animate-pulse">
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,13rem),1fr))] gap-4">
                     <div className="h-24 rounded-lg bg-muted/30" />
                     <div className="h-24 rounded-lg bg-muted/30" />
                     <div className="h-24 rounded-lg bg-muted/30" />

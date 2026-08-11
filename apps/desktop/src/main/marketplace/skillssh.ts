@@ -27,6 +27,7 @@ function parseSkillsApiResponse(jsonStr: string): MarketplaceSkill[] {
 		name?: string;
 		installs?: number;
 		installUrl?: string | null;
+		description?: string | null;
 		id?: string;
 		url?: string | null;
 	};
@@ -41,7 +42,7 @@ function parseSkillsApiResponse(jsonStr: string): MarketplaceSkill[] {
 		const owner = skill.source.split("/", 1)[0] ?? skill.source;
 		return [{
 			name: skill.name ?? skill.slug,
-			description: null,
+			description: skill.description ?? null,
 			author: owner,
 			repository: skill.installUrl ?? (skill.source.includes("/") ? `https://github.com/${skill.source}` : null),
 			catalog_id: skill.id ?? `${skill.source}/${skill.slug}`,

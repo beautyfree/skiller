@@ -211,7 +211,7 @@ export default function Dashboard() {
           </div>
         </div>
         {agentsLoading ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,13rem),1fr))] gap-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="rounded-2xl p-4 glass-surface-tint">
                 <div className="flex items-center gap-3">
@@ -230,7 +230,7 @@ export default function Dashboard() {
             {t("dashboard.noAgentsMatch")}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,13rem),1fr))] gap-3">
             {filteredAgents.map((agent) => {
               const agentSkillCount = skillCountByAgent.get(agent.slug) ?? 0;
 

@@ -25,6 +25,7 @@ import { InsetScrollArea } from "@/mainview/components/InsetScrollArea";
 import SearchInput from "@/mainview/components/SearchInput";
 import { Button } from "@/mainview/components/ui/button";
 import { Tooltip } from "@/mainview/components/ui/tooltip";
+import { OverflowMarquee } from "@/mainview/components/OverflowMarquee";
 import { useToast } from "@/mainview/components/ToastProvider";
 import InstallToProjectPicker from "@/mainview/components/InstallToProjectPicker";
 import { cn } from "@/mainview/lib/utils";
@@ -446,6 +447,9 @@ const MarketplaceListItem = memo(function MarketplaceListItem({
   onSelect: (key: string) => void;
 }) {
   const key = skillKey(skill);
+  const [hovered, setHovered] = useState(false);
+  const revealOverflow = selected || hovered;
+  const description = skill.description ?? summary;
   return (
     <button
       type="button"
@@ -456,21 +460,21 @@ const MarketplaceListItem = memo(function MarketplaceListItem({
           : "border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]",
       )}
       onClick={() => onSelect(key)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setHovered(true)}
+      onBlur={() => setHovered(false)}
     >
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-medium truncate">
-          {skill.name}
-        </h3>
+        <h3 className="min-w-0 flex-1 text-sm font-medium"><OverflowMarquee active={revealOverflow}>{skill.name}</OverflowMarquee></h3>
         {skill.installs != null && (
           <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
             {formatInstalls(skill.installs)}
           </span>
         )}
       </div>
-      {(skill.description ?? summary) && (
-        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-          {skill.description ?? summary}
-        </p>
+      {description && (
+        <p className="mt-0.5 text-xs text-muted-foreground"><OverflowMarquee active={revealOverflow}>{description}</OverflowMarquee></p>
       )}
       <div className="flex items-center gap-2 mt-1">
         {skill.author && (

@@ -43,6 +43,7 @@ import {
 	formatApproxTok,
 } from "@/shared/skill-footprint";
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
+import { OverflowMarquee } from "@/mainview/components/OverflowMarquee";
 import { useSkills, installedAgents, allAgents, type Skill } from "@/mainview/hooks/useSkills";
 import { SkillAgentList, installedAgentCount, busyKey, type BusyOp } from "@/mainview/components/SkillAgentList";
 import { useRepos } from "@/mainview/hooks/useRepos";
@@ -1490,6 +1491,8 @@ const SkillListItem = memo(function SkillListItem({
   onToggleBatch: (skillId: string) => void;
 }) {
   const { t } = useTranslation();
+  const [hovered, setHovered] = useState(false);
+  const revealOverflow = selected || hovered;
   const directSlugs = directInstallSlugs(skill);
   const inheritedSlugs = skill.installations
     .filter((i) => i.is_inherited)
@@ -1520,9 +1523,13 @@ const SkillListItem = memo(function SkillListItem({
           }
           onSelect(skill);
         }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => setHovered(true)}
+        onBlur={() => setHovered(false)}
       >
         <div className="flex min-w-0 items-center gap-1.5">
-          <h3 className="min-w-0 flex-1 truncate text-sm font-medium">{skill.name}</h3>
+          <h3 className="min-w-0 flex-1 text-sm font-medium"><OverflowMarquee active={revealOverflow}>{skill.name}</OverflowMarquee></h3>
           {isRecentlyAdded(skill) && (
             <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
               New
@@ -1530,9 +1537,7 @@ const SkillListItem = memo(function SkillListItem({
           )}
         </div>
         {skill.description && (
-          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-            {skill.description}
-          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground"><OverflowMarquee active={revealOverflow}>{skill.description}</OverflowMarquee></p>
         )}
         <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-medium tabular-nums text-muted-foreground/90">
 		  {skill.scope.type === "SharedLibrary" && (

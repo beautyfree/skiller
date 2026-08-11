@@ -83,6 +83,27 @@ function sourceUrl(source: string): string | null {
   }
 }
 
+function resourceSummary(workspace: string, resourcePath: string): string | undefined {
+  try {
+    const candidate = resolve(workspace, resourcePath)
+    if (!isWithin(workspace, candidate)) return undefined
+    const candidateMetadata = lstatSync(candidate)
+    if (candidateMetadata.isSymbolicLink()) return undefined
+    const source = candidateMetadata.isDirectory() ? join(candidate, 'SKILL.md') : candidate
+    const metadata = lstatSync(source)
+    if (metadata.isSymbolicLink() || !metadata.isFile() || metadata.size > 64 * 1024) return undefined
+    const text = readFileSync(source, 'utf8').replace(/\r\n/g, '\n')
+    const frontmatter = text.match(/^---\n([\s\S]*?)\n---(?:\n|$)/)
+    const described = frontmatter?.[1].match(/^description:\s*["']?(.+?)["']?\s*$/m)?.[1]
+    const body = text.replace(/^---\n[\s\S]*?\n---(?:\n|$)/, '')
+    const paragraph = body.split(/\n\s*\n/).map((part) => part.replace(/^#{1,6}\s+.*$/gm, '').replace(/^>\s?/gm, '').trim()).find(Boolean)
+    const summary = (described ?? paragraph)?.replace(/\s+/g, ' ').trim()
+    return summary ? summary.slice(0, 220) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function skillSourceLabels(workspace: string): Map<string, { label: string; url?: string }> {
   const configPath = join(workspace, 'dotagents.yaml')
   if (!existsSync(configPath)) return new Map()
@@ -121,12 +142,14 @@ export function readResourceLibraryOverview(input: {
     const parts = skillPath.split('/')
     const id = parts[parts.length - 1] ?? skillPath
     const provenance = sourceLabels.get(id)
-    return { key: `skill:${id}`, kind: 'skill', id, path: skillPath, source: 'skill-library', source_label: provenance?.label ?? 'This library', ...(provenance?.url ? { source_url: provenance.url } : {}) }
+    const description = resourceSummary(input.workspace, skillPath)
+    return { key: `skill:${id}`, kind: 'skill', id, path: skillPath, source: 'skill-library', source_label: provenance?.label ?? 'This library', ...(description ? { description } : {}), ...(provenance?.url ? { source_url: provenance.url } : {}) }
   })
   for (const resource of v2) {
     const key = `${resource.kind}:${resource.id}`
     if (resources.some((entry) => entry.key === key)) continue
-    resources.push({ key, kind: resource.kind, id: resource.id, path: resource.path, source: 'resource-v2', source_label: 'Library resource' })
+    const description = resourceSummary(input.workspace, resource.path)
+    resources.push({ key, kind: resource.kind, id: resource.id, path: resource.path, source: 'resource-v2', source_label: 'Library resource', ...(description ? { description } : {}) })
   }
   resources.sort((left, right) => left.key.localeCompare(right.key, 'en'))
   return { profile_id: input.profileId, mode: input.mode, changed: input.changed, resources }

@@ -592,6 +592,8 @@ export type DotagentsResourceOverviewJson = {
     kind: DotagentsResourceKindJson;
     id: string;
     path: string;
+    /** A bounded human-readable summary extracted from the resource itself. */
+    description?: string;
     source: "skill-library" | "resource-v2";
     /** Short portable provenance label; never exposes a local machine path. */
     source_label: string;

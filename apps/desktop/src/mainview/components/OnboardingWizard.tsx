@@ -72,6 +72,7 @@ export default function OnboardingWizard({
 								skillName: s.name,
 								skillPath: s.skill_path,
 								source: s.source,
+								catalogId: s.catalog_id,
 							})) as string;
 							const frontmatter = parseFrontmatter(md);
 							if (frontmatter.description)

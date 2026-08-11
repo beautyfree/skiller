@@ -36,6 +36,8 @@ interface MarketplaceSkill {
   description: string | null;
   author: string | null;
   repository: string | null;
+  catalog_id?: string | null;
+  url?: string | null;
   skill_path?: string | null;
   installs: number | null;
   source: string;
@@ -183,13 +185,14 @@ export default function Marketplace() {
       const skillPath = skill.skill_path ?? `skills/${skill.name}`;
       try {
         const markdown = await queryClient.fetchQuery({
-          queryKey: ["skill-content", skill.repository, skillPath, "SKILL.md"],
+          queryKey: ["skill-content", skill.repository, skill.catalog_id, skillPath, "SKILL.md"],
           queryFn: async () => (await invoke("fetch_remote_skill_content", {
             repoUrl: skill.repository!,
             skillName: skill.name,
             skillPath,
             filePath: "SKILL.md",
             source: skill.source,
+            catalogId: skill.catalog_id,
           })) as string,
           staleTime: 30 * 60 * 1000,
           retry: false,
@@ -571,17 +574,18 @@ function MarketplaceSkillDetail({
   // Fetch the repository tree first. skills.sh identifies a skill by its path,
   // which is not reliably derivable from the visible display name.
   const { data: remoteFiles, isLoading: filesLoading, isError: filesFailed, refetch: refetchFiles } = useQuery<string[]>({
-    queryKey: ["skill-files", skill.repository, skillPath, skill.name],
+    queryKey: ["skill-files", skill.repository, skill.catalog_id, skillPath, skill.name],
     queryFn: async () => {
-      if (!skill.repository) return [];
+      if (!skill.repository && !(skill.source === "skills.sh" && skill.catalog_id)) return [];
       return (await invoke("list_remote_skill_files", {
-        repoUrl: skill.repository,
+        repoUrl: skill.repository ?? "",
         skillName: skill.name,
         skillPath,
         source: skill.source,
+        catalogId: skill.catalog_id,
       })) as string[];
     },
-    enabled: !!skill.repository && !isStale,
+    enabled: (!!skill.repository || (skill.source === "skills.sh" && !!skill.catalog_id)) && !isStale,
     staleTime: 30 * 60 * 1000,
     retry: false,
   });
@@ -595,20 +599,21 @@ function MarketplaceSkillDetail({
   const { data: remoteDocument, isLoading: contentLoading, isError: contentFailed, refetch: refetchContent } = useQuery<
     string | null
   >({
-    queryKey: ["skill-content", skill.repository, skillPath, activeRemoteFile],
+    queryKey: ["skill-content", skill.repository, skill.catalog_id, skillPath, activeRemoteFile],
     queryFn: async () => {
-      const repoUrl = skill.repository;
-      if (!repoUrl || !activeRemoteFile) return null;
+      const repoUrl = skill.repository ?? "";
+      if ((!repoUrl && !(skill.source === "skills.sh" && skill.catalog_id)) || !activeRemoteFile) return null;
       const text = (await invoke("fetch_remote_skill_content", {
         repoUrl,
         skillName: skill.name,
         skillPath,
         filePath: activeRemoteFile,
         source: skill.source,
+        catalogId: skill.catalog_id,
       })) as string;
       return text;
     },
-    enabled: !!skill.repository && !!activeRemoteFile && !isStale && !filesLoading,
+    enabled: (!!skill.repository || (skill.source === "skills.sh" && !!skill.catalog_id)) && !!activeRemoteFile && !isStale && !filesLoading,
     staleTime: 30 * 60 * 1000, // SKILL.md content rarely changes; cache 30 min
     retry: false,
   });
@@ -659,8 +664,8 @@ function MarketplaceSkillDetail({
                         <ExternalLink className="size-3.5" />{t("marketplace.viewRepository")}
                       </Button>
                     )}
-                    {skill.source === "skills.sh" && (
-                      <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => openUrl("https://skills.sh")}>
+                    {skill.source === "skills.sh" && skill.url && (
+                      <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => openUrl(skill.url!)}>
                         <Tag className="size-3.5" />{t("marketplace.viewOnSkillsSh")}
                       </Button>
                     )}
@@ -720,6 +725,15 @@ function MarketplaceSkillDetail({
             <span className="inline-flex items-center rounded-md bg-secondary px-2 py-0.5 text-[10px] font-medium">
               {skill.source}
             </span>
+            {skill.source === "skills.sh" && skill.url && (
+              <button
+                type="button"
+                onClick={() => openUrl(skill.url!)}
+                className="inline-flex items-center gap-1 text-xs text-primary transition-colors hover:underline"
+              >
+                View on skills.sh <ExternalLink className="size-3" />
+              </button>
+            )}
             {skill.installs != null && (
               <span className="text-xs text-muted-foreground tabular-nums">
                 {formatInstalls(skill.installs)} {t("marketplace.installs").toLowerCase()}

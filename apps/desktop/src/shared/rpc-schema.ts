@@ -254,6 +254,8 @@ export type MarketplaceSkillJson = {
   description?: string | null;
   author?: string | null;
   repository?: string | null;
+  catalog_id?: string | null;
+  url?: string | null;
   skill_path?: string | null;
   installs?: number | null;
   source: string;
@@ -1280,8 +1282,8 @@ export type AppRPCSchema = {
       read_skill_content: { params: { path: string }; response: string };
       write_skill_content: { params: { path: string; content: string }; response: void };
       install_from_git: { params: { repoUrl: string; skillRelativePath: string; targetAgents: string[] }; response: void };
-      fetch_remote_skill_content: { params: { repoUrl: string; skillName?: string | null; skillPath?: string | null; filePath?: string | null; source?: string | null }; response: string };
-      list_remote_skill_files: { params: { repoUrl: string; skillName?: string | null; skillPath?: string | null; source?: string | null }; response: string[] };
+      fetch_remote_skill_content: { params: { repoUrl: string; skillName?: string | null; skillPath?: string | null; filePath?: string | null; source?: string | null; catalogId?: string | null }; response: string };
+      list_remote_skill_files: { params: { repoUrl: string; skillName?: string | null; skillPath?: string | null; source?: string | null; catalogId?: string | null }; response: string[] };
       fetch_skillssh: { params: { sort: string; page: number }; response: MarketplaceSkillJson[] };
       fetch_clawhub: { params: { endpoint: string; params: Record<string, string> }; response: MarketplaceSkillJson[] };
       search_marketplace: { params: { query: string; source: string }; response: MarketplaceSkillJson[] };

@@ -27,6 +27,8 @@ function parseSkillsApiResponse(jsonStr: string): MarketplaceSkill[] {
 		name?: string;
 		installs?: number;
 		installUrl?: string | null;
+		id?: string;
+		url?: string | null;
 	};
 	let parsed: { data?: ApiSkill[] };
 	try {
@@ -42,6 +44,8 @@ function parseSkillsApiResponse(jsonStr: string): MarketplaceSkill[] {
 			description: null,
 			author: owner,
 			repository: skill.installUrl ?? (skill.source.includes("/") ? `https://github.com/${skill.source}` : null),
+			catalog_id: skill.id ?? `${skill.source}/${skill.slug}`,
+			url: skill.url ?? `https://www.skills.sh/${skill.source}/${skill.slug}`,
 			skill_path: `skills/${skill.slug}`,
 			installs: skill.installs ?? null,
 			source: "skills.sh" as const,

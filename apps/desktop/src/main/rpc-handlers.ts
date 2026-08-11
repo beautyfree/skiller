@@ -1824,11 +1824,12 @@ async function fetchRemoteSkillContent(
   skillPath?: string | null,
   filePath?: string | null,
   source?: string | null,
+  catalogId?: string | null,
 ): Promise<string> {
   const clawhubSource = remoteClawhubSkillSource(repoUrl)
   if (clawhubSource) return fetchClawhubSkillContent(clawhubSource, filePath)
   if (source === 'skills.sh') {
-    const snapshot = await fetchSkillsShGatewaySnapshot(repoUrl, skillPath, skillName)
+    const snapshot = await fetchSkillsShGatewaySnapshot(repoUrl, skillPath, skillName, catalogId)
     const content = snapshot ? fileFromGatewaySnapshot(snapshot, filePath) : null
     if (content) return content
     throw new Error('Could not load this skill from the marketplace gateway')
@@ -1859,11 +1860,12 @@ async function listRemoteSkillFiles(
   skillName?: string | null,
   skillPath?: string | null,
   source?: string | null,
+  catalogId?: string | null,
 ): Promise<string[]> {
   const clawhubSource = remoteClawhubSkillSource(repoUrl)
   if (clawhubSource) return listClawhubSkillFiles(clawhubSource)
   if (source === 'skills.sh') {
-    const snapshot = await fetchSkillsShGatewaySnapshot(repoUrl, skillPath, skillName)
+    const snapshot = await fetchSkillsShGatewaySnapshot(repoUrl, skillPath, skillName, catalogId)
     if (snapshot) return filesFromGatewaySnapshot(snapshot)
     throw new Error('Could not list this skill from the marketplace gateway')
   }
@@ -3323,17 +3325,19 @@ export function createRequestHandlers(ctx: {
       skillPath?: string | null
       filePath?: string | null
       source?: string | null
+      catalogId?: string | null
     }) => {
-      const { repoUrl, skillName, skillPath, filePath, source } = params
-      return fetchRemoteSkillContent(repoUrl, skillName, skillPath, filePath, source)
+      const { repoUrl, skillName, skillPath, filePath, source, catalogId } = params
+      return fetchRemoteSkillContent(repoUrl, skillName, skillPath, filePath, source, catalogId)
     },
     list_remote_skill_files: async (params: {
       repoUrl: string
       skillName?: string | null
       skillPath?: string | null
       source?: string | null
+      catalogId?: string | null
     }) => {
-      return listRemoteSkillFiles(params.repoUrl, params.skillName, params.skillPath, params.source)
+      return listRemoteSkillFiles(params.repoUrl, params.skillName, params.skillPath, params.source, params.catalogId)
     },
     fetch_skillssh: async (params: {
       sort: string

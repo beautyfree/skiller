@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { resolve } from "node:path";
 import { userHomePathFor } from "./fsutil";
 
 describe("userHomePathFor", () => {
@@ -8,7 +9,7 @@ describe("userHomePathFor", () => {
 
 	test("supports an isolated absolute home for live application QA", () => {
 		expect(userHomePathFor("/Users/person", { SKILLER_TEST_HOME: "/private/tmp/skiller-live-home" }))
-			.toBe("/private/tmp/skiller-live-home");
+			.toBe(resolve("/private/tmp/skiller-live-home"));
 	});
 
 	test("rejects a relative isolated home", () => {

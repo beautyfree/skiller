@@ -15,6 +15,11 @@ People invest time assembling an effective set of agent skills. That set is part
 
 Skiller must provide a personal skill library that can be backed by a private or public Git remote (GitHub, GitLab, self-hosted Git, or another compatible remote), restored on another machine, and managed without destroying local work.
 
+**Scope boundary:** Agent Library inventories only global skills: the shared
+store and supported agents' global skill directories. Project-local skills are
+owned by their project repository and are deliberately never scanned, shown,
+or published by this feature.
+
 “Protect” is not the primary concept. The product is about carrying, preserving, and optionally sharing a personal skill library.
 
 ## What exists today
@@ -39,6 +44,9 @@ The current Sync Center is a safe export-and-restore foundation, not yet full bi
 - An unresolved external-source conflict is intentionally blocked instead of being replaced. Review shows the source and pin and can record a machine-local "keep this external local copy" decision. That decision expires if the remote origin or pin changes. An in-app diff/merge and a deliberate "adopt as local" action are still needed.
 - The clean-second-device fixture currently covers bundled restore and an isolated local-Git external source. Hosted Git authentication and each supported OS still need live verification.
 - A skill present in the shared `.agents/skills` library must not be attributed to every compatible agent. Only actual links or independent copies establish that relationship.
+- A direct skill in an agent's global directory remains visible even if that
+  directory is the only evidence of the agent. This affects inventory only;
+  it does not claim the agent is installed or make it a write target.
 
 ## Ecosystem findings
 

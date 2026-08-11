@@ -6,6 +6,10 @@
     {
       "source": "/health",
       "destination": "/api/health"
+    },
+    {
+      "source": "/api/v1/skills/:identifier*",
+      "destination": "/api/v1/skill-snapshot?identifier=:identifier*"
     }
   ]
 }

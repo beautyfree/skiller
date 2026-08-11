@@ -70,6 +70,8 @@ export default function OnboardingWizard({
 							const md = (await invoke("fetch_remote_skill_content", {
 								repoUrl: s.repository,
 								skillName: s.name,
+								skillPath: s.skill_path,
+								source: s.source,
 							})) as string;
 							const frontmatter = parseFrontmatter(md);
 							if (frontmatter.description)

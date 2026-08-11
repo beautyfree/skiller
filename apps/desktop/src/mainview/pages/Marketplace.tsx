@@ -54,6 +54,7 @@ export default function Marketplace() {
   const [searchQuery, setSearchQuery] = useState("");
   const [busyAgents, setBusyAgents] = useState<Map<string, BusyOp>>(new Map());
   const [resolvedSummaries, setResolvedSummaries] = useState<Record<string, string>>({});
+  const requestedSummaries = useRef(new Set<string>());
   // selectedKey drives list highlight (instant); detail uses deferred key
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const { data: agents } = useAgents();
@@ -158,6 +159,47 @@ export default function Marketplace() {
       return skillKey(list[index]);
     },
   });
+  const visibleSkillIndexes = virtualizer.getVirtualItems().slice(0, 12).map((item) => item.index).join(",");
+
+  // skills.sh's catalog intentionally contains only discovery metadata. Load a
+  // compact summary from SKILL.md only for rows the person can currently see;
+  // React Query deduplicates this with the detail-panel request and the gateway
+  // caches the snapshot, so opening the marketplace never fans out to the full
+  // catalog.
+  useEffect(() => {
+    if (source !== "skills.sh" || !items?.length) return;
+    const visibleSkills = virtualizer
+      .getVirtualItems()
+      .slice(0, 12)
+      .map((item) => items[item.index])
+      .filter((skill): skill is MarketplaceSkill => Boolean(skill?.repository))
+      .filter((skill) => !skill.description && !resolvedSummaries[skillKey(skill)])
+      .filter((skill) => !requestedSummaries.current.has(skillKey(skill)));
+    if (!visibleSkills.length) return;
+
+    for (const skill of visibleSkills) requestedSummaries.current.add(skillKey(skill));
+    void Promise.all(visibleSkills.map(async (skill) => {
+      const skillPath = skill.skill_path ?? `skills/${skill.name}`;
+      try {
+        const markdown = await queryClient.fetchQuery({
+          queryKey: ["skill-content", skill.repository, skillPath, "SKILL.md"],
+          queryFn: async () => (await invoke("fetch_remote_skill_content", {
+            repoUrl: skill.repository!,
+            skillName: skill.name,
+            skillPath,
+            filePath: "SKILL.md",
+            source: skill.source,
+          })) as string,
+          staleTime: 30 * 60 * 1000,
+          retry: false,
+        });
+        const summary = extractMarketplaceSummary(markdown);
+        if (summary) rememberSummary(skill, summary);
+      } catch {
+        // A missing description must not make the catalogue itself look broken.
+      }
+    }));
+  }, [items, queryClient, rememberSummary, resolvedSummaries, source, visibleSkillIndexes, virtualizer]);
 
   useEffect(() => {
     if (!selectedKey || !items?.length) return;
@@ -825,6 +867,19 @@ function extractFrontmatterDescription(markdown: string): string | null {
   if (!match) return null;
   const value = match[1].trim().replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, "$1$2").trim();
   return value || null;
+}
+
+function extractMarketplaceSummary(markdown: string): string | null {
+  const frontmatter = extractFrontmatterDescription(markdown);
+  if (frontmatter) return frontmatter;
+
+  const body = extractMarkdownBody(markdown)
+    .replace(/^#{1,6}\s+.*$/gm, "")
+    .replace(/^>\s?/gm, "")
+    .trim();
+  const paragraph = body.split(/\n\s*\n/).find((value) => value.trim().length > 0)?.trim() ?? "";
+  const normalized = paragraph.replace(/\s+/g, " ").trim();
+  return normalized ? normalized.slice(0, 220) : null;
 }
 
 function InfoSection({

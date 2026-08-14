@@ -88,16 +88,11 @@ jobs:
             echo "Draft ${REQUESTED_TAG} does not expose a target commit; rerun it through Release Please." >&2
             exit 1
           }
-          if [[ -n "${REQUESTED_TARGET}" ]]; then
-            tag_target="$(git ls-remote "https://github.com/${REPOSITORY}.git" "refs/tags/${REQUESTED_TAG}^{}" | awk 'NR == 1 { print $1 }')"
-            if [[ -z "${tag_target}" ]]; then
-              tag_target="$(git ls-remote "https://github.com/${REPOSITORY}.git" "refs/tags/${REQUESTED_TAG}" | awk 'NR == 1 { print $1 }')"
-            fi
-            if [[ "${tag_target}" != "${REQUESTED_TARGET}" ]]; then
-              echo "Tag ${REQUESTED_TAG} resolves to ${tag_target:-nothing}, expected ${REQUESTED_TARGET}." >&2
-              exit 1
-            fi
-          fi
+          # Draft releases deliberately have no Git tag yet. Release Please
+          # publishes that tag alongside the release, so validating it here
+          # makes every fresh draft fail before any build can start. The
+          # reusable workflow receives the immutable merge SHA directly from
+          # Release Please and checks out that exact target below.
 
           if [[ "$(jq -r '.draft' <<<"${release}")" != "true" ]]; then
             echo "Release $(jq -r '.tag_name' <<<"${release}") is already published; refusing to replace its assets."

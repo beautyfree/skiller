@@ -22,6 +22,10 @@ on:
         description: Draft release tag to rebuild or publish (for example v0.2.24)
         required: true
         type: string
+      target:
+        description: Immutable commit SHA targeted by the draft release
+        required: true
+        type: string
 
 permissions: {}
 

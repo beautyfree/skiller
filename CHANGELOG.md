@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.3](https://github.com/beautyfree/skiller/compare/v0.3.2...v0.3.3) (2026-08-14)
+
+
+### Bug Fixes
+
+* **library:** keep selected skills in view ([d6a49ae](https://github.com/beautyfree/skiller/commit/d6a49ae5ba89b5b09b3864f428db3211a191c301))
+* **release:** allow release please drafts without tags ([70bc600](https://github.com/beautyfree/skiller/commit/70bc600b840ca560df1035f6a59982b3a29cbf9b))
+
 ## [0.3.2](https://github.com/beautyfree/skiller/compare/v0.3.1...v0.3.2) (2026-08-14)
 
 

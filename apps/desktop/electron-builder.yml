@@ -1,5 +1,9 @@
 appId: com.beautyfree.skiller
 productName: Skiller
+# The desktop package is installed through Bun's root workspace, so
+# electron-builder cannot reliably infer Electron from a nested node_modules
+# directory. Keep the packaging runtime explicit and reproducible.
+electronVersion: 41.2.1
 # Match our GitHub Releases naming so download URLs stay predictable.
 artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
 copyright: Copyright © 2026 Skiller Contributors

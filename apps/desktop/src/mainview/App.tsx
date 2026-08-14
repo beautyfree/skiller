@@ -330,7 +330,9 @@ function AppInner() {
         open={closeDialogOpen}
         onDone={() => setCloseDialogOpen(false)}
       />
-      <AppUpdateBanner />
+      {/* Settings already owns the full update state and its actions. Showing
+          the global banner there duplicates the same check and its progress. */}
+      {!location.pathname.startsWith('/settings') && <AppUpdateBanner />}
       <ReleaseNotesDialog
         open={releaseNotesVersion !== null}
         notes={releaseNotes as ReleaseNote[]}

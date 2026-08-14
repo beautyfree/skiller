@@ -276,7 +276,7 @@ jobs:
           # negative. Electron-builder produces the same packaged application
           # in linux-unpacked; launch that bundle under Xvfb and separately
           # assert that the distributable AppImage exists above.
-          app="$(find artifacts -path '*linux-unpacked*/skiller' -type f -print -quit)"
+          app="$(find artifacts -path '*linux-unpacked*/Skiller' -type f -print -quit)"
           [[ -n "$app" ]] || { echo "Unpacked Linux application was not produced"; exit 1; }
           chmod +x "$app"
           set +e

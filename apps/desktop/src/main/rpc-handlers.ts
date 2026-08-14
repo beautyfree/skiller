@@ -162,7 +162,8 @@ import { bootstrapSyncLedgerFromManifest, makeSyncLedger, readSyncLedger, record
 import { readRestoreJournalAt, recoverRestoreJournalAt, syncJournalPath } from './sync-journal'
 import { checkGitHubConnection, createGitHubSyncRepository, GITHUB_DEVICE_FLOW_CLIENT_ID, listGitHubSyncRepositories, planGitHubSyncRepository, preflightGitHubSyncRepository } from './github-sync'
 import { checkGitLabConnection, createGitLabSyncProject, GITLAB_DEVICE_FLOW_CLIENT_ID, listGitLabSyncProjects, planGitLabSyncProject, preflightGitLabSyncProject } from './gitlab-sync'
-import { githubGitEnvironment, gitlabGitEnvironment, readProviderToken, writeProviderToken } from './provider-credentials'
+import { githubGitEnvironment, gitlabGitEnvironment, hasStoredProviderToken, providerForRemoteUrl, readProviderToken, writeProviderToken } from './provider-credentials'
+import { mayReadProviderCredentials, type ProviderCredentialAccess } from './sync-credential-policy'
 import { applySyncPublishFiles, createSyncPublishPlan, mergeBundledUpdateIntoManifest, type SyncPublishCandidate } from './sync-publish'
 import { applySyncRestorePlan, createSyncRestorePlan, syncRestorePlanId } from './sync-restore'
 import { canonicalSyncAgentRouting, clearLocalSyncLibraryExclusions, clearLocalSyncRecentlyAddedSkill, isCanonicalSyncLibrary, markLocalSyncSkillsRecentlyAdded, planCanonicalSyncLibrary, readCanonicalSyncLock, readLocalSyncLibraryExclusions, readLocalSyncRecentlyAddedSkills, readSyncManifestFromWorkspace, writeLocalSyncAgentSelection, writeLocalSyncLibraryExclusion, writeLocalSyncSourceSecurityPolicy } from './sync-dotagents'
@@ -413,7 +414,7 @@ async function planSyncCenterConnection(params: {
   assertSyncStableId(profileId)
   const agentSlugs = selectedDetectedAgentSlugs(params.agentSlugs, loadDetectedAgents('sync_center_connect_preview'))
   const sourcePolicy = reviewedRemoteSourcePolicy(remoteUrl, params.minimumReleaseAgeMinutes)
-  const transport = await gitTransportForRemote(remoteUrl)
+  const transport = await gitTransportForRemote(remoteUrl, 'user-action')
   const clone = await planSyncWorkspaceClone(remoteUrl, syncWorkspacePath(profileId), sourcePolicy, signal, transport?.port)
   const payload = {
     kind: 'skiller-sync-connect' as const,
@@ -455,7 +456,7 @@ async function cloneSyncProfile(params: {
     ? undefined
     : selectedDetectedAgentSlugs(params.agentSlugs, agents)
   try {
-	const transport = await gitTransportForRemote(remoteUrl)
+	const transport = await gitTransportForRemote(remoteUrl, 'user-action')
     await cloneSyncWorkspace(
       remoteUrl,
       workspace,
@@ -484,9 +485,13 @@ async function cloneSyncProfile(params: {
       ahead: status.ahead,
       behind: status.behind,
       last_checked_at: new Date().toISOString(),
-      check_error: null,
+		check_error: null,
 		check_error_kind: null,
-	  remote_trust_required: false,
+		provider_connection_required: (() => {
+			const provider = providerForRemoteUrl(status.remoteUrl)
+			return provider ? !hasStoredProviderToken(provider) : false
+		})(),
+		remote_trust_required: false,
     }
   } catch (error) {
     // The destination was proven absent above and belongs solely to this
@@ -575,6 +580,10 @@ async function listSyncProfiles(refreshRemote = false, signal?: AbortSignal): Pr
 		last_checked_at: checkedAt,
 		check_error: checkError,
 		check_error_kind: checkErrorKind,
+		provider_connection_required: (() => {
+			const provider = providerForRemoteUrl(status.remoteUrl)
+			return provider ? !hasStoredProviderToken(provider) : false
+		})(),
 		remote_trust_required: remoteTrust.required,
       }
 	} catch (error) {
@@ -777,7 +786,17 @@ async function requireGitLabAccessToken(): Promise<string> {
   return token
 }
 
-async function gitTransportForRemote(remoteUrl: string): Promise<{ environment: NodeJS.ProcessEnv; port: NodeWorkspaceGitPort } | null> {
+/**
+ * Provider credentials are deliberately opt-in. Reading a token from the
+ * system vault can itself make macOS display a Keychain prompt, so scheduled
+ * status checks must remain credential-free. Explicit user actions (connect,
+ * review, save, or sync) may opt in when they actually need that token.
+ */
+async function gitTransportForRemote(
+  remoteUrl: string,
+  credentialAccess: ProviderCredentialAccess = 'background',
+): Promise<{ environment: NodeJS.ProcessEnv; port: NodeWorkspaceGitPort } | null> {
+  if (!mayReadProviderCredentials(credentialAccess)) return null
   try {
     const url = new URL(remoteUrl)
     if (url.protocol !== 'https:') return null
@@ -793,9 +812,12 @@ async function gitTransportForRemote(remoteUrl: string): Promise<{ environment: 
   return { environment, port: new NodeWorkspaceGitPort(environment) }
 }
 
-async function gitTransportForWorkspace(workspace: string): Promise<{ environment: NodeJS.ProcessEnv; port: NodeWorkspaceGitPort } | null> {
+async function gitTransportForWorkspace(
+  workspace: string,
+  credentialAccess: ProviderCredentialAccess = 'background',
+): Promise<{ environment: NodeJS.ProcessEnv; port: NodeWorkspaceGitPort } | null> {
   const remoteUrl = (await getSyncWorkspaceStatus(workspace)).remoteUrl
-  return remoteUrl ? gitTransportForRemote(remoteUrl) : null
+  return remoteUrl ? gitTransportForRemote(remoteUrl, credentialAccess) : null
 }
 
 async function withCancellableLibraryCheck<T>(requestId: string | undefined, operation: (signal?: AbortSignal) => Promise<T>): Promise<T> {
@@ -1396,7 +1418,7 @@ async function applyReviewedRemoteChanges(
   const workspace = syncWorkspacePath(profileId)
   const status = await getSyncWorkspaceStatus(workspace)
   if (!status.remoteUrl || status.changed) throw new Error('Sync workspace must be clean and connected before applying remote changes')
-	const transport = await gitTransportForWorkspace(workspace)
+	const transport = await gitTransportForWorkspace(workspace, 'user-action')
 	const workspacePlan = await planSyncWorkspaceFastForward(workspace, undefined, transport?.port)
 	if (workspacePlan.planId !== expectedWorkspacePlanId) throw new Error('Remote or local Git state changed after review. Review it again before applying changes.')
 	const ledger = readSyncLedger(profileId)
@@ -1467,7 +1489,7 @@ async function acceptReviewedRemoteLibraryUpdate(
   const workspace = syncWorkspacePath(profileId)
   const status = await getSyncWorkspaceStatus(workspace)
   if (!status.remoteUrl || status.changed) throw new Error('Sync workspace must be clean and connected before applying a library update')
-	const transport = await gitTransportForWorkspace(workspace)
+	const transport = await gitTransportForWorkspace(workspace, 'user-action')
   const ledger = readSyncLedger(profileId)
 	const previousLock = readCanonicalSyncLock(workspace)
   const workspacePlan = await planSyncWorkspaceFastForward(workspace, undefined, transport?.port)
@@ -1515,7 +1537,7 @@ async function publishReviewedLocalChanges(
   const workspace = syncWorkspacePath(profileId)
   let status = await getSyncWorkspaceStatus(workspace)
   if (!status.remoteUrl || status.changed) throw new Error('Sync workspace must be clean and connected before publishing local changes')
-	const transport = await gitTransportForWorkspace(workspace)
+	const transport = await gitTransportForWorkspace(workspace, 'user-action')
 	await applyReviewedSyncWorkspaceFastForward(workspace, expectedWorkspacePlanId, transport?.port)
 	const ledger = readSyncLedger(profileId)
 	const restore = createSyncRestorePlan(workspace, sharedSkillsDir(), ledger ?? undefined)
@@ -1572,7 +1594,7 @@ async function keepReviewedLocalChanges(
   const workspace = syncWorkspacePath(profileId)
   const status = await getSyncWorkspaceStatus(workspace)
   if (!status.remoteUrl || status.changed) throw new Error('Sync workspace must be clean and connected before keeping local changes')
-	const transport = await gitTransportForWorkspace(workspace)
+	const transport = await gitTransportForWorkspace(workspace, 'user-action')
 	await applyReviewedSyncWorkspaceFastForward(workspace, expectedWorkspacePlanId, transport?.port)
 	const ledger = readSyncLedger(profileId)
 	const restore = createSyncRestorePlan(workspace, sharedSkillsDir(), ledger ?? undefined)
@@ -1610,7 +1632,7 @@ async function keepReviewedExternalChanges(
 	const workspace = syncWorkspacePath(profileId)
 	const status = await getSyncWorkspaceStatus(workspace)
 	if (!status.remoteUrl || status.changed) throw new Error('Sync workspace must be clean and connected before keeping a local skill')
-	const transport = await gitTransportForWorkspace(workspace)
+	const transport = await gitTransportForWorkspace(workspace, 'user-action')
 	await applyReviewedSyncWorkspaceFastForward(workspace, expectedWorkspacePlanId, transport?.port)
 	const ledger = readSyncLedger(profileId)
 	const restore = createSyncRestorePlan(workspace, sharedSkillsDir(), ledger ?? undefined)
@@ -2573,7 +2595,7 @@ export function createRequestHandlers(ctx: {
         cacheRoot: join(syncProfilesDirectory(), '.source-cache', 'git'),
       } : undefined)
       applySyncPublishFiles(workspace, merged, canonical.portableFiles, { acknowledgedSecretFindings: approvedSecretFindings })
-      const transport = await gitTransportForWorkspace(workspace)
+      const transport = await gitTransportForWorkspace(workspace, 'user-action')
       await commitSyncWorkspace(workspace, 'Skiller sync: add reviewed local skills', {
         acknowledgedSecretFindings: approvedSecretFindings.map((finding) => ({
           file: `skills/${finding.skillId}/${finding.relativePath}`,
@@ -2652,7 +2674,7 @@ export function createRequestHandlers(ctx: {
         if (!existsSync(target) && existsSync(quarantine)) renameSync(quarantine, target)
         throw cause
       }
-      const transport = await gitTransportForWorkspace(workspace)
+      const transport = await gitTransportForWorkspace(workspace, 'user-action')
       await commitSyncWorkspace(workspace, `Skiller sync: remove ${reviewed.skillName} from library`)
       await pushSyncWorkspace(workspace, undefined, transport?.port)
       // Removing from a library is not an uninstall. Remember that the local
@@ -2748,7 +2770,7 @@ export function createRequestHandlers(ctx: {
       assertSyncStableId(params.profileId)
       if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
 	  const workspace = syncWorkspacePath(params.profileId)
-	  const transport = await gitTransportForWorkspace(workspace)
+	  const transport = await gitTransportForWorkspace(workspace, 'user-action')
       return applyReviewedSyncWorkspaceLocalPublish(workspace, params.planId, undefined, transport?.port)
     },
     sync_push_pending: async (params: { profileId: string }) => {
@@ -2758,7 +2780,7 @@ export function createRequestHandlers(ctx: {
       const status = await getSyncWorkspaceStatus(workspace)
       if (status.changed) throw new Error('Review the local library changes before uploading')
       if (status.ahead <= 0) return { pushed: false }
-	  const transport = await gitTransportForWorkspace(workspace)
+	  const transport = await gitTransportForWorkspace(workspace, 'user-action')
       await pushSyncWorkspace(workspace, undefined, transport?.port)
       return { pushed: true }
     },
@@ -2775,7 +2797,7 @@ export function createRequestHandlers(ctx: {
       const remoteUrl = params.remoteUrl.trim()
       if (!remoteUrl) throw new Error('A Git remote is required')
       assertCredentialFreeGitRemote(remoteUrl)
-	  const gitTransport = await gitTransportForRemote(remoteUrl)
+	  const gitTransport = await gitTransportForRemote(remoteUrl, 'user-action')
 	  const librarySourcePolicy = reviewedRemoteSourcePolicy(remoteUrl, params.minimumReleaseAgeMinutes)
 	  const license = syncCenterPublicLicense(params.mode, params.license)
       const remoteIdentity = normalizeGitIdentity(remoteUrl)
@@ -2825,7 +2847,7 @@ export function createRequestHandlers(ctx: {
       if (!status.remoteUrl) throw new Error('This library has no Git remote')
       if (status.changed) throw new Error('Sync workspace has uncommitted changes; resolve them before reviewing')
 	  const previousLock = readCanonicalSyncLock(workspace)
-		const transport = await gitTransportForWorkspace(workspace)
+	  const transport = await gitTransportForWorkspace(workspace, 'user-action')
 		const workspacePlan = await planSyncWorkspaceFastForward(workspace, signal, transport?.port)
 		if (isLibraryDocumentationOnlyUpdate(workspacePlan.files)) {
 			syncProfileCheckStates.rememberSuccess(params.profileId)
@@ -2920,7 +2942,7 @@ export function createRequestHandlers(ctx: {
 			const workspace = syncWorkspacePath(params.profileId)
 			const status = await getSyncWorkspaceStatus(workspace)
 			if (!status.remoteUrl || status.changed) throw new Error('Review this library again before comparing versions')
-			const transport = await gitTransportForWorkspace(workspace)
+			const transport = await gitTransportForWorkspace(workspace, 'user-action')
 			const workspacePlan = await planSyncWorkspaceFastForward(workspace, signal, transport?.port)
 			if (workspacePlan.planId !== params.workspacePlanId) throw new Error('The library changed after review. Review it again before comparing versions.')
 			const ledger = readSyncLedger(params.profileId)

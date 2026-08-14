@@ -13,6 +13,7 @@ import MarkdownContent from '@/mainview/components/MarkdownContent'
 import { providerProblemPresentation } from '@/mainview/lib/sync-provider-problem'
 import { libraryDisplayName, repositoryBrowserUrl, sourceDisplayName } from '@/mainview/lib/sync-library-name'
 import { ScrollFade } from '@/mainview/components/ScrollFade'
+import { acknowledgeProviderCredentialDisclosure, hasAcknowledgedProviderCredentialDisclosure, providerForRemote, ProviderCredentialDisclosure, type CredentialProvider } from '@/mainview/components/ProviderCredentialDisclosure'
 
 function plural(count: number, word: string): string {
 	const pluralWord = word.endsWith('y') ? `${word.slice(0, -1)}ies` : `${word}s`
@@ -79,6 +80,10 @@ function hasVisibleRemoteReview(review: SyncThreeWayReviewJson, includeDeviceCho
 
 type InventoryItem = SyncInventoryJson['items'][number]
 type UnresolvedSourceItem = NonNullable<SyncPublishPreviewJson['unresolved_sources']>[number]
+type ProviderCredentialDisclosure = {
+	provider: CredentialProvider
+	action: 'browse' | 'sign-in' | 'review' | 'sync'
+}
 
 function defaultLibraryDecision(item: InventoryItem, _purpose: 'personal' | 'public' | 'team'): SyncLibraryDecisionJson {
 	// Keep an already verified external source as a dependency by default. It
@@ -411,6 +416,8 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 		target: 'create' | 'connect'
 		problem: SyncProviderProblemJson
 	} | null>(null)
+	const [providerCredentialDisclosure, setProviderCredentialDisclosure] = useState<ProviderCredentialDisclosure | null>(null)
+	const providerCredentialContinuationRef = useRef<(() => void) | null>(null)
 	const [providerAuthorization, setProviderAuthorization] = useState<{ provider: 'github' | 'gitlab'; userCode: string } | null>(null)
 	const [libraryMode, setLibraryMode] = useState<'private' | 'public'>('private')
 	const [libraryPurpose, setLibraryPurpose] = useState<'personal' | 'public' | 'team'>('personal')
@@ -1195,7 +1202,49 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
   }
 	}
 
-  async function reviewGitHubRepository() {
+	function shouldExplainProviderCredentialAccess(provider: ProviderCredentialDisclosure['provider']): boolean {
+		return !hasAcknowledgedProviderCredentialDisclosure(provider)
+	}
+
+	function requestProviderCredentialAccess(disclosure: ProviderCredentialDisclosure): boolean {
+		if (!shouldExplainProviderCredentialAccess(disclosure.provider)) return true
+		setProviderCredentialDisclosure(disclosure)
+		return false
+	}
+
+	function requestRemoteCredentialAccess(activeProfile: SyncProfileStatusJson, onContinue: () => void): boolean {
+		const provider = providerForRemote(activeProfile.remote_url)
+		if (!provider || !shouldExplainProviderCredentialAccess(provider)) return true
+		providerCredentialContinuationRef.current = onContinue
+		setProviderCredentialDisclosure({ provider, action: 'sync' })
+		return false
+	}
+
+	function continueProviderCredentialAccess() {
+		const disclosure = providerCredentialDisclosure
+		if (!disclosure) return
+		acknowledgeProviderCredentialDisclosure(disclosure.provider)
+		setProviderCredentialDisclosure(null)
+		if (disclosure.action === 'browse') {
+			void browseProviderLibraries(disclosure.provider)
+			return
+		}
+		if (disclosure.action === 'sign-in') {
+			void signInProvider(disclosure.provider)
+			return
+		}
+		if (disclosure.action === 'sync') {
+			const continueAction = providerCredentialContinuationRef.current
+			providerCredentialContinuationRef.current = null
+			continueAction?.()
+			return
+		}
+		if (disclosure.provider === 'github') void reviewGitHubRepository()
+		else void reviewGitLabProject()
+	}
+
+	async function reviewGitHubRepository() {
+		if (!requestProviderCredentialAccess({ provider: 'github', action: 'review' })) return
 		setDestinationSetupError(null)
     setProviderProblem(null)
 		if (libraryPurpose === 'team' && !repositoryName.trim().includes('/')) {
@@ -1243,6 +1292,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
   }
 
 	async function browseProviderLibraries(provider: 'github' | 'gitlab') {
+		if (!requestProviderCredentialAccess({ provider, action: 'browse' })) return
     const requestId = crypto.randomUUID()
     providerBrowseRequestRef.current = requestId
     setBrowsingProvider(provider)
@@ -1287,6 +1337,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 	}
 
 	async function signInProvider(provider: 'github' | 'gitlab', targetOverride?: 'create' | 'connect') {
+		if (!requestProviderCredentialAccess({ provider, action: 'sign-in' })) return
 		const target = targetOverride ?? providerProblem?.target ?? 'connect'
 		const requestId = crypto.randomUUID()
 		providerBrowseRequestRef.current = requestId
@@ -1337,6 +1388,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
   }
 
   async function reviewGitLabProject() {
+		if (!requestProviderCredentialAccess({ provider: 'gitlab', action: 'review' })) return
 		setDestinationSetupError(null)
     setProviderProblem(null)
 		if (libraryPurpose === 'team' && !gitLabProjectName.trim().includes('/')) {
@@ -1499,8 +1551,9 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
     }
   }
 
-  async function reviewRemoteChanges(includeDeviceChoices = false) {
+  async function reviewRemoteChanges(includeDeviceChoices = false, skipCredentialDisclosure = false) {
     if (!profile) return
+		if (!skipCredentialDisclosure && !requestRemoteCredentialAccess(profile, () => void reviewRemoteChanges(includeDeviceChoices, true))) return
 		const token = ++libraryCheckTokenRef.current
 		const requestId = crypto.randomUUID()
 		libraryCheckRequestRef.current = requestId
@@ -1614,8 +1667,9 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 		}
 	}
 
-	async function publishReviewedLocalLibrary() {
+	async function publishReviewedLocalLibrary(skipCredentialDisclosure = false) {
 		if (!profile || !localPublishPreview) return
+		if (!skipCredentialDisclosure && !requestRemoteCredentialAccess(profile, () => void publishReviewedLocalLibrary(true))) return
 	  setBusy('publishing')
 	  try {
 			const result = await invoke('sync_local_publish_apply', {
@@ -1639,8 +1693,9 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 		}
 	}
 
-	async function finishPendingUpload() {
+	async function finishPendingUpload(skipCredentialDisclosure = false) {
 		if (!profile) return
+		if (!skipCredentialDisclosure && !requestRemoteCredentialAccess(profile, () => void finishPendingUpload(true))) return
 		setBusy('publishing')
 		try {
 			const result = await invoke('sync_push_pending', {
@@ -2020,6 +2075,11 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 
 	return (
 		<div className={isLanding ? 'h-full w-full animate-fade-in-up' : `${showInventory ? `relative flex h-full min-h-0 w-full flex-col ${preview || remoteReview ? 'overflow-y-auto' : 'overflow-hidden'}` : 'mx-auto w-full max-w-4xl px-6 py-8 min-h-full pb-12'} animate-fade-in-up`}>
+			{providerCredentialDisclosure && <ProviderCredentialDisclosure
+				provider={providerCredentialDisclosure.provider}
+				onCancel={() => { providerCredentialContinuationRef.current = null; setProviderCredentialDisclosure(null) }}
+				onContinue={continueProviderCredentialAccess}
+			/>}
 			{isLanding && (
 				<section className="sync-center-hero relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden px-6 py-10 text-center text-primary-foreground">
 					<div className="absolute -left-28 -top-24 size-80 rounded-full border border-white/15" />

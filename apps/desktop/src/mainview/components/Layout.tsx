@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMemo, useState, useCallback, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -22,6 +22,7 @@ import {
 import { AgentIcon } from '@/mainview/components/AgentIcon'
 import { Button } from '@/mainview/components/ui/button'
 import { Tooltip } from '@/mainview/components/ui/tooltip'
+import { useToast } from '@/mainview/components/ToastProvider'
 import ImportWizard from '@/mainview/components/ImportWizard'
 import { InsetScrollArea } from '@/mainview/components/InsetScrollArea'
 import { ScrollFade } from '@/mainview/components/ScrollFade'
@@ -130,6 +131,8 @@ function LayoutInner({
 }: LayoutProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const { toast } = useToast()
   const [importMode, setImportMode] = useState<'git' | 'local' | null>(null)
   const [importChoiceOpen, setImportChoiceOpen] = useState(false)
   const [importLocalPath, setImportLocalPath] = useState<string | null>(null)
@@ -160,6 +163,7 @@ function LayoutInner({
     refetchInterval: 5 * 60_000,
   })
   const activeLibraryProfileId = syncProfiles?.[0]?.profile_id
+  const announcedReconnectProfiles = useRef(new Set<string>())
   // The sidebar is the primary way to discover work that needs attention.
   // Query the same lightweight local comparison Agent Library consumes, so a
   // review requirement is visible before the user happens to open that page.
@@ -185,7 +189,20 @@ function LayoutInner({
     })
   }, [queryClient, syncProfiles])
   const localLibraryChangesNeedReview = (libraryLocalChanges?.changes ?? []).some((change) => change.kind !== 'kept-local')
-  const syncNeedsReview = localLibraryChangesNeedReview || Boolean(syncProfiles?.some((profile) => profile.changed || profile.ahead > 0 || profile.behind > 0 || profile.check_error))
+  const providerReconnectRequired = Boolean(syncProfiles?.some((profile) => profile.provider_connection_required))
+  const syncNeedsReview = providerReconnectRequired || localLibraryChangesNeedReview || Boolean(syncProfiles?.some((profile) => profile.changed || profile.ahead > 0 || profile.behind > 0 || profile.check_error))
+  const syncAttentionTooltip = providerReconnectRequired ? 'Reconnect your library to keep syncing' : 'Library changes need review'
+  useEffect(() => {
+    for (const profile of syncProfiles ?? []) {
+      if (!profile.provider_connection_required || announcedReconnectProfiles.current.has(profile.profile_id)) continue
+      announcedReconnectProfiles.current.add(profile.profile_id)
+      const provider = profile.remote_url?.includes('gitlab.com') ? 'GitLab' : 'GitHub'
+      toast({
+        title: `Reconnect ${provider} to keep your library in sync`,
+        description: 'Your library and installed skills are unchanged.',
+      }, 'default', { label: 'Open library', onClick: () => navigate('/library') })
+    }
+  }, [navigate, syncProfiles, toast])
   const skillUpdatesNeedReview = Boolean(
     globalSkillUpdates?.items.some((item) =>
       item.state === 'update-available' || item.state === 'review-required' || item.state === 'local-changes',
@@ -383,7 +400,7 @@ function LayoutInner({
                     >
                       <LibraryBig className="size-4" aria-hidden="true" />
                       Agent Library
-                      {syncNeedsReview && <span className="ml-auto flex shrink-0 items-center"><Tooltip content="Library changes need review" side="right"><span className="size-1.5 rounded-full bg-primary" /></Tooltip></span>}
+                      {syncNeedsReview && <span className="ml-auto flex shrink-0 items-center"><Tooltip content={syncAttentionTooltip} side="right"><span className="size-1.5 rounded-full bg-primary" /></Tooltip></span>}
                     </NavLink>
 
                   </div>

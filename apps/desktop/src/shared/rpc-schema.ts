@@ -503,6 +503,9 @@ export type SyncProfileStatusJson = {
 	/** Authentication/network problem from the last check, never credential text. */
 	check_error: string | null;
 	check_error_kind: "authentication" | "unavailable" | "invalid-source" | null;
+	/** A GitHub/GitLab library from an earlier Skiller version needs one explicit
+	 * provider sign-in before this installation can sync it again. */
+	provider_connection_required: boolean;
 	/** True when this device has not yet approved the profile's current remote. */
 	remote_trust_required: boolean;
 };

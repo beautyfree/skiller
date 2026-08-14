@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useNavigate } from 'react-router-dom'
@@ -8,8 +8,11 @@ import {
   CheckCircle2,
   ChevronDown,
   Cloud,
+  Copy,
   FileDiff,
   FileText,
+  Github,
+  Gitlab,
   LibraryBig,
   Loader2,
   MoreHorizontal,
@@ -27,6 +30,7 @@ import SkillContentBrowser from '@/mainview/components/SkillContentBrowser'
 import ResizeHandle from '@/mainview/components/ResizeHandle'
 import SearchInput from '@/mainview/components/SearchInput'
 import { ScrollFade } from '@/mainview/components/ScrollFade'
+import { acknowledgeProviderCredentialDisclosure, hasAcknowledgedProviderCredentialDisclosure, providerForRemote, ProviderCredentialDisclosure, type CredentialProvider } from '@/mainview/components/ProviderCredentialDisclosure'
 import { useToast } from '@/mainview/components/ToastProvider'
 import { useResizable } from '@/mainview/hooks/useResizable'
 import { useTransientViewState } from '@/mainview/hooks/useTransientViewState'
@@ -53,6 +57,13 @@ import type {
 type LibraryResource = DotagentsResourceOverviewJson['resources'][number]
 type LocalChange = DotagentsLibraryLocalChangesJson['changes'][number]
 type LibrarySection = 'changes' | 'new' | 'kept' | 'library'
+type ResourceLibraryCredentialAction = 'review' | 'save-new' | 'remove'
+type ProviderReconnectState = {
+  provider: CredentialProvider
+  requestId?: string
+  userCode?: string
+  error?: string
+}
 type LibraryListEntry = {
   key: string
   resource?: LibraryResource
@@ -105,6 +116,35 @@ function ImagePreview({ source, alt }: { source: string; alt: string }) {
   return <figure className="overflow-hidden rounded-lg border border-border/70 bg-muted/20 p-3">
     <img src={source} alt={alt} className="mx-auto max-h-[min(60dvh,42rem)] max-w-full rounded-md object-contain" />
   </figure>
+}
+
+function ProviderReconnectDialog({
+  state,
+  onClose,
+  onStart,
+  onCopyCode,
+}: {
+  state: ProviderReconnectState
+  onClose: () => void
+  onStart: () => void
+  onCopyCode: () => void
+}) {
+  const providerName = state.provider === 'github' ? 'GitHub' : 'GitLab'
+  const Icon = state.provider === 'github' ? Github : Gitlab
+  const waiting = Boolean(state.requestId)
+  return <div className="modal-shell modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
+    <button type="button" className="absolute inset-0 cursor-default" aria-label="Close reconnect dialog" onClick={onClose} />
+    <section role="dialog" aria-modal="true" aria-labelledby="reconnect-provider-title" className="modal-panel relative z-10 w-[min(31rem,calc(100vw-2rem))] overflow-hidden rounded-2xl outline-none animate-modal-in glass-elevated">
+      <header className="flex items-start gap-3 px-6 pb-4 pt-6">
+        <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Icon className="size-5" /></div>
+        <div className="min-w-0"><h2 id="reconnect-provider-title" className="text-lg font-semibold tracking-[-0.025em]">Reconnect {providerName}</h2><p className="mt-1 text-sm leading-5 text-muted-foreground">Skiller now keeps its own encrypted connection. Your library, repository, and installed skills will not change.</p></div>
+      </header>
+      <div className="border-y border-border/70 px-6 py-4">
+        {state.userCode ? <div className="text-center"><p className="text-sm font-medium">Finish signing in in your browser</p><p className="mt-1 text-xs text-muted-foreground">Enter this one-time code if {providerName} asks for it.</p><div className="mt-4 flex items-center justify-center gap-2"><code className="rounded-lg border border-border bg-muted/35 px-3 py-2 font-mono text-xl font-semibold tracking-[0.14em] text-foreground">{state.userCode}</code><Button size="icon-sm" variant="outline" aria-label="Copy one-time code" onClick={onCopyCode}><Copy className="size-3.5" /></Button></div><p className="mt-4 inline-flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Waiting for {providerName}…</p></div> : <><p className="text-sm leading-6 text-muted-foreground">Sign in once to continue syncing this library. Skiller will save the new connection in its encrypted app storage.</p><p className="mt-3 text-xs leading-5 text-muted-foreground">macOS may ask once to use <span className="font-medium text-foreground">Skiller Safe Storage</span>. Your password stays with macOS and is never sent to Skiller.</p>{state.error && <p className="mt-3 text-xs font-medium text-destructive">{state.error}</p>}</>}
+      </div>
+      <footer className="flex items-center justify-end gap-2 px-6 py-4"><Button size="sm" variant="outline" className="min-w-[5.5rem]" onClick={onClose}>{waiting ? 'Cancel' : 'Not now'}</Button>{!waiting && <Button size="sm" className="min-w-[8.5rem]" onClick={onStart}>Reconnect {providerName}</Button>}</footer>
+    </section>
+  </div>
 }
 
 /** First-load placeholder for the detail pane. It prevents an empty-state
@@ -315,11 +355,14 @@ export default function ResourceLibrary() {
   const [repairError, setRepairError] = useState<string | null>(null)
   const [syncBusy, setSyncBusy] = useState<'idle' | 'reviewing' | 'saving'>('idle')
   const [remoteReview, setRemoteReview] = useState<SyncThreeWayReviewJson | null>(null)
+  const [providerCredentialDisclosure, setProviderCredentialDisclosure] = useState<{ provider: CredentialProvider; action: ResourceLibraryCredentialAction; acknowledgedSecretFindingKeys?: string[] } | null>(null)
+  const [providerReconnect, setProviderReconnect] = useState<ProviderReconnectState | null>(null)
   const [remoteTrustPreview, setRemoteTrustPreview] = useState<SyncRemoteTrustPreviewJson | null>(null)
   const [recoveryBusy, setRecoveryBusy] = useState(false)
   const [statusRefreshBusy, setStatusRefreshBusy] = useState(false)
   const listPane = useResizable(SKILL_LIST_PANE)
   const remoteReviewRequestRef = useRef<string | null>(null)
+  const providerReconnectRequestRef = useRef<string | null>(null)
   const statusRefreshRequestRef = useRef<string | null>(null)
   const lastBackgroundRefreshAtRef = useRef(0)
 
@@ -505,6 +548,11 @@ export default function ResourceLibrary() {
   }
 
 	const profile = profiles.data?.find((candidate) => candidate.profile_id === profileId) ?? profiles.data?.[0] ?? null
+	const providerReconnectRequired = Boolean(profile?.provider_connection_required)
+	const reconnectInstruction = `Reconnect ${providerForRemote(profile?.remote_url) === 'gitlab' ? 'GitLab' : 'GitHub'} above to save, remove, or sync library changes.`
+	function ReconnectRequiredTooltip({ children }: { children: ReactNode }) {
+		return <Tooltip content={reconnectInstruction}><span className="inline-flex">{children}</span></Tooltip>
+	}
 	const visible = useMemo<LibraryListEntry[]>(() => {
 		const normalizedSearch = search.trim().toLocaleLowerCase()
     const changesById = new Map((localChanges.data?.changes ?? []).map((change) => [change.id, change]))
@@ -634,13 +682,17 @@ export default function ResourceLibrary() {
 			: (virtualListItems[virtualListItems.length - 1]?.index ?? -1) < firstKeptLocalIndex),
 	)
 	useEffect(() => {
+		// Selecting a row also begins its content-preview work. Wait for the full
+		// first library snapshot (including local-change classification) so a
+		// transient first item such as “Kept on this computer” is never selected.
+		if (profiles.isLoading || (!profileId && !profiles.isError) || overview.isLoading || (profileId && localChanges.isLoading && !localChanges.data)) return
 		const selected = visible.find((entry) => !entry.sectionHeader && (entry.resource?.key === selectedResourceKey || entry.key === selectedChangeKey))
 		if (selected) return
 		const first = visible.find((entry) => !entry.sectionHeader)
 		setSelectedResourceKey(first?.resource?.key ?? null)
 		setSelectedChangeKey(first?.change ? first.key : first?.resource ? null : first?.key ?? null)
 		setSelectedResourceFile(first?.resource?.kind === 'skill' && !first.change ? 'SKILL.md' : null)
-	}, [selectedChangeKey, selectedResourceKey, visible])
+	}, [localChanges.data, localChanges.isLoading, overview.isLoading, profileId, profiles.isError, profiles.isLoading, selectedChangeKey, selectedResourceKey, visible])
 	const selectedResource = useMemo(() => overview.data?.resources.find((resource) => resource.key === selectedResourceKey) ?? null, [overview.data?.resources, selectedResourceKey])
 	const selectedLocalChange = useMemo(() => visible.find((entry) => entry.key === selectedChangeKey)?.change ?? null, [selectedChangeKey, visible])
 	// First fetch the real changed-file tree. Do not invent SKILL.md while this
@@ -723,6 +775,10 @@ export default function ResourceLibrary() {
 
   async function reviewNewLocalChanges(skillIds = selectedNewLocalIds) {
     if (!profileId || skillIds.length === 0) return
+		if (providerReconnectRequired) {
+			openProviderReconnect()
+			return
+		}
     setSelectedNewLocalIds(skillIds)
     setSyncBusy('reviewing')
     try {
@@ -743,6 +799,7 @@ export default function ResourceLibrary() {
   }
 
   function toggleChangeForSave(skillId: string) {
+		if (providerReconnectRequired) return
     setSelectedNewLocalIds((current) => current.includes(skillId)
       ? current.filter((id) => id !== skillId)
       : [...current, skillId])
@@ -757,6 +814,7 @@ export default function ResourceLibrary() {
   }
 
   function toggleSectionSelection(section: 'changes' | 'new', ids: string[]) {
+		if (providerReconnectRequired) return
     const allSelected = ids.length > 0 && ids.every((id) => selectedNewLocalIds.includes(id))
     if (!allSelected) collapseSection(section)
     setSelectedNewLocalIds((current) => {
@@ -791,12 +849,24 @@ export default function ResourceLibrary() {
       sticky ? 'bg-card shadow-[0_5px_10px_-8px_rgb(0_0_0_/_0.55)]' : 'bg-muted/[0.18]',
     )}>
       {collapsible ? <button type="button" onClick={() => toggleSectionCollapsed(sectionHeader.section as 'changes' | 'new')} className="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"><Icon className="size-3 shrink-0" /><span className="truncate">{label} ({sectionHeader.total}{sectionHeader.selectableIds.length > 0 && <><span className="text-muted-foreground/60"> · </span><span className={cn(selected > 0 && 'text-primary')}>{selected} selected</span></>})</span><ChevronDown className={cn('ml-auto size-3.5 shrink-0 transition-transform', collapsed && '-rotate-90')} /></button> : <span className="flex min-w-0 flex-1 items-center gap-2"><Icon className="size-3 shrink-0" /><span className="truncate">{label} ({sectionHeader.total})</span></span>}
-      {sectionHeader.selectableIds.length > 0 && <Button size="xs" variant={selected === sectionHeader.selectableIds.length ? 'outline' : 'default'} className="h-6 shrink-0 px-2 text-[10px] normal-case tracking-normal" onClick={() => toggleSectionSelection(sectionHeader.section as 'changes' | 'new', sectionHeader.selectableIds)} disabled={syncBusy !== 'idle'}>{selected === sectionHeader.selectableIds.length ? 'Clear' : 'Select all'}</Button>}
+      {sectionHeader.selectableIds.length > 0 && (providerReconnectRequired ? <ReconnectRequiredTooltip><Button size="xs" variant={selected === sectionHeader.selectableIds.length ? 'outline' : 'default'} className="h-6 shrink-0 px-2 text-[10px] normal-case tracking-normal" onClick={() => toggleSectionSelection(sectionHeader.section as 'changes' | 'new', sectionHeader.selectableIds)} disabled>{selected === sectionHeader.selectableIds.length ? 'Clear' : 'Select all'}</Button></ReconnectRequiredTooltip> : <Button size="xs" variant={selected === sectionHeader.selectableIds.length ? 'outline' : 'default'} className="h-6 shrink-0 px-2 text-[10px] normal-case tracking-normal" onClick={() => toggleSectionSelection(sectionHeader.section as 'changes' | 'new', sectionHeader.selectableIds)} disabled={syncBusy !== 'idle'}>{selected === sectionHeader.selectableIds.length ? 'Clear' : 'Select all'}</Button>)}
     </div>
   }
 
-  async function saveReviewedNewLocalChanges(acknowledgedSecretFindingKeys: string[] = []) {
+  function requestProviderCredentialAccess(action: ResourceLibraryCredentialAction, acknowledgedSecretFindingKeys?: string[]): boolean {
+    const provider = providerForRemote(profile?.remote_url)
+    if (!provider || hasAcknowledgedProviderCredentialDisclosure(provider)) return true
+    setProviderCredentialDisclosure({ provider, action, acknowledgedSecretFindingKeys })
+    return false
+  }
+
+  async function saveReviewedNewLocalChanges(acknowledgedSecretFindingKeys: string[] = [], skipCredentialDisclosure = false) {
     if (!profileId || !newLocalPreview) return
+		if (providerReconnectRequired) {
+			openProviderReconnect()
+			return
+		}
+    if (!skipCredentialDisclosure && !requestProviderCredentialAccess('save-new', acknowledgedSecretFindingKeys)) return
     setSyncBusy('saving')
     try {
       const result = await invoke('dotagents_library_new_local_apply', { profileId, planId: newLocalPreview.plan_id, acknowledgedSecretFindingKeys })
@@ -825,6 +895,10 @@ export default function ResourceLibrary() {
 
   async function reviewLibrarySkillRemoval(skillId: string) {
     if (!profileId) return
+		if (providerReconnectRequired) {
+			openProviderReconnect()
+			return
+		}
     setSyncBusy('reviewing')
     try {
       setRemovalPreview(await invoke('dotagents_library_removal_preview', { profileId, skillId }))
@@ -835,8 +909,13 @@ export default function ResourceLibrary() {
     }
   }
 
-  async function applyLibrarySkillRemoval() {
+  async function applyLibrarySkillRemoval(skipCredentialDisclosure = false) {
     if (!profileId || !removalPreview) return
+		if (providerReconnectRequired) {
+			openProviderReconnect()
+			return
+		}
+    if (!skipCredentialDisclosure && !requestProviderCredentialAccess('remove')) return
     setSyncBusy('saving')
     try {
       await invoke('dotagents_library_removal_apply', { profileId, planId: removalPreview.plan_id })
@@ -890,8 +969,13 @@ export default function ResourceLibrary() {
     }
   }
 
-  async function reviewRemoteChanges() {
+  async function reviewRemoteChanges(skipCredentialDisclosure = false) {
     if (!profileId) return
+		if (providerReconnectRequired) {
+			openProviderReconnect()
+			return
+		}
+    if (!skipCredentialDisclosure && !requestProviderCredentialAccess('review')) return
     const requestId = crypto.randomUUID()
     remoteReviewRequestRef.current = requestId
     setSyncBusy('reviewing')
@@ -914,6 +998,74 @@ export default function ResourceLibrary() {
         remoteReviewRequestRef.current = null
         setSyncBusy('idle')
       }
+    }
+  }
+
+  function openProviderReconnect() {
+    const provider = providerForRemote(profile?.remote_url)
+    if (provider) setProviderReconnect({ provider })
+  }
+
+  async function reconnectProvider() {
+    const reconnect = providerReconnect
+    if (!reconnect) return
+    const requestId = crypto.randomUUID()
+    providerReconnectRequestRef.current = requestId
+    setProviderReconnect({ provider: reconnect.provider, requestId })
+    try {
+      const started = await invoke('sync_provider_sign_in_start', { provider: reconnect.provider, requestId })
+      if (providerReconnectRequestRef.current !== requestId) return
+      if (!started.started) {
+        setProviderReconnect({ provider: reconnect.provider, error: 'Could not start the sign-in. Try again.' })
+        return
+      }
+      setProviderReconnect({ provider: reconnect.provider, requestId, userCode: started.user_code })
+      const result = await invoke('sync_provider_sign_in_finish', { provider: reconnect.provider, requestId })
+      if (providerReconnectRequestRef.current !== requestId) return
+      if (!result.connected) {
+        setProviderReconnect({ provider: reconnect.provider, error: 'The sign-in was not completed. Try again when you are ready.' })
+        return
+      }
+      acknowledgeProviderCredentialDisclosure(reconnect.provider)
+      providerReconnectRequestRef.current = null
+      setProviderReconnect(null)
+      toast(`${reconnect.provider === 'github' ? 'GitHub' : 'GitLab'} reconnected. Checking this library now.`)
+      await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
+      await reviewRemoteChanges(true)
+    } catch (cause) {
+      if (providerReconnectRequestRef.current !== requestId) return
+      setProviderReconnect({ provider: reconnect.provider, error: cause instanceof Error ? cause.message : 'The sign-in could not be completed. Try again.' })
+    } finally {
+      if (providerReconnectRequestRef.current === requestId) providerReconnectRequestRef.current = null
+    }
+  }
+
+  function cancelProviderReconnect() {
+    const requestId = providerReconnectRequestRef.current
+    providerReconnectRequestRef.current = null
+    setProviderReconnect(null)
+    if (requestId) void invoke('sync_provider_libraries_cancel', { requestId }).catch(() => undefined)
+  }
+
+  function copyProviderReconnectCode() {
+    if (!providerReconnect?.userCode) return
+    void navigator.clipboard.writeText(providerReconnect.userCode).then(
+      () => toast('Code copied.'),
+      () => toast('Select the code and copy it manually.', 'destructive'),
+    )
+  }
+
+  function continueRemoteReviewWithCredentials() {
+    const disclosure = providerCredentialDisclosure
+    if (!disclosure) return
+    acknowledgeProviderCredentialDisclosure(disclosure.provider)
+    setProviderCredentialDisclosure(null)
+    if (disclosure.action === 'review') {
+      void reviewRemoteChanges(true)
+    } else if (disclosure.action === 'save-new') {
+      void saveReviewedNewLocalChanges(disclosure.acknowledgedSecretFindingKeys ?? [], true)
+    } else {
+      void applyLibrarySkillRemoval(true)
     }
   }
 
@@ -1029,6 +1181,7 @@ export default function ResourceLibrary() {
   const syncStatus = useMemo(() => {
     if (initialLocalCheckPending) return { label: 'Checking changes on this computer', tone: 'text-muted-foreground', kind: 'checking' as const }
     if (localChangeCount > 0) return { label: `${localChangeCount} ${localChangeCount === 1 ? 'change needs' : 'changes need'} review`, tone: 'text-primary', kind: 'local' as const }
+    if (profile?.provider_connection_required) return { label: `Reconnect ${providerForRemote(profile.remote_url) === 'github' ? 'GitHub' : 'GitLab'} to sync`, tone: 'text-primary', kind: 'reconnect' as const }
     if (profile?.remote_trust_required) return { label: 'Review remote access', tone: 'text-amber-700 dark:text-amber-300', kind: 'remote' as const }
     if (profile?.check_error) return { label: 'Could not check for updates', tone: 'text-amber-700 dark:text-amber-300', kind: 'check-error' as const }
     if (overview.data?.changed || profile?.changed) return { label: 'Local changes found', tone: 'text-amber-700 dark:text-amber-300', kind: 'local' as const }
@@ -1042,7 +1195,9 @@ export default function ResourceLibrary() {
       ? 'Stop checking'
       : syncBusy === 'reviewing'
         ? 'Reviewing…'
-        : profile?.remote_trust_required
+        : profile?.provider_connection_required
+          ? 'Reconnect'
+          : profile?.remote_trust_required
             ? 'Review access'
             : syncStatus.kind === 'remote'
               ? 'Review updates'
@@ -1066,6 +1221,17 @@ export default function ResourceLibrary() {
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
+      {providerCredentialDisclosure && <ProviderCredentialDisclosure
+        provider={providerCredentialDisclosure.provider}
+        onCancel={() => setProviderCredentialDisclosure(null)}
+        onContinue={continueRemoteReviewWithCredentials}
+      />}
+      {providerReconnect && <ProviderReconnectDialog
+        state={providerReconnect}
+        onClose={cancelProviderReconnect}
+        onStart={() => void reconnectProvider()}
+        onCopyCode={copyProviderReconnectCode}
+      />}
       <header className="shrink-0 border-b border-border/70 px-6 pb-5 pt-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <h1 className="text-lg font-semibold tracking-[-0.03em] text-foreground">Agent Library</h1>
@@ -1105,7 +1271,7 @@ export default function ResourceLibrary() {
             {!libraryListPending && showSyncAction && (
               <button
                 type="button"
-                onClick={() => statusRefreshBusy ? cancelStatusRefresh() : syncBusy === 'reviewing' && remoteReviewRequestRef.current ? cancelRemoteReview() : profile?.remote_trust_required ? void reviewRemoteAccess() : syncStatus.kind === 'remote' ? void reviewRemoteChanges() : void refreshLibraryState({ foreground: true })}
+                onClick={() => statusRefreshBusy ? cancelStatusRefresh() : syncBusy === 'reviewing' && remoteReviewRequestRef.current ? cancelRemoteReview() : profile?.provider_connection_required ? openProviderReconnect() : profile?.remote_trust_required ? void reviewRemoteAccess() : syncStatus.kind === 'remote' ? void reviewRemoteChanges() : void refreshLibraryState({ foreground: true })}
                 disabled={syncBusy !== 'idle' && !remoteReviewRequestRef.current && !statusRefreshBusy}
                 className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               >
@@ -1117,7 +1283,15 @@ export default function ResourceLibrary() {
         </div>
       </header>
 
-      {profile?.check_error && !statusRefreshBusy && (
+      {profile?.provider_connection_required && (
+        <section className="shrink-0 border-b border-primary/25 bg-primary/[0.055] px-6 py-3" aria-label="Reconnect library provider">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex min-w-0 items-center gap-2 text-foreground"><Cloud className="size-3.5 shrink-0 text-primary" /><span><strong>Reconnect {providerForRemote(profile.remote_url) === 'github' ? 'GitHub' : 'GitLab'} to keep this library in sync.</strong> Your library and installed skills will stay unchanged.</span></div>
+            <Button size="xs" className="shrink-0" onClick={openProviderReconnect}>Reconnect</Button>
+          </div>
+        </section>
+      )}
+      {profile?.check_error && !statusRefreshBusy && !profile.provider_connection_required && (
         <section className="shrink-0 border-b border-amber-500/25 bg-amber-500/[0.055] px-6 py-3" aria-label="Library update check needs attention">
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex min-w-0 items-center gap-2 text-amber-800 dark:text-amber-200"><AlertTriangle className="size-3.5 shrink-0" /><span><strong>Updates were not checked.</strong> {profile.check_error}</span></div>
@@ -1208,8 +1382,8 @@ export default function ResourceLibrary() {
 				{selectedNewLocalIds.length > 0 && !newLocalPreview && <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-muted/20 px-6 py-2.5 text-xs">
           <p className="min-w-0 truncate text-muted-foreground">{selectedNewLocalIds.length} {selectedNewLocalIds.length === 1 ? 'skill is' : 'skills are'} ready to save. Review the plan before anything changes.</p>
           <div className="flex shrink-0 items-center gap-2">
-            <Button size="xs" variant="outline" className="min-w-16" onClick={() => setSelectedNewLocalIds([])} disabled={syncBusy !== 'idle'}>Cancel</Button>
-            <Button size="xs" onClick={() => void reviewNewLocalChanges()} disabled={syncBusy !== 'idle'}>{syncBusy === 'reviewing' ? <><Loader2 className="size-3.5 animate-spin" />Preparing…</> : <>Review and save</>}</Button>
+                <Button size="xs" variant="outline" className="min-w-16" onClick={() => setSelectedNewLocalIds([])} disabled={syncBusy !== 'idle'}>Cancel</Button>
+            {providerReconnectRequired ? <ReconnectRequiredTooltip><Button size="xs" disabled>Review and save</Button></ReconnectRequiredTooltip> : <Button size="xs" onClick={() => void reviewNewLocalChanges()} disabled={syncBusy !== 'idle'}>{syncBusy === 'reviewing' ? <><Loader2 className="size-3.5 animate-spin" />Preparing…</> : <>Review and save</>}</Button>}
           </div>
         </div>}
 				<div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -1273,7 +1447,7 @@ export default function ResourceLibrary() {
 							)}
 						>
 							<div className="flex min-w-0 items-start gap-2">
-								{reviewableChange && <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md hover:bg-muted/50" onClick={(event) => event.stopPropagation()}><Checkbox checked={selectedNewLocalIds.includes(reviewableChange.id)} onCheckedChange={() => toggleChangeForSave(reviewableChange.id)} aria-label={`Include ${reviewableChange.display_name} in save`} /></span>}
+								{reviewableChange && <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md hover:bg-muted/50" onClick={(event) => event.stopPropagation()}>{providerReconnectRequired ? <ReconnectRequiredTooltip><Checkbox checked={selectedNewLocalIds.includes(reviewableChange.id)} disabled aria-label={`Include ${reviewableChange.display_name} in save`} /></ReconnectRequiredTooltip> : <Checkbox checked={selectedNewLocalIds.includes(reviewableChange.id)} onCheckedChange={() => toggleChangeForSave(reviewableChange.id)} aria-label={`Include ${reviewableChange.display_name} in save`} />}</span>}
 								<div className="min-w-0 flex-1">
 									<div className="flex min-w-0 items-start justify-between gap-2">
 										<div className="min-w-0 flex-1">
@@ -1330,8 +1504,14 @@ export default function ResourceLibrary() {
                       {selectedResource?.package_id && <button type="button" className="mt-1 text-[10px] text-primary underline-offset-2 hover:underline" onClick={() => navigate(`/skills?skill=${encodeURIComponent(selectedResource.package_id!)}`)}>Managed from All Skills · {selectedResource.package_id}</button>}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      {selectedResource && !selectedLocalChange && (
-                        <Button
+                      {selectedResource && !selectedLocalChange && (providerReconnectRequired ? <ReconnectRequiredTooltip><Button
+                          size="xs"
+                          variant="ghost"
+                          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          disabled
+                        >
+                          <Trash2 className="size-3.5" />Remove from library
+                        </Button></ReconnectRequiredTooltip> : <Button
                           size="xs"
                           variant="ghost"
                           className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
@@ -1339,18 +1519,21 @@ export default function ResourceLibrary() {
                           disabled={syncBusy !== 'idle'}
                         >
                           <Trash2 className="size-3.5" />Remove from library
-                        </Button>
-                      )}
-                      {selectedReviewableChange && (
-                        <Button
+	                        </Button>)}
+                      {selectedReviewableChange && (providerReconnectRequired ? <ReconnectRequiredTooltip><Button
+                          size="xs"
+                          variant={selectedChangeIsIncluded ? 'outline' : 'default'}
+                          disabled
+                        >
+                          {selectedChangeIsIncluded ? <><CheckCircle2 className="size-3.5" />Included in save</> : <><Cloud className="size-3.5" />Add to library</>}
+                        </Button></ReconnectRequiredTooltip> : <Button
                           size="xs"
                           variant={selectedChangeIsIncluded ? 'outline' : 'default'}
                           onClick={() => toggleChangeForSave(selectedReviewableChange.id)}
                           disabled={syncBusy !== 'idle'}
                         >
                           {selectedChangeIsIncluded ? <><CheckCircle2 className="size-3.5" />Included in save</> : <><Cloud className="size-3.5" />Add to library</>}
-                        </Button>
-                      )}
+	                        </Button>)}
                       {selectedLocalChange ? <Tooltip content={selectedLocalChange.kind === 'new-local' ? 'New on this computer' : selectedLocalChange.kind === 'kept-local' ? 'Kept on this computer, outside this library' : selectedLocalChange.kind === 'changed-local' ? 'Changed on this computer' : 'No longer on this computer'}><span className="rounded-md bg-muted/60 px-2 py-1 font-mono text-[10px] font-semibold text-muted-foreground">{selectedLocalChange.kind === 'new-local' ? 'New' : selectedLocalChange.kind === 'kept-local' ? 'Local' : selectedLocalChange.kind === 'changed-local' ? 'M' : 'D'}</span></Tooltip> : <span className="rounded-md bg-muted/60 px-2 py-1 text-[10px] font-medium text-muted-foreground">Skill</span>}
                     </div>
                   </div>

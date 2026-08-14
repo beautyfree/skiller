@@ -1,71 +1,108 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { KeyringProviderTokenStore, providerGitEnvironment } from 'dotagents'
+import { providerGitEnvironment } from 'dotagents'
 import { appDataRootPath } from './settings'
 
 type Provider = 'github' | 'gitlab'
-type LegacyCredentialFile = Partial<Record<Provider, string>>
+type EncryptedProviderCredentials = Partial<Record<Provider, string>>
 
-const tokenStore = new KeyringProviderTokenStore()
+export function providerForRemoteUrl(remoteUrl: string | null | undefined): Provider | null {
+  if (!remoteUrl) return null
+  try {
+    const host = new URL(remoteUrl).hostname.toLowerCase()
+    return host === 'github.com' ? 'github' : host === 'gitlab.com' ? 'gitlab' : null
+  } catch {
+    const host = remoteUrl.match(/^git@(github\.com|gitlab\.com):/i)?.[1]?.toLowerCase()
+    return host === 'github.com' ? 'github' : host === 'gitlab.com' ? 'gitlab' : null
+  }
+}
 
-// Kept strictly for a one-time migration from the early Electron-only
-// implementation. New connections never write this file: dotagents and
-// Skiller share the operating-system credential vault instead.
-function legacyCredentialPath() {
+function encryptedCredentialPath(): string {
+  return join(appDataRootPath(), 'secure-provider-credentials.json')
+}
+
+function retiredCredentialPath(): string {
   return join(appDataRootPath(), 'provider-credentials.json')
 }
 
-async function legacyToken(provider: Provider): Promise<string | null> {
-  const path = legacyCredentialPath()
-  if (!existsSync(path)) return null
-  let encrypted: string | undefined
+function readEncryptedCredentials(): EncryptedProviderCredentials {
+  const path = encryptedCredentialPath()
+  if (!existsSync(path)) return {}
   try {
-    encrypted = (JSON.parse(readFileSync(path, 'utf8')) as LegacyCredentialFile)[provider]
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return parsed as EncryptedProviderCredentials
   } catch {
-    return null
+    // Treat a corrupted credential cache as an absent connection. No secret is
+    // surfaced and the person can explicitly connect again.
+    return {}
   }
-  if (!encrypted) return null
-  const { safeStorage } = await import('electron')
-  if (!safeStorage.isEncryptionAvailable()) return null
-  return safeStorage.decryptString(Buffer.from(encrypted, 'base64'))
 }
 
-function removeLegacyToken(provider: Provider): void {
-  const path = legacyCredentialPath()
-  if (!existsSync(path)) return
+async function secureStorage() {
+  const { safeStorage } = await import('electron')
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('Skiller secure storage is unavailable. Unlock the system credential vault and try again.')
+  }
+  return safeStorage
+}
+
+function writeEncryptedCredentials(credentials: EncryptedProviderCredentials): void {
+  const path = encryptedCredentialPath()
+  mkdirSync(appDataRootPath(), { recursive: true })
+  const temporaryPath = `${path}.${process.pid}.tmp`
+  writeFileSync(temporaryPath, JSON.stringify(credentials), { encoding: 'utf8', mode: 0o600 })
+  renameSync(temporaryPath, path)
+}
+
+function removeRetiredCredentialStore(): void {
+  // This was Skiller's pre-v0.3 encrypted-token format. It is deliberately
+  // never read; removing it after a successful new sign-in avoids retaining a
+  // duplicate usable credential on disk.
   try {
-    const credentials = JSON.parse(readFileSync(path, 'utf8')) as LegacyCredentialFile
-    delete credentials[provider]
-    if (Object.values(credentials).some(Boolean)) {
-      writeFileSync(path, JSON.stringify(credentials), { mode: 0o600 })
-    } else {
-      rmSync(path, { force: true })
-    }
+    rmSync(retiredCredentialPath(), { force: true })
   } catch {
-    // A malformed retired file is neither a provider connection nor a reason
-    // to fail an otherwise healthy Keychain-backed session.
+    // The new credential remains valid even if an old protected file cannot
+    // be removed on this machine.
   }
 }
 
 /**
- * Resolve a provider token from the same OS vault used by `dotagents setup`
- * and `dotagents sync`. The legacy Electron value, if present, is migrated
- * once and then removed so there is a single source of truth.
+ * Provider tokens are Skiller-owned encrypted application data. Electron
+ * `safeStorage` keeps its encryption material in the operating system vault
+ * (on macOS, one "Skiller Safe Storage" Keychain item), while the encrypted
+ * token values live in Skiller's private app-data file.
+ *
+ * We intentionally do not read or write `dotagents:*` Keychain records. This
+ * prevents background Skiller work from touching a shared credential item and
+ * gives the app a stable, VS Code-like credential boundary.
  */
 export async function readProviderToken(provider: Provider): Promise<string | null> {
-  const saved = await tokenStore.get(provider, 'default')
-  if (saved) return saved
-  const migrated = await legacyToken(provider)
-  if (!migrated) return null
-  await tokenStore.set(provider, 'default', migrated)
-  removeLegacyToken(provider)
-  return migrated
+  const encrypted = readEncryptedCredentials()[provider]
+  if (!encrypted) return null
+  try {
+    return (await secureStorage()).decryptString(Buffer.from(encrypted, 'base64'))
+  } catch {
+    // A token encrypted by another macOS user or a reset Keychain cannot be
+    // recovered safely. Treat it as disconnected rather than exposing a low-
+    // level decryption failure in normal provider flows.
+    return null
+  }
 }
 
-/** Save only in the shared system credential vault; never in a profile or remote. */
+/** Safe for background status rendering: it reads only encrypted file metadata,
+ * never Electron safeStorage or macOS Keychain. */
+export function hasStoredProviderToken(provider: Provider): boolean {
+  return Boolean(readEncryptedCredentials()[provider])
+}
+
+/** Save a provider token only in Skiller's encrypted application store. */
 export async function writeProviderToken(provider: Provider, token: string): Promise<void> {
-  await tokenStore.set(provider, 'default', token)
-  removeLegacyToken(provider)
+  const storage = await secureStorage()
+  const credentials = readEncryptedCredentials()
+  credentials[provider] = storage.encryptString(token).toString('base64')
+  writeEncryptedCredentials(credentials)
+  removeRetiredCredentialStore()
 }
 
 /**

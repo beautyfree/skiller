@@ -63,6 +63,14 @@ jobs:
           release=""
           for attempt in {1..10}; do
             release="$(gh api "repos/${REPOSITORY}/releases/tags/${REQUESTED_TAG}" 2>/dev/null || true)"
+            # GitHub's tag endpoint hides drafts, even from a workflow token.
+            # Fall back to the releases collection so manual and Release Please
+            # drafts are resolved by their explicit tag instead of being
+            # mistaken for a published `null` response.
+            if [[ -z "${release}" || "$(jq -r '.tag_name // empty' <<<"${release}")" != "${REQUESTED_TAG}" ]]; then
+              releases="$(gh api "repos/${REPOSITORY}/releases?per_page=100")"
+              release="$(jq -c --arg tag "${REQUESTED_TAG}" '[.[] | select(.tag_name == $tag)] | first // empty' <<<"${releases}")"
+            fi
             [[ -n "${release}" ]] && break
             echo "Draft release ${REQUESTED_TAG} is not visible yet (attempt ${attempt}/10); retrying..."
             sleep 3

@@ -271,9 +271,16 @@ jobs:
           set -euo pipefail
           appimage="$(find artifacts -maxdepth 1 -name '*.AppImage' -print -quit)"
           [[ -n "$appimage" ]] || { echo "AppImage was not produced"; exit 1; }
-          chmod +x "$appimage"
+          # GitHub's Ubuntu image ships an older unsquashfs than the AppImage
+          # builder uses, so extracting the AppImage here produces a false
+          # negative. Electron-builder produces the same packaged application
+          # in linux-unpacked; launch that bundle under Xvfb and separately
+          # assert that the distributable AppImage exists above.
+          app="$(find artifacts -path '*linux-unpacked*/skiller' -type f -print -quit)"
+          [[ -n "$app" ]] || { echo "Unpacked Linux application was not produced"; exit 1; }
+          chmod +x "$app"
           set +e
-          timeout 10s xvfb-run -a "$appimage" --appimage-extract-and-run --no-sandbox
+          timeout 10s xvfb-run -a "$app" --no-sandbox
           status=$?
           set -e
           [[ "$status" == "124" ]] || { echo "Packaged Linux application exited during startup (status $status)"; exit 1; }

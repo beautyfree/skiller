@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/beautyfree/skiller/compare/v0.2.27...v0.3.0) (2026-08-14)
+
+### Features
+
+* Ship source-aware skill management: installed skills are reviewed by their real source, linked packages are grouped, and local changes are visible before an update or library sync.
+* Add an Agent Library workflow for reviewing, selecting, saving, syncing, and removing skills without losing origin information.
+* Add cached marketplace previews, complete file browsing, multiline skill summaries, and a gateway that consistently serves skills.sh content.
+
+### Bug Fixes
+
+* Keep reviewed secret findings explicit and value-free so an acknowledged example no longer blocks a library save, while changed findings remain blocked.
+* Fix popover clipping, loading states, scroll behaviour, resizable list panes, and shared UI controls across All Skills, Marketplace, and Agent Library.
+
 ## [0.2.27](https://github.com/beautyfree/skiller/compare/v0.2.26...v0.2.27) (2026-08-07)
 
 

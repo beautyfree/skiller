@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/beautyfree/skiller/compare/v0.3.0...v0.3.1) (2026-08-14)
+
+
+### Bug Fixes
+
+* **desktop:** avoid background keychain prompts ([b9d85b8](https://github.com/beautyfree/skiller/commit/b9d85b8a539afb35ed0702e45914b8d5dfbf64d7))
+* **release:** use root changelog in monorepo ([3e33825](https://github.com/beautyfree/skiller/commit/3e338254fa29ae218b7740ec629d84571be0cae9))
+
 ## [0.3.0](https://github.com/beautyfree/skiller/compare/v0.2.27...v0.3.0) (2026-08-14)
 
 ### Features

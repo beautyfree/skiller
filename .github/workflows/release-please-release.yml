@@ -16,6 +16,7 @@ on:
     # Release-PR merges modify only these metadata files.
     paths:
       - "CHANGELOG.md"
+      - "package.json"
       - "apps/desktop/package.json"
       - ".release-please-manifest.json"
 

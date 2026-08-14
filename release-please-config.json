@@ -19,9 +19,16 @@
     { "type": "test", "section": "Tests", "hidden": true }
   ],
   "packages": {
-    "apps/desktop": {
+    ".": {
       "package-name": "skiller",
-      "changelog-path": "../../CHANGELOG.md",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "apps/desktop/package.json",
+          "jsonpath": "$.version"
+        }
+      ],
       "draft": true
     }
   }

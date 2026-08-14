@@ -132,10 +132,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config python3 libxss1 libnss3 libasound2t64 fakeroot dpkg
       - name: Package Linux without publishing
+        working-directory: apps/desktop
         run: |
           bun run build
-          bun --cwd=apps/desktop x electron-builder --linux --publish never
-          bun --cwd=apps/desktop run scripts/patch-appimage-runtime.mjs ../../artifacts
+          bun x electron-builder --linux --publish never
+          bun run scripts/patch-appimage-runtime.mjs ../../artifacts
 
   build-desktop:
     name: Build ${{ matrix.label }}
@@ -185,7 +186,8 @@ jobs:
       - run: bun install --frozen-lockfile
 
       - name: Rebuild native modules
-        run: bun --cwd=apps/desktop x electron-builder install-app-deps
+        working-directory: apps/desktop
+        run: bun x electron-builder install-app-deps
 
       - name: Import Developer ID certificate (macOS)
         if: runner.os == 'macOS'
@@ -225,21 +227,23 @@ jobs:
 
       - name: Build macOS app
         if: matrix.platform == 'macos'
+        working-directory: apps/desktop
         env:
           CSC_NAME: ${{ secrets.CSC_NAME }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
         run: |
           bun run build
-          bun --cwd=apps/desktop x electron-builder --mac --arm64 --x64 --publish never
-          bash apps/desktop/scripts/repack-dmg.sh arm64
-          bash apps/desktop/scripts/repack-dmg.sh x64
+          bun x electron-builder --mac --arm64 --x64 --publish never
+          bash scripts/repack-dmg.sh arm64
+          bash scripts/repack-dmg.sh x64
 
       - name: Build Windows app
         if: matrix.platform == 'windows'
+        working-directory: apps/desktop
         run: |
           bun run build
-          bun --cwd=apps/desktop x electron-builder --win --publish never
+          bun x electron-builder --win --publish never
 
       - name: Smoke-test packaged Windows app
         if: matrix.platform == 'windows'
@@ -254,10 +258,11 @@ jobs:
 
       - name: Build Linux app
         if: matrix.platform == 'linux'
+        working-directory: apps/desktop
         run: |
           bun run build
-          bun --cwd=apps/desktop x electron-builder --linux --publish never
-          bun --cwd=apps/desktop run scripts/patch-appimage-runtime.mjs ../../artifacts
+          bun x electron-builder --linux --publish never
+          bun run scripts/patch-appimage-runtime.mjs ../../artifacts
 
       - name: Smoke-test packaged Linux app
         if: matrix.platform == 'linux'

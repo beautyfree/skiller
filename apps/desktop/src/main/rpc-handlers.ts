@@ -1,4 +1,5 @@
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { basename, dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -38,23 +39,19 @@ import type {
   SyncUndoPreviewJson,
   DotagentsLibraryHealthJson,
   DotagentsLibraryRepairPreviewJson,
-  DotagentsScopeCompositionPreviewJson,
-  DotagentsScopeCompositionUndoPreviewJson,
-  DotagentsScopeMigrationPreviewJson,
-  DotagentsScopeOverviewJson,
   DotagentsResourceOverviewJson,
   DotagentsLibraryLocalChangesJson,
   DotagentsLibraryLocalChangePreviewJson,
   DotagentsLibraryNewLocalPreviewJson,
+  DotagentsLibraryRemovalPreviewJson,
   DotagentsResourceContentJson,
-  DotagentsResourceSelectionJson,
-  DotagentsResourceAdoptionRequestJson,
-  DotagentsResourceAdoptionPreviewJson,
 	SkillImprovementNoteJson,
   SyncPublishPreviewJson,
   SyncSourceReviewProgressJson,
-  UpdateAllResultJson,
   UpdateProgressJson,
+  GlobalSkillUpdateCheckJson,
+  GlobalSkillUpdateProgressJson,
+  LinkedSkillPackageUpdateJson,
 } from '../shared/rpc-schema'
 import { detectAgents, loadAgentConfigs } from './registry'
 import { detectRuntimeAgent } from './runtime-agent'
@@ -69,9 +66,12 @@ import { diffLibraryLocks, normalizeGitIdentity } from 'dotagents/sources'
 import { parseImportDecisions, type ImportDecision, type ImportDisposition } from 'dotagents/decisions'
 import { scanOwnedSkill } from 'dotagents/inventory'
 import { markLocalSkillReviewed, observeLocalSkills, readLocalSkillSources, saveLocalSkillSource } from 'dotagents/source-registry'
+import { applyReviewedManagedSkillUpdates, checkGlobalSkillUpdates, reviewGlobalSkillUpdate } from 'dotagents/global-skill-updates'
+import { applyLinkedSkillPackageUpdate, discoverLinkedSkillPackages, planLinkedSkillPackageUpdate, type LinkedSkillPackageUpdate } from 'dotagents/linked-skill-package-updates'
 import { addSkillImprovementNote, readSkillImprovementNotes } from 'dotagents/skill-evolution'
 import { forkSkillToLibrary } from 'dotagents/skill-fork'
-import { inspectLibraryUpdateRecovery, libraryUpdateJournalPath, recoverLibraryUpdate } from 'dotagents/library-update'
+import { inspectLibraryUpdateRecovery, libraryUpdateJournalPath, planLibraryUpdate, applyLibraryUpdatePlan, recoverLibraryUpdate } from 'dotagents/library-update'
+import { planCanonicalLibraryRemoval } from 'dotagents/library-removal'
 import { classifyProviderFailure, computePlanId, finishGitHubDeviceAuthorization, finishGitLabDeviceAuthorization, GitDependencyResolver, NodeWorkspaceGitPort, ProviderOperationError, startGitHubDeviceAuthorization, startGitLabDeviceAuthorization, type GitRunner } from 'dotagents'
 import { applyOperationUndo, listOperationHistory, planOperationUndo, readOperationHistory } from 'dotagents/history'
 import {
@@ -97,8 +97,7 @@ import { inspectSkillQualityOverview, skillQualityIdentity } from './skill-quali
 import { createSkillQualityEvalPlan, inspectLocalCredentialProfile, inspectLocalDockerImage } from './skill-quality-eval'
 import { runSkillQualityDryPlan } from './skill-quality-dry-run'
 import { runSkillQualityMeasuredPlan } from './skill-quality-measured-run'
-import { LibraryRepairSession, readResourceLibraryContent, readResourceLibraryOverview, ResourceAdoptionSession } from './resource-library'
-import { ScopeCompositionSession, type ScopeProfileReference } from './scope-composition'
+import { LibraryRepairSession, readResourceLibraryContent, readResourceLibraryOverview } from './resource-library'
 import { discardPreparedGitSkill, installPreparedGitSkill, installSkillFromGit, installSkillFromPath, prepareGitSkillInstall, type PreparedGitSkillInstall } from './install'
 import {
   detachSharedSkill,
@@ -107,7 +106,6 @@ import {
   uninstallDirectSkillFromAll,
   uninstallSkillFromAll,
 } from './uninstall'
-import { updateAll, updateSingleSkill } from './update'
 import { appDataRootPath, readSettings, writeSettings } from './settings'
 import {
   agentConfigToJson,
@@ -155,7 +153,7 @@ import {
 } from './projects'
 import { resolveSkillSourcePath } from './skill-paths'
 import { sharedSkillsDir } from './shared-skills'
-import { scanSyncInventoryWithDotagents, type SyncInventoryItem } from './sync-inventory'
+import { scanSyncInventoryWithDotagents, syncInventoryRoots, type SyncInventoryItem } from './sync-inventory'
 import { classifyLibraryLocalChanges } from './sync-library-local-changes'
 import { planBundledSkillExport } from './sync-export'
 import { buildBundledConflictComparison, previewBundledConflictFile, previewNewLocalBundleFile } from './sync-conflict-preview'
@@ -167,7 +165,7 @@ import { checkGitLabConnection, createGitLabSyncProject, GITLAB_DEVICE_FLOW_CLIE
 import { githubGitEnvironment, gitlabGitEnvironment, readProviderToken, writeProviderToken } from './provider-credentials'
 import { applySyncPublishFiles, createSyncPublishPlan, mergeBundledUpdateIntoManifest, type SyncPublishCandidate } from './sync-publish'
 import { applySyncRestorePlan, createSyncRestorePlan, syncRestorePlanId } from './sync-restore'
-import { canonicalSyncAgentRouting, isCanonicalSyncLibrary, planCanonicalSyncLibrary, readCanonicalSyncLock, readSyncManifestFromWorkspace, writeLocalSyncAgentSelection, writeLocalSyncSourceSecurityPolicy } from './sync-dotagents'
+import { canonicalSyncAgentRouting, clearLocalSyncLibraryExclusions, clearLocalSyncRecentlyAddedSkill, isCanonicalSyncLibrary, markLocalSyncSkillsRecentlyAdded, planCanonicalSyncLibrary, readCanonicalSyncLock, readLocalSyncLibraryExclusions, readLocalSyncRecentlyAddedSkills, readSyncManifestFromWorkspace, writeLocalSyncAgentSelection, writeLocalSyncLibraryExclusion, writeLocalSyncSourceSecurityPolicy } from './sync-dotagents'
 import { withReviewTimeout } from './review-timeout'
 import { classifyExternalRestore, externalKeptSourceMatches, externalSkillDirectory, externalSkillRepository, type ManagedExternalSkill, type ExternalRestoreAction } from './sync-external'
 import { assertCredentialFreeGitRemote, assertPortableRelativePath, assertSyncStableId, syncProfileIdFromRemote, type SyncManifest } from './sync-profile'
@@ -207,7 +205,6 @@ let titleBarZoomRestoreFrame: {
   height: number
 } | null = null
 let titleBarZoomActive = false
-const resourceAdoptionSession = new ResourceAdoptionSession()
 const libraryRepairSession = new LibraryRepairSession()
 const LOCAL_LIBRARY_PLAN_TTL_MS = 15 * 60_000
 const newLocalLibraryPlans = new Map<string, {
@@ -215,6 +212,14 @@ const newLocalLibraryPlans = new Map<string, {
   skills: Array<{ id: string; displayName: string; sourcePath: string; contentHash: string; installationAgentSlugs: string[] }>
   existingSkillIds: string[]
   sharedReview?: SyncCenterPublishPlanResult
+  createdAt: number
+}>()
+const libraryRemovalPlans = new Map<string, {
+  profileId: string
+  skillId: string
+  skillName: string
+  removedPath: string
+  portableFiles: Record<string, string>
   createdAt: number
 }>()
 // File switching in the library inspector must not rescan every global agent
@@ -254,17 +259,15 @@ async function readRecentLocalInventory(caller: string) {
 function pruneNewLocalLibraryPlans(): void {
   const oldest = Date.now() - LOCAL_LIBRARY_PLAN_TTL_MS
   for (const [planId, plan] of newLocalLibraryPlans) if (plan.createdAt < oldest) newLocalLibraryPlans.delete(planId)
+  for (const [planId, plan] of libraryRemovalPlans) if (plan.createdAt < oldest) libraryRemovalPlans.delete(planId)
 }
-const scopeCompositionSession = new ScopeCompositionSession({
-  stateFile: join(appDataRootPath(), 'scope-composition.local.json'),
-  resolveWorkspace: syncWorkspacePath,
-})
 
 export type BunSideRpc = {
   send: (
     name: keyof AppRPCSchema['bun']['messages'],
     payload?:
       | UpdateProgressJson
+      | GlobalSkillUpdateProgressJson
       | RepoProgressJson
       | { macosWindowBlur: boolean }
       | { active: boolean }
@@ -305,6 +308,26 @@ function syncSecretFindingsForJson(
     line: finding.line,
     column: finding.column,
   })))
+}
+
+function secretAcknowledgementKey(input: { skillId: string; contentHash: string; rule: string; relativePath: string; line: number }): string {
+  // Deliberately hash only stable metadata plus the complete skill content
+  // hash. The acknowledgement never stores, transmits, or reveals a matched
+  // secret value; changing the skill invalidates the acknowledgement.
+  return createHash('sha256').update(JSON.stringify(input)).digest('hex')
+}
+
+function secretFindingsForLibraryReview(
+  skills: Array<{ id: string; contentHash: string }>,
+  findings: Array<{ skill_id: string; rule: string; relative_path: string; line: number; column: number }>,
+  acknowledged: Record<string, { acknowledged_at: string }> | undefined,
+) {
+  const hashBySkillId = new Map(skills.map((skill) => [skill.id, skill.contentHash]))
+  return findings.map((finding) => {
+    const contentHash = hashBySkillId.get(finding.skill_id) ?? ''
+    const acknowledgementKey = secretAcknowledgementKey({ skillId: finding.skill_id, contentHash, rule: finding.rule, relativePath: finding.relative_path, line: finding.line })
+    return { ...finding, acknowledgement_key: acknowledgementKey, acknowledged: Boolean(acknowledged?.[acknowledgementKey]) }
+  })
 }
 
 function selectedDetectedAgentSlugs(value: unknown, agents: AgentConfig[]): string[] {
@@ -566,13 +589,6 @@ async function listSyncProfiles(refreshRemote = false, signal?: AbortSignal): Pr
 	return activeProfileId
 		? result.sort((left, right) => Number(right.profile_id === activeProfileId) - Number(left.profile_id === activeProfileId))
 		: result
-}
-
-async function scopeProfileReferences(): Promise<ScopeProfileReference[]> {
-  return (await listSyncProfiles()).map((profile) => ({
-    profileId: profile.profile_id,
-    canonical: isCanonicalSyncLibrary(syncWorkspacePath(profile.profile_id)),
-  }))
 }
 
 /** Sources from the inventory the user has just reviewed. Kept main-process-only. */
@@ -1653,23 +1669,6 @@ function readAppVersion(): string {
   }
 }
 
-function remoteGitHubSkillSource(repoUrl: string): { rawBase: string; apiBase: string } {
-  const trust = requireTrustedSource(repoUrl, exactSourceSecurityPolicy([repoUrl]))
-  if (trust.kind !== 'git') throw new Error('Skill preview requires a remote GitHub repository')
-  const repository = new URL(trust.source)
-  if (repository.protocol !== 'https:' || repository.hostname !== 'github.com') {
-    throw new Error('Remote SKILL.md preview currently supports HTTPS GitHub repositories only')
-  }
-  const parts = repository.pathname.replace(/\.git$/, '').split('/').filter(Boolean)
-  if (parts.length !== 2) throw new Error('GitHub repository must identify exactly one owner and repository')
-  const owner = encodeURIComponent(parts[0]!)
-  const name = encodeURIComponent(parts[1]!)
-  return {
-    rawBase: `https://raw.githubusercontent.com/${owner}/${name}`,
-    apiBase: `https://api.github.com/repos/${owner}/${name}`,
-  }
-}
-
 type ClawhubPreviewSource = {
   slug: string
   ownerHandle: string | null
@@ -1775,47 +1774,11 @@ async function fetchClawhubSkillContent(source: ClawhubPreviewSource, filePath?:
   return await response.text()
 }
 
-async function remoteGitHubBranches(apiBase: string): Promise<string[]> {
-  const fallbacks = ['main', 'master']
-  try {
-    const response = await fetch(apiBase, {
-      headers: { Accept: 'application/vnd.github+json' },
-      signal: fetchTimeoutSignal(10_000),
-    })
-    if (response.ok) {
-      const body = await response.json() as { default_branch?: unknown }
-      if (typeof body.default_branch === 'string' && body.default_branch.trim()) {
-        return [...new Set([body.default_branch, ...fallbacks])]
-      }
-    }
-  } catch {
-    /* A raw-content fallback below still covers public GitHub repositories. */
-  }
-  return fallbacks
-}
-
 function normalizeRemoteSkillPath(value?: string | null): string | null {
   if (!value) return null
   const segments = value.split('/').filter(Boolean)
   if (segments.length === 0 || segments.some((segment) => segment === '.' || segment === '..')) return null
   return segments.join('/')
-}
-
-function remoteSkillFileCandidates(
-  skillName?: string | null,
-  skillPath?: string | null,
-  filePath?: string | null,
-): string[] {
-  const explicit = normalizeRemoteSkillPath(skillPath)
-  const file = normalizeRemoteSkillPath(filePath) ?? 'SKILL.md'
-  const candidates: string[] = []
-  if (explicit) candidates.push(`${explicit}/${file}`)
-  if (skillName) candidates.push(`skills/${encodeURIComponent(skillName)}/${file}`)
-  // A number of single-skill repositories keep SKILL.md at their root. The
-  // preview always names its selected file, so this fallback must apply even
-  // when the caller explicitly asks for SKILL.md.
-  if (file === 'SKILL.md') candidates.push('SKILL.md')
-  return [...new Set(candidates)]
 }
 
 async function fetchRemoteSkillContent(
@@ -1824,34 +1787,17 @@ async function fetchRemoteSkillContent(
   skillPath?: string | null,
   filePath?: string | null,
   source?: string | null,
+  catalogId?: string | null,
 ): Promise<string> {
   const clawhubSource = remoteClawhubSkillSource(repoUrl)
   if (clawhubSource) return fetchClawhubSkillContent(clawhubSource, filePath)
   if (source === 'skills.sh') {
-    const snapshot = await fetchSkillsShGatewaySnapshot(repoUrl, skillPath, skillName)
+    const snapshot = await fetchSkillsShGatewaySnapshot(repoUrl, skillPath, skillName, catalogId)
     const content = snapshot ? fileFromGatewaySnapshot(snapshot, filePath) : null
     if (content) return content
     throw new Error('Could not load this skill from the marketplace gateway')
   }
-  const { rawBase, apiBase } = remoteGitHubSkillSource(repoUrl)
-  const branches = await remoteGitHubBranches(apiBase)
-  const filePaths = remoteSkillFileCandidates(skillName, skillPath, filePath)
-
-  for (const path of filePaths) {
-    for (const branch of branches) {
-      const url = `${rawBase}/${branch}/${path}`
-      try {
-        const res = await fetch(url, { signal: fetchTimeoutSignal(10_000), redirect: 'error' })
-        if (res.ok) {
-          const text = await res.text()
-          if (text.length > 0) return text
-        }
-      } catch {
-        /* try next */
-      }
-    }
-  }
-  throw new Error('Could not fetch SKILL.md from repository')
+  throw new Error('Remote previews are available only through a supported marketplace provider')
 }
 
 async function listRemoteSkillFiles(
@@ -1859,47 +1805,16 @@ async function listRemoteSkillFiles(
   skillName?: string | null,
   skillPath?: string | null,
   source?: string | null,
+  catalogId?: string | null,
 ): Promise<string[]> {
   const clawhubSource = remoteClawhubSkillSource(repoUrl)
   if (clawhubSource) return listClawhubSkillFiles(clawhubSource)
   if (source === 'skills.sh') {
-    const snapshot = await fetchSkillsShGatewaySnapshot(repoUrl, skillPath, skillName)
+    const snapshot = await fetchSkillsShGatewaySnapshot(repoUrl, skillPath, skillName, catalogId)
     if (snapshot) return filesFromGatewaySnapshot(snapshot)
     throw new Error('Could not list this skill from the marketplace gateway')
   }
-  const { apiBase } = remoteGitHubSkillSource(repoUrl)
-  const explicit = normalizeRemoteSkillPath(skillPath) ?? (skillName ? `skills/${encodeURIComponent(skillName)}` : null)
-  const branches = await remoteGitHubBranches(apiBase)
-  for (const branch of branches) {
-    try {
-      const response = await fetch(`${apiBase}/git/trees/${branch}?recursive=1`, {
-        headers: { Accept: 'application/vnd.github+json' },
-        signal: fetchTimeoutSignal(10_000),
-      })
-      if (!response.ok) continue
-      const body = await response.json() as { tree?: Array<{ path?: string; type?: string }> }
-      const files = (body.tree ?? [])
-        .filter((entry) => entry.type === 'blob' && typeof entry.path === 'string')
-        .map((entry) => entry.path!)
-        .filter((path) => !explicit || path === `${explicit}/SKILL.md` || path.startsWith(`${explicit}/`))
-        .map((path) => explicit && path.startsWith(`${explicit}/`) ? path.slice(explicit.length + 1) : path)
-        .filter((path) => !path.split('/').some((part) => part === '.git' || part === 'node_modules'))
-        .sort((a, b) => a === 'SKILL.md' ? -1 : b === 'SKILL.md' ? 1 : a.localeCompare(b))
-        .slice(0, 128)
-      if (files.length > 0) return files
-
-      // A standalone skill repository has no skill subdirectory. Retain this
-      // as a narrow fallback rather than returning the entire repository tree.
-      const rootSkill = (body.tree ?? []).some((entry) => entry.type === 'blob' && entry.path === 'SKILL.md')
-      if (rootSkill) return ['SKILL.md']
-    } catch {
-      /* Try the conventional fallback branch. */
-    }
-  }
-  // Tree listing is optional enrichment. Raw GitHub content remains available
-  // when its API is rate-limited or a repository has an unusually large tree.
-  // Let the preview attempt its canonical entry file before declaring failure.
-  return ['SKILL.md']
+  throw new Error('Remote previews are available only through a supported marketplace provider')
 }
 
 export function createRequestHandlers(ctx: {
@@ -1910,6 +1825,8 @@ export function createRequestHandlers(ctx: {
 }) {
   const { platform, rpc, ensureSkillWatcherStarted } = ctx
   const getMainWindow = () => platform.getMainWindow()
+  let provenanceBaselineReady = false
+  const reviewedLinkedPackageUpdates = new Map<string, LinkedSkillPackageUpdate>()
 
   const handlers = {
     list_agents: async () => {
@@ -1975,12 +1892,169 @@ export function createRequestHandlers(ctx: {
       // missing source evidence in the background; a later refresh receives
       // the richer state without a visible "checking sources" phase.
       void scanSyncInventoryWithDotagents(agents)
-        .then((inventory) => observeLocalSkills(inventory.items.flatMap((item) => item.gitSource
-          ? [{ skill: item.candidateKey, source: 'git' as const, repository: item.gitSource.url, skill_path: item.gitSource.skillPath, ref: item.gitSource.ref }]
-          : [])))
+        .then((inventory) => {
+          observeLocalSkills(inventory.items.map((item) => item.gitSource
+            ? { skill: item.candidateKey, source: 'git' as const, repository: item.gitSource.url, skill_path: item.gitSource.skillPath, ref: item.gitSource.ref, observed_integrity: item.integrity }
+            : { skill: item.candidateKey, observed_integrity: item.integrity }))
+          // The initial list deliberately returns before deep provenance
+          // discovery. Refresh active caches once those read-only facts are
+          // ready so a first-run baseline cannot leave a stale review badge.
+          if (!provenanceBaselineReady) {
+            provenanceBaselineReady = true
+            rpc.send('skills_changed')
+          }
+        })
         .catch(() => undefined)
       setImmediate(() => ensureSkillWatcherStarted?.('after_scan_all_skills'))
       return json
+    },
+    check_global_skill_updates: async (): Promise<GlobalSkillUpdateCheckJson> => {
+      const agents = loadDetectedAgents('check_global_skill_updates')
+      const toJsonItems = (items: Awaited<ReturnType<typeof checkGlobalSkillUpdates>>['items']) => items.map((item) => ({
+        skill: item.skill,
+        description: item.description,
+        local_path: item.localPath,
+        state: item.state,
+        repository: item.repository,
+        skill_path: item.skillPath,
+        source: item.source,
+        managed: item.managed,
+        local_integrity: item.localIntegrity,
+        remote_integrity: item.remoteIntegrity,
+        ...(item.reason ? { reason: item.reason } : {}),
+      }))
+      rpc.send('global_skill_update_progress', { phase: 'started', completed_sources: 0, total_sources: 0, items: [] })
+      const check = await checkGlobalSkillUpdates({
+        roots: syncInventoryRoots(agents).map((root) => ({
+          path: root.path,
+          kind: root.kind,
+          ...(root.agentSlug ? { agent: root.agentSlug } : {}),
+        })),
+        sources: readLocalSkillSources(),
+        skillsCliLock: readSkillsCliLock(),
+        managedRoots: [sharedSkillsDir()],
+        cacheDirectory: (repository) => join(
+          appDataRootPath(),
+          'source-checkouts',
+          createHash('sha256').update(repository).digest('hex').slice(0, 20),
+        ),
+        onProgress: (progress) => rpc.send('global_skill_update_progress', {
+          phase: 'progress',
+          completed_sources: progress.completedSources,
+          total_sources: progress.totalSources,
+          items: toJsonItems(progress.items),
+        }),
+      })
+      const result = {
+        checked_at: check.checkedAt,
+        items: toJsonItems(check.items),
+        new_from_sources: check.newFromSources.map((item) => ({
+          skill: item.skill,
+          repository: item.repository,
+          skill_path: item.skillPath,
+          description: item.description,
+        })),
+      }
+      rpc.send('global_skill_update_progress', { phase: 'complete', completed_sources: 0, total_sources: 0, items: result.items })
+      return result
+    },
+    review_linked_skill_package_update: async (params: { repository: string }): Promise<LinkedSkillPackageUpdateJson> => {
+      const repository = normalizeGitIdentity(params.repository)
+      const packages = await discoverLinkedSkillPackages(sharedSkillsDir())
+      for (const candidate of packages) {
+        try {
+          const reviewed = await planLinkedSkillPackageUpdate({
+            sharedRoot: sharedSkillsDir(),
+            packageRoot: candidate.root,
+            sourcePolicy: exactSourceSecurityPolicy([repository]),
+          })
+          const remote = reviewed.plan?.remoteIdentity ?? repository
+          if (normalizeGitIdentity(remote) !== repository) continue
+          if (reviewed.plan) reviewedLinkedPackageUpdates.set(reviewed.plan.planId, reviewed)
+          return {
+            plan_id: reviewed.plan?.planId ?? '',
+            package_name: basename(reviewed.package.root),
+            repository: remote,
+            linked_skills: reviewed.package.skills,
+            state: reviewed.state,
+            changed_files: reviewed.plan?.files ?? [],
+            local_changes: reviewed.localChanges,
+          }
+        } catch {
+          // This installed package does not match the requested source or is not safe to update.
+        }
+      }
+      throw new Error('No clean installed package was found for this source. Update it through its original installer.')
+    },
+    apply_linked_skill_package_update: async (params: { plan_id: string }): Promise<{ package_name: string; updated_skills: string[] }> => {
+      const reviewed = reviewedLinkedPackageUpdates.get(params.plan_id)
+      if (!reviewed) throw new Error('This package review expired. Review the package update again.')
+      if (!reviewed.plan) throw new Error('This package has local changes. Review or commit them before updating.')
+      const result = await applyLinkedSkillPackageUpdate({
+        sharedRoot: sharedSkillsDir(),
+        packageRoot: reviewed.package.root,
+        plan: reviewed.plan,
+      })
+      reviewedLinkedPackageUpdates.delete(params.plan_id)
+      rpc.send('skills_changed')
+      return { package_name: basename(result.package.root), updated_skills: result.package.skills }
+    },
+    apply_reviewed_global_skill_updates: async (params: { updates: { skill: string; repository: string; skill_path: string | null; expected_local_integrity: string; expected_remote_integrity: string }[] }): Promise<{ updated: string[] }> => {
+      const updates = params.updates.map((update) => ({
+        skill: update.skill,
+        repository: update.repository,
+        skillPath: update.skill_path,
+        expectedLocalIntegrity: update.expected_local_integrity,
+        expectedRemoteIntegrity: update.expected_remote_integrity,
+      }))
+      const result = await applyReviewedManagedSkillUpdates({
+        root: sharedSkillsDir(),
+        sources: readLocalSkillSources(),
+        updates,
+        onProgress: (progress) => rpc.send('skill_update_progress', {
+          done: progress.done,
+          total: progress.total,
+          current_skill: progress.currentSkill,
+          phase: progress.phase,
+        }),
+        cacheDirectory: (repository) => join(
+          appDataRootPath(),
+          'source-checkouts',
+          createHash('sha256').update(repository).digest('hex').slice(0, 20),
+        ),
+      })
+      const sources = readLocalSkillSources()
+      for (const item of result.updated) {
+        const current = sources[item.skill]
+        if (!current) continue
+        saveLocalSkillSource(item.skill, {
+          source: current.source,
+          repository: current.repository,
+          skill_path: current.skill_path,
+          ref: current.ref,
+          content_sha256: current.content_sha256,
+          observed_integrity: item.integrity,
+          ownership: current.ownership,
+          forked_from: current.forked_from,
+        })
+      }
+      return { updated: result.updated.map((item) => item.skill) }
+    },
+    review_global_skill_update: async (params: { skill: string; repository: string; skill_path: string | null; expected_local_integrity: string; expected_remote_integrity: string }) => {
+      const update = {
+        skill: params.skill,
+        repository: params.repository,
+        skillPath: params.skill_path,
+        expectedLocalIntegrity: params.expected_local_integrity,
+        expectedRemoteIntegrity: params.expected_remote_integrity,
+      }
+      const details = await reviewGlobalSkillUpdate({
+        root: sharedSkillsDir(),
+        sources: readLocalSkillSources(),
+        update,
+        cacheDirectory: (repository) => join(appDataRootPath(), 'source-checkouts', createHash('sha256').update(repository).digest('hex').slice(0, 20)),
+      })
+      return { skill: details.skill, changes: details.changes.map((change) => ({ path: change.path, kind: change.kind, local_size: change.localSize, remote_size: change.remoteSize })) }
     },
     scan_agent_skills: async (params: { agentSlug: string }) => {
       const { agentSlug } = params
@@ -2253,7 +2327,16 @@ export function createRequestHandlers(ctx: {
         profileId: params.profileId,
         mode: manifest.profile.mode,
         changed: status.changed,
+        recentlyAdded: readLocalSyncRecentlyAddedSkills(workspace),
       })
+    },
+    dotagents_library_mark_seen: async (params: { profileId: string; skillId: string }): Promise<{ ok: true }> => {
+      assertSyncStableId(params.profileId)
+      assertSyncStableId(params.skillId)
+      if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
+      const workspace = syncWorkspacePath(params.profileId)
+      clearLocalSyncRecentlyAddedSkill(workspace, params.skillId)
+      return { ok: true }
     },
     dotagents_library_local_changes: async (params: { profileId: string }): Promise<DotagentsLibraryLocalChangesJson> => {
       assertSyncStableId(params.profileId)
@@ -2285,6 +2368,7 @@ export function createRequestHandlers(ctx: {
         manifest: restore.manifest,
         ledger,
         restoreEntries: restore.entries,
+        libraryExclusions: readLocalSyncLibraryExclusions(workspace),
       })
       return { profile_id: params.profileId, scanned_at: new Date().toISOString(), changes }
     },
@@ -2300,13 +2384,13 @@ export function createRequestHandlers(ctx: {
         const inventory = await readRecentLocalInventory('dotagents_library_local_change_preview')
         const ledger = readSyncLedger(params.profileId)
         const restore = createSyncRestorePlan(workspace, sharedSkillsDir(), ledger ?? undefined)
-        const change = classifyLibraryLocalChanges({ inventory, manifest: restore.manifest, ledger, restoreEntries: restore.entries })
+        const change = classifyLibraryLocalChanges({ inventory, manifest: restore.manifest, ledger, restoreEntries: restore.entries, libraryExclusions: readLocalSyncLibraryExclusions(workspace) })
           .find((candidate) => candidate.id === params.skillId)
         if (!change) throw new Error('This local change is no longer present. Refresh the library.')
         const item = inventory.items.find((candidate) => candidate.candidateKey === params.skillId)
         if (change.kind === 'missing-local' || !item) {
           cached = { expiresAt: Date.now() + LOCAL_CHANGE_PREVIEW_TTL_MS, response: { profile_id: params.profileId, id: params.skillId, kind: change.kind, local_files: [] } }
-        } else if (change.kind === 'new-local') {
+        } else if (change.kind === 'new-local' || change.kind === 'kept-local') {
           const files = planBundledSkillExport(item.candidateKey, item.sourcePath).files.map((file) => file.relativePath)
           cached = { expiresAt: Date.now() + LOCAL_CHANGE_PREVIEW_TTL_MS, localPath: item.sourcePath, response: { profile_id: params.profileId, id: params.skillId, kind: change.kind, local_files: files } }
         } else {
@@ -2402,6 +2486,7 @@ export function createRequestHandlers(ctx: {
         })
         pruneNewLocalLibraryPlans()
         newLocalLibraryPlans.set(planId, { profileId: params.profileId, skills, existingSkillIds, sharedReview, createdAt: Date.now() })
+        const secretFindings = secretFindingsForLibraryReview(skills, syncSecretFindingsForJson(sharedReview.plan.bundledSkills), readSyncLedger(params.profileId)?.acknowledged_secret_findings)
         return {
           profile_id: params.profileId,
           plan_id: planId,
@@ -2409,8 +2494,8 @@ export function createRequestHandlers(ctx: {
           skills: sharedReview.plan.bundledSkills.map((skill) => ({ id: skill.id, display_name: skills.find((item) => item.id === skill.id)?.displayName ?? skill.id, files: skill.files.length, paths: skill.files.map((file) => file.relativePath) })),
           linked_skills: linkedSkills,
           skipped_skills: skippedSkills,
-          secret_findings: syncSecretFindingsForJson(sharedReview.plan.bundledSkills).map((finding) => ({ skill_id: finding.skill_id, rule: finding.rule, file: finding.relative_path, line: finding.line })),
-          has_blockers: sharedReview.plan.secretFindings.length > 0,
+          secret_findings: secretFindings.filter((finding) => !finding.acknowledged).map(({ relative_path, acknowledged: _acknowledged, ...finding }) => ({ ...finding, file: relative_path })),
+          has_blockers: secretFindings.some((finding) => !finding.acknowledged),
         }
       }
 
@@ -2424,6 +2509,7 @@ export function createRequestHandlers(ctx: {
       })
       pruneNewLocalLibraryPlans()
       newLocalLibraryPlans.set(planId, { profileId: params.profileId, skills, existingSkillIds, createdAt: Date.now() })
+      const secretFindings = secretFindingsForLibraryReview(skills, syncSecretFindingsForJson(update.bundledSkills), readSyncLedger(params.profileId)?.acknowledged_secret_findings)
       return {
         profile_id: params.profileId,
         plan_id: planId,
@@ -2431,11 +2517,11 @@ export function createRequestHandlers(ctx: {
         skills: update.bundledSkills.map((skill) => ({ id: skill.id, display_name: skills.find((item) => item.id === skill.id)?.displayName ?? skill.id, files: skill.files.length, paths: skill.files.map((file) => file.relativePath) })),
         linked_skills: [],
         skipped_skills: [],
-        secret_findings: syncSecretFindingsForJson(update.bundledSkills).map((finding) => ({ skill_id: finding.skill_id, rule: finding.rule, file: finding.relative_path, line: finding.line })),
-        has_blockers: update.secretFindings.length > 0,
+        secret_findings: secretFindings.filter((finding) => !finding.acknowledged).map(({ relative_path, acknowledged: _acknowledged, ...finding }) => ({ ...finding, file: relative_path })),
+        has_blockers: secretFindings.some((finding) => !finding.acknowledged),
       }
     },
-    dotagents_library_new_local_apply: async (params: { profileId: string; planId: string }): Promise<{ pushed: boolean }> => {
+    dotagents_library_new_local_apply: async (params: { profileId: string; planId: string; acknowledgedSecretFindingKeys?: string[] }): Promise<{ pushed: boolean }> => {
       assertSyncStableId(params.profileId)
       if (!/^[a-f0-9]{64}$/.test(params.planId)) throw new Error('Invalid local change review')
       pruneNewLocalLibraryPlans()
@@ -2464,7 +2550,20 @@ export function createRequestHandlers(ctx: {
         }
       }
       const update = reviewed.sharedReview?.plan ?? createSyncPublishPlan(params.profileId, manifest.profile.mode, candidates, manifest.agent_policy)
-      if (update.secretFindings.length > 0) throw new Error('Possible secrets were found after review. Refresh the changes list.')
+      const acknowledgedKeys = new Set((params.acknowledgedSecretFindingKeys ?? []).filter((key): key is string => typeof key === 'string' && /^[a-f0-9]{64}$/.test(key)))
+      const ledgerBeforeSave = readSyncLedger(params.profileId)
+      const currentSecretFindings = secretFindingsForLibraryReview(reviewed.skills, syncSecretFindingsForJson(update.bundledSkills), ledgerBeforeSave?.acknowledged_secret_findings)
+      const unacknowledged = currentSecretFindings.filter((finding) => !finding.acknowledged && !acknowledgedKeys.has(finding.acknowledgement_key))
+      if (unacknowledged.length > 0) throw new Error('Possible secrets were found after review. Review and explicitly acknowledge the listed findings before saving.')
+      const approvedSecretFindings = currentSecretFindings
+        .filter((finding) => finding.acknowledged || acknowledgedKeys.has(finding.acknowledgement_key))
+        .map((finding) => ({
+          skillId: finding.skill_id,
+          rule: finding.rule,
+          relativePath: finding.relative_path,
+          line: finding.line,
+          column: finding.column,
+        }))
       const merged = mergeBundledUpdateIntoManifest(manifest, update, { allowNew: true })
       const canonical = await planCanonicalSyncLibrary(workspace, merged, reviewed.sharedReview ? {
         // Newly selected sources were already checked during the review and
@@ -2473,15 +2572,97 @@ export function createRequestHandlers(ctx: {
         // approved dependencies remain valid too.
         cacheRoot: join(syncProfilesDirectory(), '.source-cache', 'git'),
       } : undefined)
-      applySyncPublishFiles(workspace, merged, canonical.portableFiles)
+      applySyncPublishFiles(workspace, merged, canonical.portableFiles, { acknowledgedSecretFindings: approvedSecretFindings })
       const transport = await gitTransportForWorkspace(workspace)
-      await commitSyncWorkspace(workspace, 'Skiller sync: add reviewed local skills')
+      await commitSyncWorkspace(workspace, 'Skiller sync: add reviewed local skills', {
+        acknowledgedSecretFindings: approvedSecretFindings.map((finding) => ({
+          file: `skills/${finding.skillId}/${finding.relativePath}`,
+          rule: finding.rule as import('dotagents/git-workspace').GitWorkspaceSecretFinding['rule'],
+          line: finding.line,
+          column: finding.column,
+        })),
+      })
       await pushSyncWorkspace(workspace, undefined, transport?.port)
-      const ledger = readSyncLedger(params.profileId)
+      clearLocalSyncLibraryExclusions(workspace, reviewed.skills.map((skill) => skill.id))
+      markLocalSyncSkillsRecentlyAdded(workspace, update.bundledSkills.map((skill) => skill.id))
+      const ledger = ledgerBeforeSave
       const next = new Map(Object.entries(ledger?.skills ?? {}).map(([id, entry]) => [id, { sha256: entry.sha256, keptRemoteSha256: entry.kept_remote_sha256 }]))
       for (const skill of update.bundledSkills) next.set(skill.id, { sha256: skill.sha256, keptRemoteSha256: undefined })
-      writeSyncLedgerAt(syncLedgerPath(params.profileId), makeSyncLedger(params.profileId, [...next.entries()].map(([id, entry]) => ({ id, ...entry })), ledger?.external_kept_sources))
+      const acknowledgedSecretFindings = { ...(ledger?.acknowledged_secret_findings ?? {}) }
+      for (const finding of currentSecretFindings) if (acknowledgedKeys.has(finding.acknowledgement_key)) acknowledgedSecretFindings[finding.acknowledgement_key] = { acknowledged_at: new Date().toISOString() }
+      writeSyncLedgerAt(syncLedgerPath(params.profileId), {
+        ...makeSyncLedger(params.profileId, [...next.entries()].map(([id, entry]) => ({ id, ...entry })), ledger?.external_kept_sources),
+        ...(Object.keys(acknowledgedSecretFindings).length > 0 ? { acknowledged_secret_findings: acknowledgedSecretFindings } : {}),
+      })
       newLocalLibraryPlans.delete(params.planId)
+      return { pushed: true }
+    },
+    dotagents_library_removal_preview: async (params: { profileId: string; skillId: string }): Promise<DotagentsLibraryRemovalPreviewJson> => {
+      assertSyncStableId(params.profileId)
+      assertSyncStableId(params.skillId)
+      if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
+      const workspace = syncWorkspacePath(params.profileId)
+      if (!isCanonicalSyncLibrary(workspace)) throw new Error('Upgrade this legacy library before managing agent resources')
+      const status = await getSyncWorkspaceStatus(workspace)
+      if (status.changed) throw new Error('Review existing library changes before removing a skill')
+      const overview = readResourceLibraryOverview({
+        workspace,
+        profileId: params.profileId,
+        mode: readSyncManifestFromWorkspace(workspace).profile.mode,
+        changed: status.changed,
+      })
+      const resource = overview.resources.find((entry) => entry.id === params.skillId)
+      if (!resource) throw new Error('This skill is no longer in the library. Refresh and try again.')
+      const removal = planCanonicalLibraryRemoval(workspace, params.skillId)
+      pruneNewLocalLibraryPlans()
+      libraryRemovalPlans.set(removal.planId, {
+        profileId: params.profileId,
+        skillId: params.skillId,
+        skillName: resource.id,
+        removedPath: removal.removedPath,
+        portableFiles: removal.portableFiles,
+        createdAt: Date.now(),
+      })
+      return { profile_id: params.profileId, plan_id: removal.planId, skill_id: params.skillId, skill_name: resource.id }
+    },
+    dotagents_library_removal_apply: async (params: { profileId: string; planId: string }): Promise<{ pushed: boolean }> => {
+      assertSyncStableId(params.profileId)
+      if (!/^[a-f0-9]{64}$/.test(params.planId)) throw new Error('Invalid library removal review')
+      pruneNewLocalLibraryPlans()
+      const reviewed = libraryRemovalPlans.get(params.planId)
+      if (!reviewed || reviewed.profileId !== params.profileId) throw new Error('This library removal review expired. Review it again.')
+      const workspace = syncWorkspacePath(params.profileId)
+      const status = await getSyncWorkspaceStatus(workspace)
+      if (status.changed) throw new Error('The library changed after review. Review the removal again.')
+      const fresh = planCanonicalLibraryRemoval(workspace, reviewed.skillId)
+      if (fresh.planId !== params.planId) throw new Error('The library changed after review. Review the removal again.')
+
+      const target = join(workspace, ...reviewed.removedPath.split('/'))
+      assertPortableRelativePath(reviewed.removedPath)
+      if (!existsSync(target) || lstatSync(target).isSymbolicLink()) throw new Error('The saved skill changed after review. Review the removal again.')
+      const quarantine = join(workspace, '.dotagents', `remove-${params.planId}`)
+      const update = planLibraryUpdate({ root: workspace, skills: [], portableFiles: reviewed.portableFiles })
+      if (update.hasConflicts || update.secretFindings.length > 0) throw new Error('The library changed after review. Review the removal again.')
+      try {
+        mkdirSync(dirname(quarantine), { recursive: true })
+        renameSync(target, quarantine)
+        applyLibraryUpdatePlan(update, { portableFiles: reviewed.portableFiles })
+        rmSync(quarantine, { recursive: true, force: true })
+      } catch (cause) {
+        if (!existsSync(target) && existsSync(quarantine)) renameSync(quarantine, target)
+        throw cause
+      }
+      const transport = await gitTransportForWorkspace(workspace)
+      await commitSyncWorkspace(workspace, `Skiller sync: remove ${reviewed.skillName} from library`)
+      await pushSyncWorkspace(workspace, undefined, transport?.port)
+      // Removing from a library is not an uninstall. Remember that the local
+      // copy is intentionally kept, so the next scan does not falsely present
+      // it as a newly discovered skill. A content change reopens the review.
+      const local = (await readRecentLocalInventory('dotagents_library_removal_apply')).items
+        .find((item) => item.candidateKey === reviewed.skillId)
+      if (local) writeLocalSyncLibraryExclusion(workspace, { id: local.candidateKey, integrity: local.contentHash })
+      clearLocalSyncRecentlyAddedSkill(workspace, reviewed.skillId)
+      libraryRemovalPlans.delete(params.planId)
       return { pushed: true }
     },
 		dotagents_resource_content: async (params: { profileId: string; key: string; file?: string }): Promise<DotagentsResourceContentJson> => {
@@ -2515,58 +2696,6 @@ export function createRequestHandlers(ctx: {
       const workspace = syncWorkspacePath(params.profileId)
       if (!isCanonicalSyncLibrary(workspace)) throw new Error('Upgrade this legacy library before repairing it')
       return libraryRepairSession.apply({ workspace, profileId: params.profileId, planId: params.planId })
-    },
-    dotagents_scope_overview: async (): Promise<DotagentsScopeOverviewJson> => {
-      return scopeCompositionSession.overview(await scopeProfileReferences())
-    },
-    dotagents_scope_migration_preview: async (params: { profileId: string; scope: 'personal' | 'project' }): Promise<DotagentsScopeMigrationPreviewJson> => {
-      assertSyncStableId(params.profileId)
-      if (!['personal', 'project'].includes(params.scope)) throw new Error('Choose Personal or Project')
-      if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
-      if (!isCanonicalSyncLibrary(syncWorkspacePath(params.profileId))) throw new Error('Upgrade this legacy library before assigning a scope')
-      return scopeCompositionSession.previewMigration(params)
-    },
-    dotagents_scope_migration_apply: async (params: { profileId: string; planId: string }): Promise<{ history_id: string }> => {
-      assertSyncStableId(params.profileId)
-      if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
-      if (!isCanonicalSyncLibrary(syncWorkspacePath(params.profileId))) throw new Error('Upgrade this legacy library before assigning a scope')
-      return scopeCompositionSession.applyMigration(params)
-    },
-    dotagents_scope_composition_preview: async (params: {
-      personalProfileId: string | null
-      projectProfileId: string | null
-      exclusions: string[]
-    }): Promise<DotagentsScopeCompositionPreviewJson> => {
-      if (params.personalProfileId) assertSyncStableId(params.personalProfileId)
-      if (params.projectProfileId) assertSyncStableId(params.projectProfileId)
-      return scopeCompositionSession.previewComposition({ profiles: await scopeProfileReferences(), ...params })
-    },
-    dotagents_scope_composition_apply: async (params: { planId: string }): Promise<DotagentsScopeCompositionPreviewJson> => {
-      return scopeCompositionSession.applyComposition(params.planId, await scopeProfileReferences())
-    },
-    dotagents_scope_composition_undo_preview: async (): Promise<DotagentsScopeCompositionUndoPreviewJson | null> => {
-      return scopeCompositionSession.previewCompositionUndo(await scopeProfileReferences())
-    },
-    dotagents_scope_composition_undo_apply: async (params: { planId: string }): Promise<DotagentsScopeCompositionPreviewJson | null> => {
-      return scopeCompositionSession.applyCompositionUndo(params.planId, await scopeProfileReferences())
-    },
-    dotagents_resource_pick_source: async (params: { kind: 'skill' | 'instruction' | 'command' | 'subagent' }): Promise<DotagentsResourceSelectionJson | null> => {
-      if (!['skill', 'instruction', 'command', 'subagent'].includes(params.kind)) throw new Error('Unsupported resource kind')
-      const selected = params.kind === 'skill'
-        ? await platform.pickFolder({ title: 'Choose the skill folder to bring into your library' })
-        : await platform.pickFile({ title: `Choose the ${params.kind} file to bring into your library` })
-      return selected ? resourceAdoptionSession.registerSelection(selected, params.kind) : null
-    },
-    dotagents_resource_adopt_preview: async (params: DotagentsResourceAdoptionRequestJson): Promise<DotagentsResourceAdoptionPreviewJson> => {
-      assertSyncStableId(params.profileId)
-      if (!hasSyncWorkspace(params.profileId)) throw new Error('This library has not been set up on this computer')
-      const workspace = syncWorkspacePath(params.profileId)
-      if (!isCanonicalSyncLibrary(workspace)) throw new Error('Upgrade this legacy library before managing agent resources')
-      const manifest = readSyncManifestFromWorkspace(workspace)
-      return resourceAdoptionSession.preview({ workspace, profileId: params.profileId, mode: manifest.profile.mode, request: params })
-    },
-    dotagents_resource_adopt_apply: async (params: { planId: string }): Promise<{ history_id: string; resource_key: string }> => {
-      return resourceAdoptionSession.apply(params.planId)
     },
     sync_center_publish_preview: async (params?: { requestId?: string; selectedKeys?: string[]; decisions?: ImportDecision[]; mode?: 'private' | 'team' | 'public'; minimumReleaseAgeMinutes?: number }): Promise<SyncPublishPreviewJson> => {
       const requestId = params?.requestId?.trim()
@@ -3246,26 +3375,12 @@ export function createRequestHandlers(ctx: {
       installSkillFromPath(source, targetAgents, agents)
     },
 	update_skill: async (params: { skillId: string }) => {
-      const { skillId } = params
-	  const repository = readLocalSkillSources()[skillId]?.repository?.trim()
-      await updateSingleSkill(
-		skillId,
-		loadDetectedAgents(),
-		exactSourceSecurityPolicy(repository ? [repository] : []),
-	  )
+      void params
+      throw new Error('Review the available updates before applying a change. Direct updates are disabled to protect local work.')
     },
     update_all_skills: async () => {
-      const agents = loadDetectedAgents()
-	  const repositories = Object.values(readLocalSkillSources()).flatMap((entry) => entry.repository?.trim() ? [entry.repository.trim()] : [])
-      const result = await updateAll(agents, (p) => {
-        rpc.send('skill_update_progress', p)
-	  }, exactSourceSecurityPolicy(repositories))
-      const out: UpdateAllResultJson = {
-        updated: result.updated,
-        failed: result.failed,
-        skipped: result.skipped,
-      }
-      return out
+      void rpc
+      throw new Error('Review the available updates before applying a change. Direct updates are disabled to protect local work.')
     },
     list_skill_files: async (params: { path: string }) => {
       const suppliedPath = params.path.replace(/\//g, sep)
@@ -3323,17 +3438,19 @@ export function createRequestHandlers(ctx: {
       skillPath?: string | null
       filePath?: string | null
       source?: string | null
+      catalogId?: string | null
     }) => {
-      const { repoUrl, skillName, skillPath, filePath, source } = params
-      return fetchRemoteSkillContent(repoUrl, skillName, skillPath, filePath, source)
+      const { repoUrl, skillName, skillPath, filePath, source, catalogId } = params
+      return fetchRemoteSkillContent(repoUrl, skillName, skillPath, filePath, source, catalogId)
     },
     list_remote_skill_files: async (params: {
       repoUrl: string
       skillName?: string | null
       skillPath?: string | null
       source?: string | null
+      catalogId?: string | null
     }) => {
-      return listRemoteSkillFiles(params.repoUrl, params.skillName, params.skillPath, params.source)
+      return listRemoteSkillFiles(params.repoUrl, params.skillName, params.skillPath, params.source, params.catalogId)
     },
     fetch_skillssh: async (params: {
       sort: string
@@ -3556,6 +3673,17 @@ export function createRequestHandlers(ctx: {
     reveal_path_in_folder: async (params: { path: string }) => {
       platform.showItemInFolder(params.path)
     },
+		open_skill_folder: async (params: { skillId: string }) => {
+			const skill = scanAllSkills(loadDetectedAgents('open_skill_folder')).find(
+				(candidate) => candidate.id === params.skillId,
+			)
+			if (!skill) throw new Error('This skill is no longer available locally')
+			const folder = skill.canonical_path
+			if (!existsSync(folder) || !lstatSync(folder).isDirectory()) {
+				throw new Error('This skill folder is no longer available locally')
+			}
+			await platform.openPath(folder)
+		},
 		reveal_sync_secret_finding: async (params: { skillId: string; relativePath: string }) => {
 			assertSyncStableId(params.skillId)
 			assertPortableRelativePath(params.relativePath)
@@ -3564,6 +3692,19 @@ export function createRequestHandlers(ctx: {
 			const filePath = join(item.sourcePath, params.relativePath)
 			if (!existsSync(filePath)) throw new Error('This file is no longer available locally')
 			platform.showItemInFolder(filePath)
+		},
+		open_sync_secret_finding: async (params: { skillId: string; relativePath: string; line?: number; column?: number }) => {
+			assertSyncStableId(params.skillId)
+			assertPortableRelativePath(params.relativePath)
+			if (params.line !== undefined && (!Number.isInteger(params.line) || params.line < 1)) throw new Error('Invalid file line')
+			if (params.column !== undefined && (!Number.isInteger(params.column) || params.column < 1)) throw new Error('Invalid file column')
+			const item = (await scanSyncInventoryWithDotagents(loadDetectedAgents('open_sync_secret_finding'))).items.find((candidate) => candidate.candidateKey === params.skillId)
+			if (!item) throw new Error('This skill is no longer available locally')
+			const filePath = join(item.sourcePath, params.relativePath)
+			if (!existsSync(filePath)) throw new Error('This file is no longer available locally')
+			const openedAtLine = params.line !== undefined && await platform.openPathAtLine?.(filePath, params.line, params.column) === true
+			if (!openedAtLine) await platform.openPath(filePath)
+			return { openedAtLine }
 		},
 		reveal_sync_invalid_entry: async (params: { invalidId: string }) => {
 			if (!/^[a-f0-9]{64}$/.test(params.invalidId)) throw new Error('Invalid skipped-folder identity')

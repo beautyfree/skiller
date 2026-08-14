@@ -2,8 +2,8 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, FolderOpen, Github, Gitlab, Globe2, History, Info, Loader2, MonitorCog, RotateCcw, Server, Share2, Trash2, UserRound, UsersRound } from 'lucide-react'
-import { invoke, listen } from '@/mainview/lib/native'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, FolderOpen, Github, Gitlab, Globe2, History, Info, Loader2, MonitorCog, RotateCcw, Server, Share2, Trash2, UserRound, UsersRound, X } from 'lucide-react'
+import { invoke, isAbortError, listen, openUrl } from '@/mainview/lib/native'
 import type { AgentConfigJson, SyncConnectPreviewJson, SyncDisconnectPreviewJson, SyncGitDestinationPreviewJson, SyncGitHubRepositoryPreviewJson, SyncGitLabProjectPreviewJson, SyncHistoryEntryJson, SyncInventoryJson, SyncLibraryDecisionJson, SyncLocalPublishPreviewJson, SyncProfileStatusJson, SyncProviderLibraryJson, SyncProviderProblemJson, SyncPublishPreviewJson, SyncRemoteTrustPreviewJson, SyncSourceReviewProgressJson, SyncThreeWayReviewJson, SyncUndoPreviewJson } from '@/shared/rpc-schema'
 import { Button, buttonVariants } from '@/mainview/components/ui/button'
 import { Tooltip } from '@/mainview/components/ui/tooltip'
@@ -11,7 +11,7 @@ import { useToast } from '@/mainview/components/ToastProvider'
 import { AgentIcon } from '@/mainview/components/AgentIcon'
 import MarkdownContent from '@/mainview/components/MarkdownContent'
 import { providerProblemPresentation } from '@/mainview/lib/sync-provider-problem'
-import { libraryDisplayName, sourceDisplayName } from '@/mainview/lib/sync-library-name'
+import { libraryDisplayName, repositoryBrowserUrl, sourceDisplayName } from '@/mainview/lib/sync-library-name'
 import { ScrollFade } from '@/mainview/components/ScrollFade'
 
 function plural(count: number, word: string): string {
@@ -29,12 +29,12 @@ function coolingOffLabel(minutes: number): string {
 
 function unresolvedSourceLabel(reason: NonNullable<SyncPublishPreviewJson['unresolved_sources']>[number]['reason']): string {
 	return {
-		authentication: 'sign-in required',
-		timeout: 'source check timed out',
-		'invalid-source': 'saved source version is no longer available',
-		'missing-skill': 'skill path was not found in the source',
-		unavailable: 'source is currently unavailable',
-		'too-new': 'newer than the current safety setting',
+		authentication: 'needs a sign-in before it can be confirmed',
+		timeout: 'did not respond before the check timed out',
+		'invalid-source': 'the exact saved version is no longer available',
+		'missing-skill': 'this skill is no longer at its saved location',
+		unavailable: 'could not be reached while this plan was prepared',
+		'too-new': 'is newer than the current safety setting',
 	}[reason]
 }
 
@@ -80,14 +80,14 @@ function hasVisibleRemoteReview(review: SyncThreeWayReviewJson, includeDeviceCho
 type InventoryItem = SyncInventoryJson['items'][number]
 type UnresolvedSourceItem = NonNullable<SyncPublishPreviewJson['unresolved_sources']>[number]
 
-function defaultLibraryDecision(item: InventoryItem, purpose: 'personal' | 'public' | 'team'): SyncLibraryDecisionJson {
-	// A personal library is a durable snapshot of what is working on this
-	// computer. It must not become incomplete because an upstream Git host is
-	// unavailable. Public and team libraries keep external skills linked by
-	// default so redistribution stays explicit.
+function defaultLibraryDecision(item: InventoryItem, _purpose: 'personal' | 'public' | 'team'): SyncLibraryDecisionJson {
+	// Keep an already verified external source as a dependency by default. It
+	// preserves the complete package (including legitimate internal file links)
+	// without silently copying a large Git checkout into a personal library.
+	// Local-only skills remain portable copies.
 	return {
 		candidateKey: item.candidate_key,
-		disposition: purpose === 'personal' || item.source.kind === 'local' ? 'owned' : 'dependency',
+		disposition: item.source.kind === 'local' ? 'owned' : 'dependency',
 	}
 }
 
@@ -99,8 +99,10 @@ function inventorySourceLabel(item: InventoryItem): string {
 	return 'Linked folder'
 }
 
-const InventorySkillRow = memo(function InventorySkillRow({ item, selected, inspected, reviewReason, onToggle, onInspect }: { item: InventoryItem; selected: boolean; inspected: boolean; reviewReason?: UnresolvedSourceItem['reason']; onToggle: (key: string) => void; onInspect: (key: string) => void }) {
+const InventorySkillRow = memo(function InventorySkillRow({ item, selected, inspected, reviewReason, agentNames, onToggle, onInspect }: { item: InventoryItem; selected: boolean; inspected: boolean; reviewReason?: UnresolvedSourceItem['reason']; agentNames: Map<string, string>; onToggle: (key: string) => void; onInspect: (key: string) => void }) {
 	const agentSlugs = useMemo(() => [...new Set(item.locations.flatMap((location) => (location.agent_slug ? [location.agent_slug] : [])))], [item.locations])
+	const visibleAgentSlugs = agentSlugs.slice(0, 5)
+	const hiddenAgentNames = agentSlugs.slice(5).map((slug) => agentNames.get(slug) ?? slug).join(', ')
 	const isShared = item.locations.some((location) => location.kind === 'shared')
 	const sourceLabel = inventorySourceLabel(item)
 	return (
@@ -119,13 +121,14 @@ const InventorySkillRow = memo(function InventorySkillRow({ item, selected, insp
 				{reviewReason && <span className="mt-0.5 block text-[10px] font-normal text-amber-700 dark:text-amber-300">{unresolvedSourceLabel(reviewReason)}</span>}
 				<span className="mt-1 inline-flex rounded-sm bg-muted px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.08em] text-muted-foreground">{sourceLabel}</span>
 			</button>
-		<span className="flex shrink-0 items-center gap-1.5" aria-label={agentSlugs.length ? `Linked to ${agentSlugs.join(', ')}` : isShared ? '.agents skills library' : undefined}>
+		<span className="flex shrink-0 items-center gap-1.5" aria-label={agentSlugs.length ? `Linked to ${agentSlugs.map((slug) => agentNames.get(slug) ?? slug).join(', ')}` : isShared ? '.agents skills library' : undefined}>
 			{isShared && <Tooltip content="Stored in ~/.agents/skills"><span className="text-[10px] font-medium text-muted-foreground">.agents</span></Tooltip>}
-				{agentSlugs.map((slug) => (
-					<Tooltip key={slug} content={slug}><span>
+				{visibleAgentSlugs.map((slug) => (
+					<Tooltip key={slug} content={agentNames.get(slug) ?? slug}><span>
 						<AgentIcon slug={slug} className="size-4" />
 					</span></Tooltip>
 				))}
+				{agentSlugs.length > visibleAgentSlugs.length && <Tooltip content={hiddenAgentNames}><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border bg-secondary px-1 text-[9px] font-medium tabular-nums text-secondary-foreground">+{agentSlugs.length - visibleAgentSlugs.length}</span></Tooltip>}
 		</span>
 	</div>
 	)
@@ -462,6 +465,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 		enabled: Boolean(profile),
 	})
 	const inventoryItems = inventory?.items ?? []
+	const agentNames = useMemo(() => new Map((agents ?? []).map((agent) => [agent.slug, agent.name])), [agents])
 	const sourceDecisionByKey = useMemo(() => new Map((sourceDecisionReview ?? []).map((source) => [source.id, source])), [sourceDecisionReview])
 	const sourceDecisionSourceCount = useMemo(() => new Set((sourceDecisionReview ?? []).map((source) => `${source.source}\u0000${source.requested_ref}`)).size, [sourceDecisionReview])
 	const reviewInventoryItems = useMemo(
@@ -523,6 +527,16 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 		() => new Set((preview?.unresolved_sources ?? []).map((source) => `${source.source}\u0000${source.requested_ref}`)).size,
 		[preview?.unresolved_sources],
 	)
+	const previewUnresolvedSourceGroups = useMemo(() => {
+		const groups = new Map<string, { source: string; requestedRef?: string; reason: UnresolvedSourceItem['reason']; skillIds: string[] }>()
+		for (const item of preview?.unresolved_sources ?? []) {
+			const key = `${item.source}\u0000${item.requested_ref}\u0000${item.reason}`
+			const group = groups.get(key)
+			if (group) group.skillIds.push(item.id)
+			else groups.set(key, { source: item.source, requestedRef: item.requested_ref, reason: item.reason, skillIds: [item.id] })
+		}
+		return [...groups.values()].sort((a, b) => b.skillIds.length - a.skillIds.length || a.source.localeCompare(b.source))
+	}, [preview?.unresolved_sources])
 	const previewIncludedCount = (preview?.skills.length ?? 0) + (preview?.references.length ?? 0) + (preview?.skills_sh.length ?? 0)
 	const previewFileCount = preview?.skills.reduce((total, skill) => total + skill.file_count, 0) ?? 0
 	const previewUnresolvedKeys = new Set(preview?.unresolved_sources?.map((source) => source.id) ?? [])
@@ -591,6 +605,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 	const creatingLibrary = !profile || createFlow
 	const isLanding = !profilesLoading && !showInventory && (allowExisting || !profile || showConnect)
 	const showLibraryDashboard = Boolean(profile && !allowExisting && !showInventory && !showConnect)
+	const canCloseLanding = allowExisting && Boolean(profile) && Boolean(onClose)
 	const libraryInteractionLocked = Boolean(recovery?.pending || activeLibraryCheck || busy !== 'idle')
 	const libraryStatus = activeLibraryCheck === 'changes'
 		? {
@@ -793,7 +808,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
       setPreview(result)
 			setDestinationStage('provider')
     } catch (error) {
-			if (sourceReviewRequestRef.current === requestId && !(error instanceof DOMException && error.name === 'AbortError')) {
+			if (sourceReviewRequestRef.current === requestId && !isAbortError(error)) {
       toast(error instanceof Error ? error.message : String(error), 'destructive')
 			}
     } finally {
@@ -1210,7 +1225,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 			setPublishConfirmationOpen(true)
     } catch (error) {
       setGitHubRepositoryPreview(null)
-			if (!(error instanceof DOMException && error.name === 'AbortError')) {
+			if (!isAbortError(error)) {
 				const message = error instanceof Error ? error.message : String(error)
 				if (/already in use|already exists|name.*taken/i.test(message)) {
 					setProviderProblem({ provider: 'github', target: 'create', problem: { kind: 'conflict' } })
@@ -1245,7 +1260,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 		} catch (error) {
 			if (providerBrowseRequestRef.current !== requestId) return
 			setConnectProviderLibraries(null)
-			if (!(error instanceof DOMException && error.name === 'AbortError')) {
+			if (!isAbortError(error)) {
 				setProviderProblem({ provider, target: 'connect', problem: { kind: 'unknown' } })
 			}
 		} finally {
@@ -1351,7 +1366,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 			setPublishConfirmationOpen(true)
     } catch (error) {
       setGitLabProjectPreview(null)
-			if (!(error instanceof DOMException && error.name === 'AbortError')) {
+			if (!isAbortError(error)) {
 				setDestinationSetupError(error instanceof Error ? error.message : String(error))
 			}
     } finally {
@@ -1454,7 +1469,12 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
         sourceAuthorizationId: preview.source_authorization_id,
         minimumReleaseAgeMinutes,
       })
-			toast('Your skill library is published and ready to use.')
+			const publishedRepositoryUrl = repositoryBrowserUrl(publishRemoteUrl)
+			toast(
+				'Your skill library is published and ready to use.',
+				'default',
+				publishedRepositoryUrl ? { label: 'Open repository', onClick: () => openUrl(publishedRepositoryUrl) } : undefined,
+			)
 			setPublishConfirmationOpen(false)
       setPreview(null)
       setSetupMode(null)
@@ -1504,7 +1524,12 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 				setRemoteReview(null)
 				setReviewingDeviceChoices(false)
 				setShowInventory(false)
-				toast('Your library and this computer are already in sync.')
+				const repositoryUrl = repositoryBrowserUrl(profile.remote_identity)
+				toast(
+					'Your library and this computer are already in sync.',
+					'default',
+					repositoryUrl ? { label: 'Open repository', onClick: () => openUrl(repositoryUrl) } : undefined,
+				)
 			}
     } catch (error) {
 			if (libraryCheckTokenRef.current !== token) return
@@ -1999,9 +2024,22 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 				<section className="sync-center-hero relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden px-6 py-10 text-center text-primary-foreground">
 					<div className="absolute -left-28 -top-24 size-80 rounded-full border border-white/15" />
           <div className="absolute -bottom-36 -right-20 size-[28rem] rounded-full border border-white/12" />
+					{canCloseLanding && (
+						<div className="absolute right-6 top-6 z-10">
+							<Tooltip content="Close library setup" side="bottom">
+								<button
+									type="button"
+									onClick={() => onClose?.()}
+									className="inline-flex size-9 items-center justify-center rounded-lg border border-white/20 bg-white/5 text-white/80 transition-colors hover:border-white/35 hover:bg-white/12 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+									aria-label="Close library setup"
+								>
+									<X className="size-4" />
+								</button>
+							</Tooltip>
+						</div>
+					)}
 					{!showConnect ? (
 						<div className="relative max-w-2xl">
-							{allowExisting && <button type="button" onClick={onClose} className="absolute -right-2 -top-2 rounded-md px-2 py-1 text-xs font-medium text-white/75 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60">Back to Agent Library</button>}
 							<div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-white">
 								<Cloud className="size-3.5" /> {embedded ? 'Agent Library' : 'Sync Center'}
 							</div>
@@ -2028,7 +2066,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
             </div>
 						</div>
 					) : (
-						<div className="relative w-full max-w-2xl rounded-2xl border border-white/20 bg-background/95 p-5 text-left text-foreground shadow-2xl backdrop-blur-xl sm:p-6">
+						<div className="relative w-full max-w-xl rounded-2xl border border-white/20 bg-background p-6 text-left text-foreground shadow-[0_24px_70px_rgb(0_0_0_/_0.22)] sm:p-7">
 							<button
 								type="button"
 								className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
@@ -2041,23 +2079,18 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 								<ChevronLeft className="size-3.5" />
 								Back
 							</button>
-            <div className="mt-4 flex items-start gap-3">
-								<div className="rounded-xl bg-primary/10 p-2.5 text-primary">
-									<Cloud className="size-5" />
-								</div>
-								<div>
-									<h1 className="text-xl font-semibold tracking-[-0.025em]">Use an existing library</h1>
-									<p className="mt-1 text-xs leading-relaxed text-muted-foreground">Choose a library, review it, then decide which skills to use on this computer.</p>
-								</div>
+							<div className="mt-5">
+								<h1 className="text-2xl font-semibold tracking-[-0.03em]">Use an existing library</h1>
+								<p className="mt-1.5 max-w-md text-sm leading-relaxed text-muted-foreground">Choose where it lives. You can inspect its skills before anything is added to this computer.</p>
             </div>
-            <div className="mt-5 rounded-xl border border-border/70 bg-muted/15 p-3.5">
-								<div className="flex flex-wrap items-center justify-between gap-3">
-									<div>
-										<p className="text-xs font-semibold">Where is your library?</p>
-										<p className="mt-0.5 text-[11px] text-muted-foreground">Nothing is downloaded yet.</p>
-									</div>
-									<div className="flex flex-wrap gap-2">
-										<Button size="sm" variant="outline" onClick={() => void (busy === 'browsing' && browsingProvider === 'github' ? cancelProviderBrowse() : browseProviderLibraries('github'))} disabled={busy !== 'idle' && !(busy === 'browsing' && browsingProvider === 'github')}>
+            <section className="mt-7">
+								<div>
+									<p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">Step 1</p>
+									<p className="mt-1 text-sm font-semibold">Where does your library live?</p>
+									<p className="mt-1 text-xs text-muted-foreground">Choose one place to look. Nothing is downloaded yet.</p>
+								</div>
+								{!showConnectRemoteInput && <div className="mt-3 grid grid-cols-2 gap-2">
+										<Button size="default" variant="outline" className="h-12 justify-start border-primary/45 bg-primary/[0.10] px-3.5 font-semibold text-foreground hover:border-primary/70 hover:bg-primary/[0.18]" onClick={() => void (busy === 'browsing' && browsingProvider === 'github' ? cancelProviderBrowse() : browseProviderLibraries('github'))} disabled={busy !== 'idle' && !(busy === 'browsing' && browsingProvider === 'github')}>
 											{busy === 'browsing' && browsingProvider === 'github' ? (
 												<>
 													<Loader2 className="size-3.5 animate-spin" />
@@ -2070,7 +2103,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 												</>
 											)}
 										</Button>
-										<Button size="sm" variant="outline" onClick={() => void (busy === 'browsing' && browsingProvider === 'gitlab' ? cancelProviderBrowse() : browseProviderLibraries('gitlab'))} disabled={busy !== 'idle' && !(busy === 'browsing' && browsingProvider === 'gitlab')}>
+										<Button size="default" variant="outline" className="h-12 justify-start border-primary/45 bg-primary/[0.10] px-3.5 font-semibold text-foreground hover:border-primary/70 hover:bg-primary/[0.18]" onClick={() => void (busy === 'browsing' && browsingProvider === 'gitlab' ? cancelProviderBrowse() : browseProviderLibraries('gitlab'))} disabled={busy !== 'idle' && !(busy === 'browsing' && browsingProvider === 'gitlab')}>
 											{busy === 'browsing' && browsingProvider === 'gitlab' ? (
 												<>
 													<Loader2 className="size-3.5 animate-spin" />
@@ -2083,8 +2116,20 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 												</>
 											)}
 										</Button>
-									</div>
-								</div>
+									</div>}
+								{!showConnectRemoteInput && (
+									<button
+										type="button"
+										className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+										onClick={() => {
+											setShowConnectRemoteInput(true)
+											requestAnimationFrame(() => connectRemoteInputRef.current?.focus())
+										}}
+									>
+										<Server className="size-3.5" />
+										Use another Git server or paste a repository address
+									</button>
+								)}
 								{providerProblem?.target === 'connect' && providerProblemView && (
 									<div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2.5">
 										<p className="text-[11px] leading-relaxed text-amber-900 dark:text-amber-100">{providerProblemView.message}</p>
@@ -2128,10 +2173,13 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 										{selectedConnectLibraryLabel} selected
 									</p>
 								)}
-								<details open={showConnectRemoteInput} onToggle={(event) => setShowConnectRemoteInput(event.currentTarget.open)} className="mt-3 border-t border-border/60 pt-3">
-									<summary className="cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-foreground">Use another Git server or paste a remote URL</summary>
-									<label className="mt-2 grid gap-1.5 text-xs font-medium">
-										Git repository
+								{showConnectRemoteInput && <div className="mt-4 rounded-xl border border-border bg-background px-3.5 py-3">
+									<div className="flex items-start justify-between gap-3">
+										<div><p className="text-xs font-semibold">Connect a Git repository</p><p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">Works with GitHub Enterprise, GitLab, or another compatible Git server.</p></div>
+										<button type="button" className="shrink-0 text-[11px] font-medium text-primary hover:underline" onClick={() => { setShowConnectRemoteInput(false); setConnectRemoteUrl(''); setConnectPreview(null); setConnectReviewProblem(null) }}>Choose GitHub or GitLab</button>
+									</div>
+									<label className="mt-3 grid gap-1.5 text-xs font-medium">
+										Repository address
 										<input
 											ref={connectRemoteInputRef}
 											value={connectRemoteUrl}
@@ -2146,35 +2194,8 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 											className="h-10 rounded-lg border border-border bg-background px-3 text-xs font-normal text-foreground outline-none focus:ring-2 focus:ring-ring/40"
 										/>
 									</label>
-								</details>
-            </div>
-							<details className="mt-4 rounded-xl border border-border/70 bg-muted/15 px-3.5 py-3 text-xs">
-								<summary className="cursor-pointer font-medium text-foreground">
-									Optional safety delay <span className="font-normal text-muted-foreground">· {coolingOffLabel(connectMinimumReleaseAgeMinutes)}</span>
-								</summary>
-								<div className="mt-3 flex flex-wrap items-start justify-between gap-3 border-t border-border/60 pt-3">
-									<p className="max-w-sm text-[11px] leading-relaxed text-muted-foreground">Skiller always pins an exact commit before connecting. Leave the delay off for your own or team library; add one only when you intentionally want recent commits held back.</p>
-									<label className="relative min-w-36">
-										<span className="sr-only">Commit cooling-off</span>
-										<select
-											value={connectMinimumReleaseAgeMinutes}
-											disabled={busy !== 'idle'}
-											onChange={(event) => {
-												setConnectMinimumReleaseAgeMinutes(Number(event.target.value))
-												setConnectPreview(null)
-												setConnectReviewProblem(null)
-											}}
-											className="h-9 w-full appearance-none rounded-lg border border-border bg-background px-3 pr-8 text-xs font-medium text-foreground outline-none focus:ring-2 focus:ring-ring/40"
-										>
-											<option value={0}>Off</option>
-											<option value={1440}>24 hours</option>
-											<option value={10080}>7 days</option>
-											<option value={43200}>30 days</option>
-										</select>
-										<ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-									</label>
-								</div>
-							</details>
+								</div>}
+							</section>
 							{connectReviewProblem && (
 								<div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.07] px-3.5 py-3 text-xs">
 									<div className="flex min-w-0 items-start gap-2">
@@ -2189,13 +2210,13 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 									)}
 								</div>
 							)}
-							<details className="mt-5 border-t border-border/60 pt-4">
+							{connectRemoteUrl.trim() && <details open className="mt-5 border-t border-border/60 pt-4">
 								<summary className="cursor-pointer text-xs font-semibold text-foreground">
-									Where to use this library <span className="font-normal text-muted-foreground">· {plural(connectAgentSlugs.length, 'detected agent')} selected</span>
+									<span className="mr-2 text-primary">Step 2</span>Make this library available to your agents <span className="font-normal text-muted-foreground">· {plural(connectAgentSlugs.length, 'agent')} selected</span>
 								</summary>
 								<div className="mt-3">
 									<div className="flex items-center justify-between gap-3">
-										<p className="text-[11px] text-muted-foreground">This choice stays private in dotagents.local.yaml on this computer.</p>
+										<p className="max-w-sm text-[11px] leading-relaxed text-muted-foreground">Skiller registers this library through <span className="font-mono text-foreground">.agents</span>, then prepares the selected apps to use it. No skill files are copied yet.</p>
 										{detectedAgents.length > 0 && (
 											<button
 												type="button"
@@ -2231,7 +2252,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
                 {agents && detectedAgents.length === 0 && <p className="text-xs text-muted-foreground">No agents are detected yet. You can still review the library and connect agents later.</p>}
               </div>
             </div>
-							</details>
+							</details>}
 							{connectPreview && (
 								<div className="mt-4 rounded-xl border border-primary/25 bg-primary/[0.06] px-3.5 py-3 text-xs">
 									<div className="flex items-start gap-2">
@@ -2255,7 +2276,9 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 										? 'Checking the library address and exact version. Nothing is being downloaded into your skills.'
 										: activeLibraryCheck === 'connecting'
 											? 'Connecting this library on your computer. No skills are restored until the next review.'
-											: 'Private access stays with GitHub, GitLab, or your Git client.'}
+										: !connectRemoteUrl.trim()
+											? 'Choose where the library lives to continue.'
+											: 'Next, Skiller checks this exact library. Nothing is copied into your agents yet.'}
 								</p>
 								{activeLibraryCheck === 'connect' || activeLibraryCheck === 'connecting' ? (
 									<Button size="sm" variant="outline" className="h-9 shrink-0 px-4" onClick={cancelLibraryCheck}>
@@ -2274,7 +2297,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 											</>
 										) : (
 											<>
-												Review library <ChevronRight className="size-3.5" />
+												Review this library <ChevronRight className="size-3.5" />
 											</>
 										)}
 									</Button>
@@ -2420,7 +2443,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 													</ul>
 												)}
 												<div className="mt-3 flex justify-end gap-2">
-													<Button size="xs" variant="ghost" className="h-7 px-2" onClick={() => setDisconnectPreview(null)} disabled={busy !== 'idle'}>Cancel</Button>
+													<Button size="xs" variant="outline" className="h-7 min-w-16" onClick={() => setDisconnectPreview(null)} disabled={busy !== 'idle'}>Cancel</Button>
 													<Button size="xs" variant="outline" className="h-7 border-destructive/35 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => void disconnectLibraryFromComputer()} disabled={busy !== 'idle' || !disconnectPreview.can_disconnect}>
 														{busy === 'disconnecting' ? <><Loader2 className="size-3 animate-spin" />Disconnecting…</> : 'Disconnect library'}
 													</Button>
@@ -2677,34 +2700,31 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 							Back
 						</Button>
 					</div>
-				<section className={`sync-library-review mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col overflow-visible px-6 pb-3 pt-4 xl:py-8 ${preview || remoteReview ? 'min-h-full' : 'xl:h-full xl:flex-none'}`}>
+				<section className={`sync-library-review mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col overflow-visible px-6 pb-3 pt-4 xl:py-8 ${preview || remoteReview ? 'min-h-full xl:h-full xl:flex-none xl:overflow-hidden' : 'xl:h-full xl:flex-none'}`}>
 					{!preview && (
 						<div className="flex items-start justify-between gap-4">
             <div>
 								<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">{remoteReview ? (reviewingDeviceChoices ? 'This computer' : 'Library changes') : busy === 'reviewing' ? 'Preparing' : sourceDecisionReview ? 'Source review' : showPurposeChoice ? 'Step 1 of 5' : 'Step 2 of 5'}</p>
 								<h2 className="mt-1 text-lg font-semibold tracking-[-0.02em]">{remoteReview && reviewingDeviceChoices ? 'Review device choices' : remoteReviewMetadataOnly ? 'Review library record update' : remoteReview ? 'Review what changed' : busy === 'reviewing' ? 'Building a safe restore plan' : sourceDecisionReview ? 'Resolve source problems' : showPurposeChoice ? 'Choose library access' : 'Choose your skills'}</h2>
-								<p className="mt-1 text-xs leading-relaxed text-muted-foreground">{remoteReview && reviewingDeviceChoices ? 'These choices affect only this computer. The saved library stays unchanged until you choose otherwise.' : remoteReviewMetadataOnly ? 'The saved source moved forward without changing any of your skill files.' : remoteReview ? 'Bring library updates to this computer, save local improvements, and resolve only the versions that truly conflict.' : busy === 'reviewing' ? 'You can cancel at any time. Your current skills remain untouched.' : sourceDecisionReview ? `${plural(sourceDecisionSourceCount, 'source')} affected ${plural(sourceDecisionReview.length, 'skill')}. Related skills are grouped so one decision can cover the whole source.` : showPurposeChoice ? 'Choose who can use this library before Skiller checks the exact plan. This does not publish anything.' : 'Everything is selected by default. Open a skill only when you want to change how it is saved.'}</p>
+								<p className="mt-1 text-xs leading-relaxed text-muted-foreground">{remoteReview && reviewingDeviceChoices ? 'These choices affect only this computer. The saved library stays unchanged until you choose otherwise.' : remoteReviewMetadataOnly ? 'The saved source moved forward without changing any of your skill files.' : remoteReview ? 'Bring library updates to this computer, save local improvements, and resolve only the versions that truly conflict.' : busy === 'reviewing' ? 'You can cancel at any time. Your current skills remain untouched.' : sourceDecisionReview ? `${plural(sourceDecisionSourceCount, 'source')} affected ${plural(sourceDecisionReview.length, 'skill')}. Related skills are grouped so one decision can cover the whole source.` : showPurposeChoice ? 'Choose who can use this library before Skiller checks the exact plan. This does not publish anything.' : 'Everything is selected by default. Open a skill only if you want to leave it out or change how it is stored.'}</p>
             </div>
 						</div>
 					)}
 					{creatingLibrary && !preview && !sourceDecisionReview && !showPurposeChoice && busy !== 'reviewing' && (
 			<div className="order-4 mt-4 flex w-full shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 px-1 pt-3">
 							<div className="max-w-xl text-xs">
-								<p className="font-semibold">
-									{plural(selectedKeys.length, 'skill')} selected <span className="ml-1 font-normal text-muted-foreground">{librarySkillCount > selectedKeys.length ? `${librarySkillCount - selectedKeys.length} stay only on this computer.` : libraryPurpose === 'personal' ? 'Complete copies will be saved.' : 'Original sources will stay linked where possible.'}</span>
+									<p className="font-semibold">
+										{plural(selectedKeys.length, 'skill')} selected <span className="ml-1 font-normal text-muted-foreground">{librarySkillCount > selectedKeys.length ? `${librarySkillCount - selectedKeys.length} stay only on this computer.` : 'Review the plan before anything is saved.'}</span>
 								</p>
 								{reviewedExternalSkillCount > 0 && (
-									<details className="mt-1.5 text-[11px] text-muted-foreground">
-										<summary className="cursor-pointer font-medium text-foreground hover:underline">Some selections need source verification</summary>
-										<p className="mt-1 leading-relaxed">Skiller checks only the {plural(reviewedExternalSkillCount, 'selected external skill')} before making your plan. A source that cannot be verified stays on this computer.</p>
-									</details>
-					  )}
+									<p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">{plural(reviewedExternalSkillCount, 'skill')} will stay linked to {reviewedExternalSkillCount === 1 ? 'its original source' : 'their original sources'}. Skiller checks those links before showing your plan. If one is unavailable, you can save a copy or leave it on this computer.</p>
+								)}
 								{missingVendoredLicenses.length > 0 && <p className="mt-1.5 text-[11px] text-amber-700 dark:text-amber-300">Add an upstream license for {plural(missingVendoredLicenses.length, 'vendored skill')} in Skill details before continuing.</p>}
 								{unresolvedCollisionCount > 0 && <p className="mt-1.5 text-[11px] text-amber-700 dark:text-amber-300">Confirm how to handle {plural(unresolvedCollisionCount, 'duplicate name')} before continuing.</p>}
 							</div>
 							<div className="flex items-center gap-3">
 								<Button size="lg" onClick={() => void buildLibraryPlan()} disabled={busy !== 'idle' || selectedKeys.length === 0 || missingVendoredLicenses.length > 0 || unresolvedCollisionCount > 0}>
-								Review my library <ChevronRight className="size-3.5" />
+								Review plan <ChevronRight className="size-3.5" />
 								</Button>
 			</div>
 			</div>
@@ -2809,6 +2829,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 									selected={selectedKeySet.has(item.candidate_key)}
 									inspected={item.candidate_key === inspectedSkillKey}
 									reviewReason={sourceDecisionByKey.get(item.candidate_key)?.reason}
+									agentNames={agentNames}
 									onToggle={toggleSelectedKey}
 									onInspect={setInspectedSkillKey}
 								/>
@@ -2845,25 +2866,25 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 					{creatingLibrary && !preview && !sourceDecisionReview && !showPurposeChoice && busy !== 'reviewing' && (inventory?.invalid_paths || inventory?.collisions.length || inventory?.linked_aliases) ? (
 						<div className="order-3 mt-3 shrink-0 space-y-2 border-t border-border/60 px-1 pt-3 text-xs">
 							{inventory?.invalid_paths ? (
-								<div className="flex items-start gap-2 text-amber-800 dark:text-amber-200">
+								<div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/[0.045] px-3 py-2.5 text-amber-800 dark:text-amber-200">
 									<AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
 									<div>
 										<p>
-											<span className="font-semibold">{plural(inventory.invalid_paths, 'folder')} {inventory.invalid_paths === 1 ? 'wasn’t' : 'weren’t'} included.</span> {inventory.invalid_paths === 1 ? 'It stays' : 'They stay'} unchanged on this computer.
+											<span className="font-semibold">{plural(inventory.invalid_paths, 'item')} {inventory.invalid_paths === 1 ? 'stays' : 'stay'} on this computer.</span> Nothing is deleted or changed.
 										</p>
 										<details className="mt-1.5">
-											<summary className="cursor-pointer font-medium text-amber-900 underline-offset-2 hover:underline dark:text-amber-100">Why?</summary>
+											<summary className="cursor-pointer font-medium text-amber-900 underline-offset-2 hover:underline dark:text-amber-100">Why this item was left out</summary>
 											<ul className="mt-1.5 space-y-1 border-l border-amber-500/30 pl-2.5">
 												{(inventory.invalid_entries ?? []).map((entry) => (
 											<li key={entry.invalid_id} className="flex items-start justify-between gap-3">
-												<span className="min-w-0"><span className="font-medium">{entry.display_name}</span><span className="text-amber-800/80 dark:text-amber-200/80"> · {entry.reason}</span></span>
+												<span className="min-w-0"><span className="font-medium">{entry.display_name}</span><span className="text-amber-800/80 dark:text-amber-200/80"> · It links to a file outside this skill. Skiller leaves it here so your library stays portable.</span></span>
 												<Button size="xs" variant="ghost" className="h-6 shrink-0 px-2 text-[10px] text-amber-950 dark:text-amber-100" onClick={() => void revealInvalidEntry(entry.invalid_id)}>
-													<FolderOpen className="size-3" /> Show folder
+													<FolderOpen className="size-3" /> Open folder
 												</Button>
 											</li>
 												))}
 											</ul>
-											<p className="mt-2 leading-relaxed text-amber-800/80 dark:text-amber-200/80">Open a folder to review the issue. Skiller never changes a skipped folder.</p>
+											<p className="mt-2 leading-relaxed text-amber-800/80 dark:text-amber-200/80">No action is needed to continue. Open the folder only if you want to make this skill portable later.</p>
 										</details>
 									</div>
 								</div>
@@ -2985,7 +3006,8 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 											</span>
 											{skill.target_agents.length > 0 && (
 												<span className="flex shrink-0 items-center gap-1" aria-label={`Available to ${skill.target_agents.join(', ')}`}>
-													{skill.target_agents.map((slug) => <AgentIcon key={slug} slug={slug} className="size-3.5" />)}
+													{skill.target_agents.slice(0, 5).map((slug) => <Tooltip key={slug} content={agentNames.get(slug) ?? slug}><span><AgentIcon slug={slug} className="size-3.5" /></span></Tooltip>)}
+													{skill.target_agents.length > 5 && <Tooltip content={skill.target_agents.slice(5).map((slug) => agentNames.get(slug) ?? slug).join(', ')}><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border bg-secondary px-1 text-[9px] font-medium tabular-nums text-secondary-foreground">+{skill.target_agents.length - 5}</span></Tooltip>}
 												</span>
 											)}
 											<span className="text-[11px] font-medium text-primary">Use library version</span>
@@ -3235,53 +3257,25 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
             </div>
           )}
           {preview && (
-							<div className="mt-0 flex min-h-0 flex-1 flex-col text-xs">
+							<div className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden text-xs">
 							<div className="shrink-0">
 								<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">{publishConfirmationOpen ? 'Step 5 of 5' : showDestination ? 'Step 4 of 5' : 'Step 3 of 5'}</p>
-								<h2 className="mt-1 text-lg font-semibold tracking-[-0.02em]">{publishConfirmationOpen ? finalLibraryHeading : showDestination ? (destinationStage === 'setup' ? `Set up ${setupMode === 'github' ? 'GitHub' : setupMode === 'gitlab' ? 'GitLab' : 'your Git server'}` : 'Choose where to keep it') : 'Review your library'}</h2>
-								<p className="mt-1 leading-relaxed text-muted-foreground">{publishConfirmationOpen ? `This is the only step that ${setupMode === 'github' || setupMode === 'gitlab' ? 'creates the destination and ' : ''}uploads your reviewed library. Your local agent folders stay unchanged.` : showDestination ? (destinationStage === 'setup' ? (setupMode === 'custom' ? 'Use an empty Git repository. Nothing is uploaded until the final confirmation.' : `Choose the new ${setupMode === 'github' ? 'repository' : 'project'} now. It is created only after the final confirmation.`) : libraryPurpose === 'public' ? 'Publish a library anyone can discover and reuse.' : libraryPurpose === 'team' ? 'Keep access with your Git organization or private server.' : 'Keep it private unless you decide to invite someone.') : 'Make sure every selected skill can travel with you.'}</p>
+								<h2 className="mt-1 text-lg font-semibold tracking-[-0.02em]">{publishConfirmationOpen ? finalLibraryHeading : showDestination ? (destinationStage === 'setup' ? `Set up ${setupMode === 'github' ? 'GitHub' : setupMode === 'gitlab' ? 'GitLab' : 'your Git server'}` : 'Choose where to keep it') : 'Review your plan'}</h2>
+								<p className="mt-1 leading-relaxed text-muted-foreground">{publishConfirmationOpen ? `This is the only step that ${setupMode === 'github' || setupMode === 'gitlab' ? 'creates the destination and ' : ''}uploads your reviewed library. Your local agent folders stay unchanged.` : showDestination ? (destinationStage === 'setup' ? (setupMode === 'custom' ? 'Use an empty Git repository. Nothing is uploaded until the final confirmation.' : `Choose the new ${setupMode === 'github' ? 'repository' : 'project'} now. It is created only after the final confirmation.`) : libraryPurpose === 'public' ? 'Publish a library anyone can discover and reuse.' : libraryPurpose === 'team' ? 'Keep access with your Git organization or private server.' : 'Keep it private unless you decide to invite someone.') : 'Nothing is saved yet. Resolve the few items that need a decision, then choose where to store the library.'}</p>
 							</div>
 							{!showDestination && (
 								<>
-									<div className="min-h-0 flex-1">
+									<div className="min-h-0 flex-1 overflow-y-auto pr-1">
 										<section className="mt-5">
-											<p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Ready to save</p>
-											<div className="mt-2 overflow-hidden rounded-xl border border-border/70 bg-muted/[0.035] divide-y divide-border/60">
-												<div className="flex items-start gap-3 px-4 py-3.5">
+											<p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Ready for storage</p>
+											<div className="mt-2 rounded-xl border border-border/70 bg-muted/[0.035] px-4 py-3.5">
+												<div className="flex items-start gap-3">
 													<CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-500" />
 													<div className="min-w-0 flex-1">
-														<p className="text-sm font-semibold text-foreground">
-															{previewIncludedCount === selectedKeys.length
-																? selectedKeys.length === 1
-																	? '1 skill will travel with you'
-																	: `${previewIncludedCount} skills will travel with you`
-																: `${previewIncludedCount} of ${plural(selectedKeys.length, 'selected skill')} can travel with you`}
-														</p>
-														<p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-															{previewOwnedCount === previewIncludedCount
-																? 'A complete copy will be saved in your library.'
-																: `${plural(previewOwnedCount, 'skill')} copied to your library · ${plural(preview.skills_sh.length + preview.references.length, 'skill')} kept linked to their exact source version.`}
-														</p>
+														<p className="text-sm font-semibold text-foreground">{previewIncludedCount === selectedKeys.length ? `${previewIncludedCount} selected ${previewIncludedCount === 1 ? 'skill is' : 'skills are'} ready` : `${previewIncludedCount} of ${plural(selectedKeys.length, 'selected skill')} are ready`}</p>
+														<p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{previewOwnedCount === previewIncludedCount ? `${plural(previewFileCount, 'file')} will be saved as complete copies.` : `${plural(previewOwnedCount, 'skill')} copied · ${plural(preview.skills_sh.length + preview.references.length, 'skill')} kept linked to their original source.`}{preview.secret_findings.length === 0 && previewFileCount > 0 ? ' All selected files were checked for possible secrets.' : ''}</p>
 													</div>
 												</div>
-												{previewFileCount > 0 && (
-													<div className="flex items-start gap-3 px-4 py-3.5">
-														<CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-500" />
-														<div className="min-w-0 flex-1">
-															<p className="text-sm font-semibold text-foreground">{plural(previewFileCount, 'file')} ready to save</p>
-															<p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">You can inspect their names below.</p>
-														</div>
-													</div>
-												)}
-												{preview.secret_findings.length === 0 && previewFileCount > 0 && (
-													<div className="flex items-start gap-3 px-4 py-3.5">
-														<CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-500" />
-														<div className="min-w-0 flex-1">
-															<p className="text-sm font-semibold text-foreground">No possible secrets found</p>
-															<p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">Every file selected to save was checked.</p>
-														</div>
-													</div>
-												)}
 											</div>
 										</section>
 										{previewExcludedItems.length > 0 && (
@@ -3327,7 +3321,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 											<details className="mt-4 text-xs text-muted-foreground">
 												<summary className="inline-flex cursor-pointer items-center gap-1.5 font-medium hover:text-foreground">
 													<Info className="size-3.5" />
-													Advanced source details
+													Source settings
 												</summary>
 												<div className="mt-2 rounded-lg border border-border/60 bg-muted/10 px-3 py-3">
 													<div className="flex flex-wrap items-start justify-between gap-3">
@@ -3356,42 +3350,39 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 												<div className="flex gap-3">
 													<AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-300" />
 													<div className="min-w-0 flex-1">
-												<p className="font-semibold">{plural(previewUnresolvedSourceCount, 'source')} could not be verified</p>
-												<p className="mt-1 leading-relaxed text-amber-900/80 dark:text-amber-200/80">
-													They affect {plural(preview.unresolved_sources.length, 'skill')}. Nothing will be deleted or changed, but the library cannot restore those skills until you choose another outcome.
-												</p>
+														<p className="font-semibold">Choose what to do with {plural(preview.unresolved_sources.length, 'skill')}</p>
+														<p className="mt-1 leading-relaxed text-amber-900/80 dark:text-amber-200/80">
+															Skiller could not reach or confirm {plural(previewUnresolvedSourceCount, 'original source')}. Your current files are safe. Save copies to include them, or leave them only on this computer.
+														</p>
 														<div className="mt-3 flex flex-wrap gap-2">
 															{libraryPurpose !== 'public' && (
 																<Button size="xs" className="h-7 px-2.5" onClick={() => void saveUnresolvedAsCopies()} disabled={busy !== 'idle'}>
-																	Save current copies
+																	Save {plural(preview.unresolved_sources.length, 'copy')}
 																</Button>
 															)}
-															<Button
-																size="xs"
-																variant="outline"
-																className="h-7 border-amber-500/35 bg-background/50 px-2.5 text-amber-950 hover:bg-background dark:text-amber-100"
-																	onClick={() => beginSourceDecisionReview(preview.unresolved_sources ?? [])}
-															>
-														Review sources
-															</Button>
+															{libraryPurpose === 'public' && <Button size="xs" className="h-7 px-2.5" onClick={() => beginSourceDecisionReview(preview.unresolved_sources ?? [])}>Choose source options</Button>}
 															{preview.unresolved_sources.some((source) => source.reason === 'too-new') && (
 																<Button size="xs" variant="ghost" className="h-7 px-2.5 text-amber-950 hover:bg-amber-500/10 dark:text-amber-100" onClick={() => void changeMinimumReleaseAge(0)}>
-																	Allow recent sources
+																	Use current source version
 																</Button>
 															)}
 															<Button size="xs" variant="ghost" className="h-7 px-2.5 text-amber-950 hover:bg-amber-500/10 dark:text-amber-100" onClick={() => void keepUnresolvedSkillsLocal()} disabled={busy !== 'idle'}>
-																Keep them only here
+																Leave them here
 															</Button>
 														</div>
 														<details className="mt-3">
-															<summary className="cursor-pointer font-medium text-amber-900 underline-offset-2 hover:underline dark:text-amber-100">See affected skills</summary>
-															<div className="mt-2 space-y-1 text-[11px] text-amber-900/80 dark:text-amber-200/80">
-																{preview.unresolved_sources.map((source) => (
-																	<p key={`${source.kind}-${source.id}`}>
-																		<span className="font-medium">{source.id}</span>
-																		<span> · {unresolvedSourceLabel(source.reason)}</span>
-																	</p>
-																))}
+															<summary className="cursor-pointer font-medium text-amber-900 underline-offset-2 hover:underline dark:text-amber-100">See affected skills and reasons</summary>
+															<div className="mt-2 space-y-1.5 text-[11px] text-amber-900/80 dark:text-amber-200/80">
+															{previewUnresolvedSourceGroups.map((source) => (
+																<div key={`${source.source}-${source.requestedRef}-${source.reason}`} className="rounded-md bg-amber-500/[0.06] px-2.5 py-2">
+																	<p className="font-medium text-amber-950 dark:text-amber-100">{sourceDisplayName(source.source)} <span className="font-normal text-amber-900/80 dark:text-amber-200/80">· {plural(source.skillIds.length, 'skill')}</span></p>
+																	<p className="mt-0.5">{unresolvedSourceLabel(source.reason)}.</p>
+																	<details className="mt-1.5">
+																		<summary className="cursor-pointer font-medium hover:underline">See skills</summary>
+																		<p className="mt-1 leading-relaxed">{source.skillIds.join(' · ')}</p>
+																	</details>
+																</div>
+															))}
 															</div>
 														</details>
 													</div>
@@ -3433,9 +3424,9 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 													</section>
 													)}
 			</div>
-									<div className="mt-3 flex shrink-0 items-center justify-end gap-3 border-t border-border/60 pt-3">
+									<div className="mt-3 flex shrink-0 items-center justify-end gap-3 border-t border-border/60 bg-background px-1 py-3">
 										{previewIncludedCount === 0 && <p className="text-[11px] text-amber-700 dark:text-amber-300">No skill can be saved yet.</p>}
-										{previewStaysLocalCount > 0 && <p className="text-[11px] text-amber-700 dark:text-amber-300">Choose what happens to the remaining skills before continuing.</p>}
+										{previewStaysLocalCount > 0 && <p className="text-[11px] text-amber-700 dark:text-amber-300">Resolve the skills above before choosing storage.</p>}
 										<Button
 											size="sm"
 											className="h-9 px-4"
@@ -3615,7 +3606,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 																		<div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted"><Gitlab className="size-5 text-orange-500" /></div>
 																		<div><p className="text-sm font-semibold">{providerAuthorization?.provider === 'gitlab' ? 'Continue in GitLab' : 'Connect GitLab'}</p><p className="mt-0.5 text-xs text-muted-foreground">{providerAuthorization?.provider === 'gitlab' ? 'Finish signing in in your browser.' : 'Sign in to check the project name before anything is created.'}</p></div>
 																	</div>
-                                                                    {providerAuthorization?.provider === 'gitlab' ? <><p className="mt-5 text-center text-xs text-muted-foreground">Enter this temporary code on GitLab.</p><div className="relative mx-auto mt-2" style={{ width: `${Math.max(220, providerAuthorization.userCode.length * 26)}px` }}><input readOnly aria-label="GitLab one-time code" value={providerAuthorization.userCode} onFocus={(event) => event.currentTarget.select()} onClick={(event) => event.currentTarget.select()} className="h-12 w-full bg-transparent px-0 text-center font-mono text-2xl font-semibold tracking-[0.16em] text-foreground outline-none selection:bg-primary/20" /><Tooltip content="Copy code"><Button size="sm" variant="ghost" className="absolute left-full top-1/2 ml-0.5 size-9 -translate-y-1/2 p-0 active:-translate-y-1/2" aria-label="Copy GitLab one-time code" onClick={() => void copyProviderAuthorizationCode()}><Copy className="size-4" /></Button></Tooltip></div><div className="mt-4 flex justify-center"><button type="button" className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground" onClick={() => void cancelProviderBrowse()}>Cancel</button></div></> : <Button className="mt-5 self-start" size="default" onClick={() => void signInProvider('gitlab', 'create')} disabled={busy !== 'idle'}><Gitlab className="size-3.5" />Connect GitLab</Button>}
+                                                                    {providerAuthorization?.provider === 'gitlab' ? <><p className="mt-5 text-center text-xs text-muted-foreground">Enter this temporary code on GitLab.</p><div className="relative mx-auto mt-2" style={{ width: `${Math.max(220, providerAuthorization.userCode.length * 26)}px` }}><input readOnly aria-label="GitLab one-time code" value={providerAuthorization.userCode} onFocus={(event) => event.currentTarget.select()} onClick={(event) => event.currentTarget.select()} className="h-12 w-full bg-transparent px-0 text-center font-mono text-2xl font-semibold tracking-[0.16em] text-foreground outline-none selection:bg-primary/20" /><Tooltip content="Copy code"><Button size="sm" variant="ghost" className="absolute left-full top-1/2 ml-0.5 size-9 -translate-y-1/2 p-0 active:-translate-y-1/2" aria-label="Copy GitLab one-time code" onClick={() => void copyProviderAuthorizationCode()}><Copy className="size-4" /></Button></Tooltip></div><div className="mt-4 flex justify-center"><Button size="sm" variant="outline" className="min-w-[5.5rem]" onClick={() => void cancelProviderBrowse()}>Cancel</Button></div></> : <Button className="mt-5 self-start" size="default" onClick={() => void signInProvider('gitlab', 'create')} disabled={busy !== 'idle'}><Gitlab className="size-3.5" />Connect GitLab</Button>}
 																</div>
 															</div>
 												) : <>
@@ -3686,7 +3677,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 																		<div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted"><Github className="size-5" /></div>
 																		<div className="min-w-0"><p className="text-sm font-semibold">{providerAuthorization?.provider === 'github' ? 'Continue in GitHub' : 'Connect GitHub'}</p><p className="mt-0.5 text-xs text-muted-foreground">{providerAuthorization?.provider === 'github' ? 'Finish signing in in your browser.' : 'Sign in to check the repository name before anything is created.'}</p></div>
 																	</div>
-                                                                    {providerAuthorization?.provider === 'github' ? <><p className="mt-5 text-center text-xs text-muted-foreground">Enter this temporary code on GitHub.</p><div className="relative mx-auto mt-2" style={{ width: `${Math.max(220, providerAuthorization.userCode.length * 26)}px` }}><input readOnly aria-label="GitHub one-time code" value={providerAuthorization.userCode} onFocus={(event) => event.currentTarget.select()} onClick={(event) => event.currentTarget.select()} className="h-12 w-full bg-transparent px-0 text-center font-mono text-2xl font-semibold tracking-[0.16em] text-foreground outline-none selection:bg-primary/20" /><Tooltip content="Copy code"><Button size="sm" variant="ghost" className="absolute left-full top-1/2 ml-0.5 size-9 -translate-y-1/2 p-0 active:-translate-y-1/2" aria-label="Copy GitHub one-time code" onClick={() => void copyProviderAuthorizationCode()}><Copy className="size-4" /></Button></Tooltip></div><div className="mt-4 flex justify-center"><button type="button" className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground" onClick={() => void cancelProviderBrowse()}>Cancel</button></div></> : <Button className="mt-5 self-start" size="default" onClick={() => void signInProvider('github', 'create')} disabled={busy !== 'idle'}><Github className="size-3.5" />Connect GitHub</Button>}
+                                                                    {providerAuthorization?.provider === 'github' ? <><p className="mt-5 text-center text-xs text-muted-foreground">Enter this temporary code on GitHub.</p><div className="relative mx-auto mt-2" style={{ width: `${Math.max(220, providerAuthorization.userCode.length * 26)}px` }}><input readOnly aria-label="GitHub one-time code" value={providerAuthorization.userCode} onFocus={(event) => event.currentTarget.select()} onClick={(event) => event.currentTarget.select()} className="h-12 w-full bg-transparent px-0 text-center font-mono text-2xl font-semibold tracking-[0.16em] text-foreground outline-none selection:bg-primary/20" /><Tooltip content="Copy code"><Button size="sm" variant="ghost" className="absolute left-full top-1/2 ml-0.5 size-9 -translate-y-1/2 p-0 active:-translate-y-1/2" aria-label="Copy GitHub one-time code" onClick={() => void copyProviderAuthorizationCode()}><Copy className="size-4" /></Button></Tooltip></div><div className="mt-4 flex justify-center"><Button size="sm" variant="outline" className="min-w-[5.5rem]" onClick={() => void cancelProviderBrowse()}>Cancel</Button></div></> : <Button className="mt-5 self-start" size="default" onClick={() => void signInProvider('github', 'create')} disabled={busy !== 'idle'}><Github className="size-3.5" />Connect GitHub</Button>}
 																</div>
 															</div>
 												) : (

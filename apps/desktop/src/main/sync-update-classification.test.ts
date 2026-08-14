@@ -7,7 +7,7 @@ test('treats documentation-only remote changes separately from skills', () => {
 })
 
 test('keeps portable content and configuration in the explicit sync review', () => {
-  for (const file of ['skills.json', 'skills.lock', 'dotagents.yaml', 'resources.json', '.gitignore', 'skills/review/SKILL.md', 'instructions/default.md', 'commands/review.md', 'subagents/reviewer.md']) {
+  for (const file of ['skills.json', 'skills.lock', 'dotagents.yaml', '.gitignore', 'skills/review/SKILL.md']) {
     expect(isLibraryDocumentationOnlyUpdate([file])).toBe(false)
   }
   expect(isLibraryDocumentationOnlyUpdate([])).toBe(false)

@@ -1,36 +1,41 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
-  Bot,
+  ArrowDown,
   CheckCircle2,
   ChevronDown,
   Cloud,
-  Command,
   FileDiff,
   FileText,
-  Image,
   LibraryBig,
   Loader2,
   MoreHorizontal,
-  Puzzle,
   ShieldCheck,
   Trash2,
   Wrench,
   X,
 } from 'lucide-react'
 import { Button } from '@/mainview/components/ui/button'
+import { Checkbox } from '@/mainview/components/ui/checkbox'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/mainview/components/ui/dropdown-menu'
 import { Tooltip } from '@/mainview/components/ui/tooltip'
 import MarkdownContent from '@/mainview/components/MarkdownContent'
+import SkillContentBrowser from '@/mainview/components/SkillContentBrowser'
+import ResizeHandle from '@/mainview/components/ResizeHandle'
 import SearchInput from '@/mainview/components/SearchInput'
 import { ScrollFade } from '@/mainview/components/ScrollFade'
 import { useToast } from '@/mainview/components/ToastProvider'
-import { invoke, openUrl } from '@/mainview/lib/native'
-import { libraryDisplayName } from '@/mainview/lib/sync-library-name'
+import { useResizable } from '@/mainview/hooks/useResizable'
+import { useTransientViewState } from '@/mainview/hooks/useTransientViewState'
+import { SKILL_LIST_PANE } from '@/mainview/lib/shell-chrome'
+import { invoke, isAbortError, openUrl } from '@/mainview/lib/native'
+import { libraryDisplayName, repositoryBrowserUrl } from '@/mainview/lib/sync-library-name'
 import { cn } from '@/mainview/lib/utils'
 import SyncCenter from '@/mainview/pages/SyncCenter'
 import type {
-  DotagentsResourceKindJson,
   DotagentsLibraryHealthJson,
   DotagentsLibraryRepairPreviewJson,
   DotagentsResourceOverviewJson,
@@ -38,28 +43,47 @@ import type {
   DotagentsLibraryLocalChangesJson,
   DotagentsLibraryLocalChangePreviewJson,
   DotagentsLibraryNewLocalPreviewJson,
+  DotagentsLibraryRemovalPreviewJson,
   SyncDisconnectPreviewJson,
   SyncProfileStatusJson,
   SyncRemoteTrustPreviewJson,
   SyncThreeWayReviewJson,
 } from '@/shared/rpc-schema'
 
-type Filter = 'all' | 'changes' | DotagentsResourceKindJson
 type LibraryResource = DotagentsResourceOverviewJson['resources'][number]
 type LocalChange = DotagentsLibraryLocalChangesJson['changes'][number]
+type LibrarySection = 'changes' | 'new' | 'kept' | 'library'
 type LibraryListEntry = {
   key: string
   resource?: LibraryResource
   change?: LocalChange
+  package?: { id: string; resources: LibraryResource[] }
+  sectionHeader?: { section: LibrarySection; total: number; selectableIds: string[] }
+}
+
+function librarySectionFor(entry: LibraryListEntry): LibrarySection {
+  return entry.change?.kind === 'new-local' ? 'new'
+    : entry.change?.kind === 'kept-local' ? 'kept'
+      : entry.change ? 'changes' : 'library'
 }
 
 function FileChangePreview({ diff }: { diff: string }) {
   const lines = diff.split('\n')
   const contentLines = lines.filter((line) => !line.startsWith('--- ') && !line.startsWith('+++ '))
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const virtualizer = useVirtualizer({
+    count: contentLines.length,
+    getScrollElement: () => viewportRef.current,
+    estimateSize: () => 20,
+    overscan: 16,
+  })
 
   return <section className="overflow-hidden rounded-lg border border-border/70 bg-background" aria-label="Changes in this file">
-    <pre className="overflow-x-auto pb-2 font-mono text-[11px] leading-5">
-      {contentLines.map((line, index) => {
+    <div ref={viewportRef} className="max-h-[min(60dvh,48rem)] overflow-auto font-mono text-[11px] leading-5">
+      <div className="relative min-w-max" style={{ height: virtualizer.getTotalSize() }}>
+      {virtualizer.getVirtualItems().map((item) => {
+        const line = contentLines[item.index] ?? ''
+        const index = item.index
         const added = line.startsWith('+ ')
         const removed = line.startsWith('- ')
         const unchanged = line.startsWith('  ')
@@ -70,9 +94,10 @@ function FileChangePreview({ diff }: { diff: string }) {
           added && 'bg-emerald-500/12 text-emerald-950 dark:text-emerald-100',
           removed && 'bg-red-500/12 text-red-950 dark:text-red-100',
           !added && !removed && 'text-muted-foreground',
-        )}><span className="select-none text-center opacity-70">{marker}</span><code className="whitespace-pre">{value || ' '}</code></div>
+        )} style={{ position: 'absolute', left: 0, top: 0, transform: `translateY(${item.start}px)`, height: item.size }}><span className="select-none text-center opacity-70">{marker}</span><code className="whitespace-pre">{value || ' '}</code></div>
       })}
-    </pre>
+      </div>
+    </div>
   </section>
 }
 
@@ -82,12 +107,29 @@ function ImagePreview({ source, alt }: { source: string; alt: string }) {
   </figure>
 }
 
-const kinds: { kind: DotagentsResourceKindJson; label: string; description: string; icon: typeof Puzzle }[] = [
-  { kind: 'skill', label: 'Skill', description: 'A reusable capability with SKILL.md', icon: Puzzle },
-  { kind: 'instruction', label: 'Instruction', description: 'Always-on or conditional guidance', icon: FileText },
-  { kind: 'command', label: 'Command', description: 'A named Markdown command', icon: Command },
-  { kind: 'subagent', label: 'Subagent', description: 'A portable role definition', icon: Bot },
-]
+/** First-load placeholder for the detail pane. It prevents an empty-state
+ * message from flashing before the library snapshot has established whether
+ * there is an item to select. */
+function LibraryDetailSkeleton() {
+  return <div className="flex min-h-0 flex-1 flex-col" aria-label="Loading library item">
+    <div className="shrink-0 border-b border-border/70 px-5 py-4">
+      <div className="h-4 w-40 animate-skeleton" />
+      <div className="mt-2 h-3 w-72 max-w-full animate-skeleton" />
+      <div className="mt-2 h-2.5 w-52 animate-skeleton" />
+    </div>
+    <div className="grid min-h-0 flex-1 grid-cols-[11rem_minmax(0,1fr)] gap-5 p-5">
+      <div className="space-y-3 border-r border-border/60 pr-4">
+        {Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-8 animate-skeleton" />)}
+      </div>
+      <div className="space-y-3 pt-1">
+        <div className="h-4 w-48 animate-skeleton" />
+        <div className="h-3 w-full animate-skeleton" />
+        <div className="h-3 w-11/12 animate-skeleton" />
+        <div className="h-3 w-4/5 animate-skeleton" />
+      </div>
+    </div>
+  </div>
+}
 
 function ManageLibrariesDialog({
   open,
@@ -115,8 +157,6 @@ function ManageLibrariesDialog({
   onRemoveLibrary: () => void
 }) {
   const [removalOpen, setRemovalOpen] = useState(false)
-  const [actionMenuOpen, setActionMenuOpen] = useState(false)
-  const actionMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -127,15 +167,6 @@ function ManageLibrariesDialog({
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [busy, onClose, open])
 
-  useEffect(() => {
-    if (!actionMenuOpen) return
-    const closeOnOutsidePointer = (event: MouseEvent) => {
-      if (!actionMenuRef.current?.contains(event.target as Node)) setActionMenuOpen(false)
-    }
-    document.addEventListener('mousedown', closeOnOutsidePointer)
-    return () => document.removeEventListener('mousedown', closeOnOutsidePointer)
-  }, [actionMenuOpen])
-
   if (!open) return null
   const dismissRemoval = () => {
     setRemovalOpen(false)
@@ -145,7 +176,7 @@ function ManageLibrariesDialog({
   return <>
     <div className="modal-shell modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
     <button type="button" className="absolute inset-0 cursor-default" aria-label="Close library manager" onClick={onClose} disabled={busy} />
-    <section role="dialog" aria-modal="true" aria-labelledby="manage-libraries-title" className="modal-panel relative z-10 w-[min(34rem,calc(100vw-2rem))] overflow-hidden rounded-2xl outline-none animate-modal-in glass-elevated">
+    <section role="dialog" aria-modal="true" aria-labelledby="manage-libraries-title" className="modal-panel relative z-10 w-[min(34rem,calc(100vw-2rem))] overflow-visible rounded-2xl outline-none animate-modal-in glass-elevated">
       <header className="flex items-start justify-between gap-4 border-b border-border/70 px-5 py-4">
         <div><h2 id="manage-libraries-title" className="text-lg font-semibold tracking-[-0.025em]">Libraries</h2><p className="mt-1 text-sm leading-5 text-muted-foreground">Each library is a separate Git repository.</p></div>
         <Button size="icon-sm" variant="ghost" aria-label="Close" onClick={onClose} disabled={busy}><X className="size-4" /></Button>
@@ -155,7 +186,7 @@ function ManageLibrariesDialog({
           {libraries.map((library) => {
             const isActive = library.profile_id === activeProfileId
             const libraryUrl = library.remote_identity && /^https?:\/\//i.test(library.remote_identity) ? library.remote_identity : null
-            return <div key={library.profile_id} className={cn('flex items-center gap-3 rounded-xl px-3 py-3', isActive ? 'bg-muted/45' : 'hover:bg-muted/25')}><span className={cn('grid size-8 shrink-0 place-items-center rounded-lg text-xs font-semibold', isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>{isActive ? '✓' : '·'}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{libraryDisplayName(library)}</p><p className="mt-0.5 text-xs text-muted-foreground">{library.mode === 'public' ? 'Public' : library.mode === 'team' ? 'Team' : 'Private'}{libraryUrl ? <> · <button type="button" onClick={() => openUrl(libraryUrl)} className="text-primary underline-offset-2 hover:underline">Open repository</button></> : null}</p></div>{isActive ? <><span className="text-xs font-medium text-muted-foreground">Current</span><div ref={actionMenuRef} className="relative"><Button size="icon-sm" variant="ghost" aria-label={`Actions for ${libraryDisplayName(library)}`} aria-haspopup="menu" aria-expanded={actionMenuOpen} onClick={() => setActionMenuOpen((current) => !current)} disabled={busy}><MoreHorizontal className="size-4" /></Button>{actionMenuOpen && <div role="menu" className="absolute right-0 top-[calc(100%+0.25rem)] z-20 w-48 rounded-lg border border-border/70 bg-popover p-1 shadow-lg"><button type="button" role="menuitem" className="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-medium text-destructive outline-none hover:bg-destructive/10 focus-visible:bg-destructive/10" onClick={() => { setActionMenuOpen(false); setRemovalOpen(true) }}><Trash2 className="size-3.5" />Remove from Skiller…</button></div>}</div></> : <Button size="sm" variant="outline" onClick={() => onOpenLibrary(library.profile_id)} disabled={busy}>Open</Button>}</div>
+            return <div key={library.profile_id} className={cn('flex items-center gap-3 rounded-xl px-3 py-3', isActive ? 'bg-muted/45' : 'hover:bg-muted/25')}><span className={cn('grid size-8 shrink-0 place-items-center rounded-lg text-xs font-semibold', isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>{isActive ? '✓' : '·'}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{libraryDisplayName(library)}</p><p className="mt-0.5 text-xs text-muted-foreground">{library.mode === 'public' ? 'Public' : library.mode === 'team' ? 'Team' : 'Private'}{libraryUrl ? <> · <button type="button" onClick={() => openUrl(libraryUrl)} className="text-primary underline-offset-2 hover:underline">Open repository</button></> : null}</p></div>{isActive ? <><span className="text-xs font-medium text-muted-foreground">Current</span><DropdownMenu><DropdownMenuTrigger render={<Button size="icon-sm" variant="ghost" aria-label={`Actions for ${libraryDisplayName(library)}`} disabled={busy} />}><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent className="w-48"><DropdownMenuGroup><DropdownMenuItem variant="destructive" onClick={() => setRemovalOpen(true)}><Trash2 />Remove from Skiller…</DropdownMenuItem></DropdownMenuGroup></DropdownMenuContent></DropdownMenu></> : <Button size="sm" variant="outline" onClick={() => onOpenLibrary(library.profile_id)} disabled={busy}>Open</Button>}</div>
           })}
         </div>
       </div>
@@ -169,7 +200,7 @@ function ManageLibrariesDialog({
       <section role="dialog" aria-modal="true" aria-labelledby="remove-library-title" className="modal-panel relative z-10 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-2xl outline-none animate-modal-in glass-elevated">
         <header className="px-5 pb-3 pt-5"><h2 id="remove-library-title" className="text-base font-semibold tracking-[-0.02em]">Remove this library from Skiller?</h2><p className="mt-2 text-sm leading-5 text-muted-foreground">The repository and installed agent content stay untouched. Skiller only removes this computer’s connection.</p></header>
         {disconnectPreview && <div className="mx-5 rounded-xl border border-destructive/25 bg-destructive/[0.045] px-3 py-2.5 text-xs leading-5 text-muted-foreground">{disconnectPreview.can_disconnect ? 'The local library copy will be moved to Trash.' : disconnectPreview.blockers[0] ?? 'This library cannot be removed right now.'}</div>}
-        <footer className="mt-4 flex items-center justify-end gap-2 border-t border-border/70 px-5 py-3"><Button size="sm" variant="ghost" onClick={dismissRemoval} disabled={busy}>Cancel</Button>{disconnectPreview ? <Button size="sm" variant="outline" className="border-destructive/35 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={onRemoveLibrary} disabled={busy || !disconnectPreview.can_disconnect}>{busy ? 'Removing…' : 'Remove from Skiller'}</Button> : <Button size="sm" variant="outline" className="border-destructive/35 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={onReviewRemoval} disabled={busy}>{busy ? 'Preparing…' : 'Remove from Skiller'}</Button>}</footer>
+        <footer className="mt-4 flex items-center justify-end gap-2 border-t border-border/70 px-5 py-3"><Button size="sm" variant="outline" className="min-w-[5.5rem]" onClick={dismissRemoval} disabled={busy}>Cancel</Button>{disconnectPreview ? <Button size="sm" variant="outline" className="border-destructive/35 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={onRemoveLibrary} disabled={busy || !disconnectPreview.can_disconnect}>{busy ? 'Removing…' : 'Remove from Skiller'}</Button> : <Button size="sm" variant="outline" className="border-destructive/35 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={onReviewRemoval} disabled={busy}>{busy ? 'Preparing…' : 'Remove from Skiller'}</Button>}</footer>
       </section>
     </div>}
   </>
@@ -177,34 +208,78 @@ function ManageLibrariesDialog({
 
 function SaveSelectionDialog({
   preview,
+  destination,
+  destinationUrl,
+  busy,
+  onClose,
+  onConfirm,
+  onOpenSecretFinding,
+}: {
+  preview: DotagentsLibraryNewLocalPreviewJson | null
+  destination: string
+  destinationUrl: string | null
+  busy: boolean
+  onClose: () => void
+  onConfirm: (acknowledgedSecretFindingKeys: string[]) => void
+  onOpenSecretFinding: (skillId: string, relativePath: string, line: number, column: number) => void
+}) {
+  if (!preview) return null
+  const savedCount = preview.skills.length + preview.linked_skills.length
+  const copiedFiles = preview.skills.reduce((total, skill) => total + skill.files, 0)
+  const isUpdate = preview.updated_skill_ids.length > 0
+  const itemLabel = savedCount === 1 ? 'skill' : 'skills'
+  const title = `Save ${savedCount} ${itemLabel}?`
+  const [acknowledgedSecretFindingKeys, setAcknowledgedSecretFindingKeys] = useState<string[]>([])
+  const secretBlockersAcknowledged = preview.secret_findings.length > 0 && preview.secret_findings.every((finding) => acknowledgedSecretFindingKeys.includes(finding.acknowledgement_key))
+  const savingBlocked = preview.has_blockers && !(preview.secret_findings.length > 0 && secretBlockersAcknowledged)
+  return <div className="modal-shell modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
+    <button type="button" className="absolute inset-0 cursor-default" aria-label="Close save confirmation" onClick={onClose} disabled={busy} />
+    <section role="dialog" aria-modal="true" aria-labelledby="save-selection-title" className="modal-panel relative z-10 w-[min(34rem,calc(100vw-2rem))] overflow-hidden rounded-2xl outline-none animate-modal-in glass-elevated">
+      <header className="px-6 pb-2 pt-6">
+        <h2 id="save-selection-title" className="text-lg font-semibold tracking-[-0.025em]">{title}</h2>
+        <p className="mt-2 text-sm leading-5 text-muted-foreground">It will be saved to {destinationUrl ? <button type="button" onClick={() => openUrl(destinationUrl)} className="font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">{destination}</button> : <span className="font-medium text-foreground">{destination}</span>} and synced right away.</p>
+      </header>
+      <div className="flex items-center gap-2 border-y border-border/70 px-6 py-3">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{isUpdate ? 'Changes to save' : 'Skills to add'}</p>
+        <span className="text-muted-foreground/60" aria-hidden="true">·</span>
+        <p className="text-sm font-medium">{savedCount} {itemLabel} · {copiedFiles} {copiedFiles === 1 ? 'file' : 'files'}</p>
+      </div>
+      {preview.secret_findings.length > 0 && <section className="border-b border-destructive/25 bg-destructive/[0.045] px-6 py-3" aria-live="polite"><p className="text-sm font-medium text-destructive">Review {preview.secret_findings.length} possible {preview.secret_findings.length === 1 ? 'secret' : 'secrets'} before saving</p><p className="mt-1 text-xs leading-5 text-muted-foreground">If this is an intentional example, confirm it below. The approval applies only to this exact version of the skill; changing it brings the check back.</p><ul className="mt-2 space-y-2 text-xs text-foreground">{preview.secret_findings.slice(0, 3).map((finding) => { const checked = acknowledgedSecretFindingKeys.includes(finding.acknowledgement_key); return <li key={finding.acknowledgement_key} className="flex items-center gap-2"><Checkbox checked={checked} onCheckedChange={(next) => setAcknowledgedSecretFindingKeys((current) => next ? [...new Set([...current, finding.acknowledgement_key])] : current.filter((key) => key !== finding.acknowledgement_key))} aria-label={`Confirm ${finding.skill_id} ${finding.file} line ${finding.line}`} /><span className="min-w-0 flex-1 truncate"><span className="font-medium">{finding.skill_id}</span> <span className="font-mono text-muted-foreground">· {finding.file}:{finding.line}</span></span><Button size="xs" variant="outline" className="h-7 shrink-0 px-2 text-[11px]" onClick={() => onOpenSecretFinding(finding.skill_id, finding.file, finding.line, finding.column)}>Open file</Button></li>})}{preview.secret_findings.length > 3 && <li className="text-muted-foreground">+{preview.secret_findings.length - 3} more affected files</li>}</ul></section>}
+      <div className="max-h-[min(52dvh,28rem)] space-y-5 overflow-y-auto px-6 py-5">
+        {preview.skills.length > 0 && <section><ul className="overflow-hidden rounded-xl border border-border/70 bg-background/35 divide-y divide-border/60">{preview.skills.map((skill) => <li key={skill.id} className="flex items-center gap-3 px-4 py-3"><span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted/65 text-muted-foreground"><FileText className="size-4" /></span><span className="min-w-0 flex-1 truncate text-sm font-medium">{skill.display_name}</span><span className="shrink-0 text-xs text-muted-foreground">{skill.files} {skill.files === 1 ? 'file' : 'files'}</span></li>)}</ul></section>}
+        {preview.linked_skills.length > 0 && <section><p className="px-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Kept linked to source</p><ul className="mt-2 overflow-hidden rounded-xl border border-border/70 bg-background/35 divide-y divide-border/60">{preview.linked_skills.map((skill) => <li key={skill.id} className="flex items-center gap-3 px-4 py-3"><span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted/65 text-muted-foreground"><FileText className="size-4" /></span><span className="min-w-0 flex-1 truncate text-sm font-medium">{skill.display_name}</span><span className="shrink-0 text-xs text-muted-foreground">{skill.source}</span></li>)}</ul></section>}
+        {preview.skipped_skills.length > 0 && <section className="rounded-xl border border-amber-500/25 bg-amber-500/[0.055] px-4 py-3"><p className="text-sm font-medium text-amber-800 dark:text-amber-200">{preview.skipped_skills.length} {preview.skipped_skills.length === 1 ? 'skill needs attention' : 'skills need attention'}</p><ul className="mt-2 space-y-1.5 text-xs leading-5 text-amber-800/85 dark:text-amber-100/85">{preview.skipped_skills.map((skill) => <li key={skill.id}><span className="font-medium">{skill.display_name}</span> · {skill.reason}</li>)}</ul></section>}
+      </div>
+      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 px-6 py-4"><p className={cn('text-xs', savingBlocked ? 'font-medium text-destructive' : 'text-muted-foreground')}>{savingBlocked ? 'Review and confirm every finding above before saving.' : 'Nothing is saved until you confirm.'}</p><div className="flex items-center gap-2"><Button size="sm" variant="outline" className="min-w-[5.5rem]" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={() => onConfirm(acknowledgedSecretFindingKeys)} disabled={busy || savingBlocked || savedCount === 0}>{busy ? <><Loader2 className="size-3.5 animate-spin" />Saving and syncing…</> : <><Cloud className="size-3.5" />Save and sync</>}</Button></div></footer>
+    </section>
+  </div>
+}
+
+function RemoveSkillDialog({
+  preview,
   busy,
   onClose,
   onConfirm,
 }: {
-  preview: DotagentsLibraryNewLocalPreviewJson | null
+  preview: DotagentsLibraryRemovalPreviewJson | null
   busy: boolean
   onClose: () => void
   onConfirm: () => void
 }) {
   if (!preview) return null
-  const savedCount = preview.skills.length + preview.linked_skills.length
-  const copiedFiles = preview.skills.reduce((total, skill) => total + skill.files, 0)
-  const title = preview.updated_skill_ids.length > 0 ? `Save ${savedCount} selected skills?` : `Add ${savedCount} skills to your library?`
   return <div className="modal-shell modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
-    <button type="button" className="absolute inset-0 cursor-default" aria-label="Close save confirmation" onClick={onClose} disabled={busy} />
-    <section role="dialog" aria-modal="true" aria-labelledby="save-selection-title" className="modal-panel relative z-10 w-[min(38rem,calc(100vw-2rem))] overflow-hidden rounded-2xl outline-none animate-modal-in glass-elevated">
-      <header className="flex items-start gap-3 px-5 pb-3 pt-5">
-        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/[0.1] text-primary"><Cloud className="size-4" /></span>
-        <div className="min-w-0"><h2 id="save-selection-title" className="text-base font-semibold tracking-[-0.02em]">{title}</h2><p className="mt-0.5 text-sm leading-5 text-muted-foreground">Nothing is saved until you confirm.</p></div>
+    <button type="button" className="absolute inset-0 cursor-default" aria-label="Close removal confirmation" onClick={onClose} disabled={busy} />
+    <section role="dialog" aria-modal="true" aria-labelledby="remove-skill-title" className="modal-panel relative z-10 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-2xl outline-none animate-modal-in glass-elevated">
+      <header className="px-6 pb-3 pt-6">
+        <h2 id="remove-skill-title" className="text-lg font-semibold tracking-[-0.025em]">Remove {preview.skill_name} from this library?</h2>
+        <p className="mt-2 text-sm leading-5 text-muted-foreground">This removes the skill from the connected repository and syncs that change. Its copy on this computer and in your agents stays installed.</p>
       </header>
-      <div className="max-h-[min(52dvh,28rem)] overflow-y-auto px-5 pb-4">
-        <div className="flex items-center gap-2 border-y border-border/60 py-3 text-xs text-muted-foreground"><span className="font-medium text-foreground">{savedCount} {savedCount === 1 ? 'skill' : 'skills'}</span>{copiedFiles > 0 && <><span aria-hidden="true">·</span><span>{copiedFiles} {copiedFiles === 1 ? 'file' : 'files'} copied</span></>}{preview.linked_skills.length > 0 && <><span aria-hidden="true">·</span><span>{preview.linked_skills.length} linked</span></>}</div>
-        {preview.skills.length > 0 && <section className="pt-4"><p className="text-xs font-medium text-muted-foreground">Saved to your library</p><ul className="mt-2 divide-y divide-border/60">{preview.skills.map((skill) => <li key={skill.id} className="flex items-center gap-2 py-2"><FileText className="size-3.5 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate text-sm font-medium">{skill.display_name}</span><span className="shrink-0 text-xs text-muted-foreground">{skill.files} {skill.files === 1 ? 'file' : 'files'}</span></li>)}</ul></section>}
-        {preview.linked_skills.length > 0 && <section className="pt-4"><p className="text-xs font-medium text-muted-foreground">Kept linked to source</p><ul className="mt-2 divide-y divide-border/60">{preview.linked_skills.map((skill) => <li key={skill.id} className="flex items-center gap-2 py-2"><FileText className="size-3.5 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate text-sm font-medium">{skill.display_name}</span><span className="shrink-0 text-xs text-muted-foreground">{skill.source}</span></li>)}</ul></section>}
-        {preview.skipped_skills.length > 0 && <section className="mt-4 border-t border-amber-500/25 pt-3"><p className="text-sm font-medium text-amber-800 dark:text-amber-200">{preview.skipped_skills.length} {preview.skipped_skills.length === 1 ? 'skill needs attention' : 'skills need attention'}</p><ul className="mt-2 space-y-1.5 text-xs leading-5 text-amber-800/85 dark:text-amber-100/85">{preview.skipped_skills.map((skill) => <li key={skill.id}><span className="font-medium">{skill.display_name}</span> · {skill.reason}</li>)}</ul></section>}
-        {preview.secret_findings.length > 0 && <section className="mt-4 border-t border-destructive/25 pt-3"><p className="text-sm font-medium text-destructive">{preview.secret_findings.length} possible {preview.secret_findings.length === 1 ? 'secret blocks saving' : 'secrets block saving'}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">The matched values are never shown. Resolve the listed files before saving.</p></section>}
-      </div>
-      <footer className="flex items-center justify-end gap-2 border-t border-border/70 px-5 py-3"><Button size="sm" variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={onConfirm} disabled={busy || preview.has_blockers || savedCount === 0}>{busy ? <><Loader2 className="size-3.5 animate-spin" />Saving…</> : <><Cloud className="size-3.5" />Save to library</>}</Button></footer>
+      <footer className="mt-4 flex items-center justify-end gap-2 border-t border-border/70 px-6 py-4">
+        <Button size="sm" variant="outline" className="min-w-[5.5rem]" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button size="sm" variant="outline" className="border-destructive/35 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={onConfirm} disabled={busy}>
+          {busy ? <><Loader2 className="size-3.5 animate-spin" />Removing…</> : <><Trash2 className="size-3.5" />Remove and sync</>}
+        </Button>
+      </footer>
     </section>
   </div>
 }
@@ -212,20 +287,29 @@ function SaveSelectionDialog({
 export default function ResourceLibrary() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const [profileId, setProfileId] = useState<string | null>(null)
+  const navigate = useNavigate()
+  // Reuse the active profile immediately when Agent Library is reopened. This
+  // avoids briefly rendering the empty state while the same cached profile is
+  // being read again in the background.
+  const [profileId, setProfileId] = useState<string | null>(() =>
+    queryClient.getQueryData<SyncProfileStatusJson[]>(['sync-profiles'])?.[0]?.profile_id ?? null,
+  )
   const [addingLibrary, setAddingLibrary] = useState(false)
   const [managingLibraries, setManagingLibraries] = useState(false)
   const [disconnectPreview, setDisconnectPreview] = useState<SyncDisconnectPreviewJson | null>(null)
   const [disconnectBusy, setDisconnectBusy] = useState(false)
   const [selectedNewLocalIds, setSelectedNewLocalIds] = useState<string[]>([])
+  const [collapsedSections, setCollapsedSections] = useState<Set<'changes' | 'new'>>(() => new Set())
+  const [sectionAnimation, setSectionAnimation] = useState<{ section: 'changes' | 'new'; phase: 'collapsing' | 'expanding' } | null>(null)
   const [newLocalPreview, setNewLocalPreview] = useState<DotagentsLibraryNewLocalPreviewJson | null>(null)
-  const [filter, setFilter] = useState<Filter>('all')
-	const [search, setSearch] = useState('')
+  const [removalPreview, setRemovalPreview] = useState<DotagentsLibraryRemovalPreviewJson | null>(null)
+	const [search, setSearch] = useTransientViewState('agent-library-search', '')
 	const [selectedResourceKey, setSelectedResourceKey] = useState<string | null>(null)
 	const [selectedChangeKey, setSelectedChangeKey] = useState<string | null>(null)
 	const [selectedResourceFile, setSelectedResourceFile] = useState<string | null>(null)
 	const [filesByResourceKey, setFilesByResourceKey] = useState<Record<string, string[]>>({})
 	const resourceListScrollRef = useRef<HTMLDivElement>(null)
+	const [stickySectionHeaderIndex, setStickySectionHeaderIndex] = useState<number | null>(null)
   const [repairPreview, setRepairPreview] = useState<DotagentsLibraryRepairPreviewJson | null>(null)
   const [repairBusy, setRepairBusy] = useState<'idle' | 'reviewing' | 'applying'>('idle')
   const [repairError, setRepairError] = useState<string | null>(null)
@@ -234,6 +318,7 @@ export default function ResourceLibrary() {
   const [remoteTrustPreview, setRemoteTrustPreview] = useState<SyncRemoteTrustPreviewJson | null>(null)
   const [recoveryBusy, setRecoveryBusy] = useState(false)
   const [statusRefreshBusy, setStatusRefreshBusy] = useState(false)
+  const listPane = useResizable(SKILL_LIST_PANE)
   const remoteReviewRequestRef = useRef<string | null>(null)
   const statusRefreshRequestRef = useRef<string | null>(null)
   const lastBackgroundRefreshAtRef = useRef(0)
@@ -354,7 +439,7 @@ export default function ResourceLibrary() {
       void queryClient.invalidateQueries({ queryKey: ['dotagents-library-health', profileId] })
       void queryClient.invalidateQueries({ queryKey: ['dotagents-library-local-changes', profileId] })
     } catch (cause) {
-      if (!(cause instanceof DOMException && cause.name === 'AbortError')) {
+      if (!isAbortError(cause)) {
         toast(cause instanceof Error ? cause.message : String(cause), 'destructive')
       }
     } finally {
@@ -409,6 +494,17 @@ export default function ResourceLibrary() {
       void invoke('sync_library_check_cancel', { requestId })
     }
   }, [])
+
+  function markRecentlyAddedSkillSeen(resource: LibraryResource | undefined) {
+    if (!profileId || !resource?.recently_added_at) return
+    queryClient.setQueryData<DotagentsResourceOverviewJson>(['dotagents-resource-overview', profileId], (current) => current
+      ? { ...current, resources: current.resources.map((item) => item.id === resource.id ? { ...item, recently_added_at: undefined } : item) }
+      : current)
+    void invoke('dotagents_library_mark_seen', { profileId, skillId: resource.id })
+      .catch(() => queryClient.invalidateQueries({ queryKey: ['dotagents-resource-overview', profileId] }))
+  }
+
+	const profile = profiles.data?.find((candidate) => candidate.profile_id === profileId) ?? profiles.data?.[0] ?? null
 	const visible = useMemo<LibraryListEntry[]>(() => {
 		const normalizedSearch = search.trim().toLocaleLowerCase()
     const changesById = new Map((localChanges.data?.changes ?? []).map((change) => [change.id, change]))
@@ -417,29 +513,130 @@ export default function ResourceLibrary() {
     const resourceRows = resources.map((resource) => ({ key: resource.key, resource, change: changesById.get(resource.id) }))
     // Git clients put actionable work before the clean tree. Keep that order
     // even in the all-items view so no separate "show changes" mode is needed.
+    const detachedLocalRows = (localChanges.data?.changes ?? [])
+      .filter((change) => change.kind === 'kept-local' && !knownIds.has(change.id))
+      .map((change) => ({ key: `local-change:${change.kind}:${change.id}`, change }))
     const rows: LibraryListEntry[] = [
       ...resourceRows.filter((entry) => entry.change),
       ...(localChanges.data?.changes ?? [])
-        .filter((change) => !knownIds.has(change.id))
+        .filter((change) => change.kind !== 'kept-local' && !knownIds.has(change.id))
         .map((change) => ({ key: `local-change:${change.kind}:${change.id}`, change })),
       ...resourceRows.filter((entry) => !entry.change),
+      // This remains part of the same virtualized list, but it is not pending
+      // work. Keep it after the library contents instead of mixing it with new
+      // skills that actually need a decision.
+      ...detachedLocalRows,
     ]
 
-		return rows.filter((entry) => {
+    // A dependency package is one lifecycle unit. Keeping its skills as 45
+    // unrelated rows would invite a misleading per-skill sync decision.
+    const groupedRows: LibraryListEntry[] = []
+    const emittedPackages = new Set<string>()
+    for (const row of rows) {
+      const packageId = row.resource?.package_id
+      if (!packageId) {
+        groupedRows.push(row)
+        continue
+      }
+      if (emittedPackages.has(packageId)) continue
+      const packageResources = rows.flatMap((candidate) => candidate.resource?.package_id === packageId && candidate.resource ? [candidate.resource] : [])
+      if (packageResources.length < 2) {
+        groupedRows.push(row)
+        continue
+      }
+      emittedPackages.add(packageId)
+      groupedRows.push({ key: `package:${packageId}`, package: { id: packageId, resources: packageResources } })
+    }
+
+    const matchedRows = groupedRows.filter((entry) => {
       const resource = entry.resource
       const change = entry.change
-      const matchesFilter = filter === 'all'
-        || (filter === 'changes' ? Boolean(change) : resource?.kind === filter)
       const searchable = resource
         ? `${resource.id} ${resource.path} ${resource.kind} ${change?.kind ?? ''}`
-        : `${change?.display_name ?? ''} ${change?.detail ?? ''} ${change?.kind ?? ''}`
-      return matchesFilter && (!normalizedSearch || searchable.toLocaleLowerCase().includes(normalizedSearch))
+        : entry.package
+          ? `${entry.package.id} ${entry.package.resources.map((item) => `${item.id} ${item.description ?? ''}`).join(' ')}`
+          : `${change?.display_name ?? ''} ${change?.detail ?? ''} ${change?.kind ?? ''}`
+			return !normalizedSearch || searchable.toLocaleLowerCase().includes(normalizedSearch)
     })
-	}, [filter, localChanges.data?.changes, overview.data?.resources, search])
+    const orderedSections: LibrarySection[] = ['changes', 'new', 'library', 'kept']
+    const sectioned: LibraryListEntry[] = []
+    for (const section of orderedSections) {
+      const entries = matchedRows.filter((entry) => librarySectionFor(entry) === section)
+      if (entries.length === 0) continue
+      const selectableIds = entries.flatMap((entry) => {
+        const change = entry.change
+        const selectable = change && (change.kind === 'new-local' || change.kind === 'kept-local' || (profile?.mode === 'private' && change.kind === 'changed-local'))
+        return selectable ? [change.id] : []
+      })
+      sectioned.push({ key: `section:${section}`, sectionHeader: { section, total: entries.length, selectableIds } })
+      if ((section !== 'changes' && section !== 'new') || !collapsedSections.has(section)) sectioned.push(...entries)
+    }
+    return sectioned
+	}, [collapsedSections, localChanges.data?.changes, overview.data?.resources, profile?.mode, search])
+	const resourceListVirtualizer = useVirtualizer({
+		count: visible.length,
+		getScrollElement: () => resourceListScrollRef.current,
+		// These rows are deliberately compact and have bounded content: the title,
+		// one clamped description and one metadata line. Accurate estimates keep
+		// unmeasured rows from opening visual gaps; ResizeObserver still corrects
+		// an exceptional row after it renders.
+		estimateSize: (index) => {
+			const entry = visible[index]
+			if (entry?.sectionHeader) return 41
+			if (entry?.package) return 69
+			return entry?.resource?.description ? 82 : 64
+		},
+		paddingStart: 8,
+		paddingEnd: 8,
+		overscan: 12,
+		getItemKey: (index) => visible[index]?.key ?? String(index),
+	})
+	const sectionHeaderIndices = useMemo(
+		() => visible.flatMap((entry, index) => entry.sectionHeader ? [index] : []),
+		[visible],
+	)
+	const updateStickySectionHeader = useCallback((scrollTop: number) => {
+		const currentItem = resourceListVirtualizer.getVirtualItemForOffset(scrollTop + 1)
+		if (!currentItem) return setStickySectionHeaderIndex(null)
+		let activeHeaderIndex: number | null = null
+		for (const index of sectionHeaderIndices) {
+			if (index > currentItem.index) break
+			activeHeaderIndex = index
+		}
+		if (activeHeaderIndex === null) return setStickySectionHeaderIndex(null)
+		const headerStart = resourceListVirtualizer.getOffsetForIndex(activeHeaderIndex, 'start')?.[0] ?? 0
+		setStickySectionHeaderIndex((current) => current === (scrollTop > headerStart ? activeHeaderIndex : null)
+			? current
+			: scrollTop > headerStart ? activeHeaderIndex : null)
+	}, [resourceListVirtualizer, sectionHeaderIndices])
 	useEffect(() => {
-    const selected = visible.find((entry) => entry.resource?.key === selectedResourceKey || entry.key === selectedChangeKey)
+		resourceListScrollRef.current?.scrollTo({ top: 0 })
+		// `measure` is the virtualizer's documented full-layout invalidation. It
+		// is needed when a collapsed section removes items and changes every
+		// following index; relying on scroll-time measurements caused stale gaps.
+		resourceListVirtualizer.measure()
+		updateStickySectionHeader(resourceListScrollRef.current?.scrollTop ?? 0)
+	}, [resourceListVirtualizer, updateStickySectionHeader, visible])
+	const stickySectionHeader = stickySectionHeaderIndex === null ? null : visible[stickySectionHeaderIndex]?.sectionHeader ?? null
+	const firstKeptLocalIndex = visible.findIndex((entry) => entry.change?.kind === 'kept-local')
+	const virtualListItems = resourceListVirtualizer.getVirtualItems()
+	const keptLocalVirtualItem = firstKeptLocalIndex >= 0
+		? virtualListItems.find((item) => item.index === firstKeptLocalIndex)
+		: undefined
+	const resourceListViewport = resourceListScrollRef.current
+	// The kept-local section stays in the same virtualized list. Offer a compact
+	// way to reach it only while it is actually below the visible viewport.
+	const keptSkillsBelowViewport = Boolean(
+		resourceListViewport
+		&& firstKeptLocalIndex >= 0
+		&& (keptLocalVirtualItem
+			? keptLocalVirtualItem.start > resourceListViewport.scrollTop + resourceListViewport.clientHeight - 4
+			: (virtualListItems[virtualListItems.length - 1]?.index ?? -1) < firstKeptLocalIndex),
+	)
+	useEffect(() => {
+		const selected = visible.find((entry) => !entry.sectionHeader && (entry.resource?.key === selectedResourceKey || entry.key === selectedChangeKey))
 		if (selected) return
-		const first = visible[0]
+		const first = visible.find((entry) => !entry.sectionHeader)
 		setSelectedResourceKey(first?.resource?.key ?? null)
 		setSelectedChangeKey(first?.change ? first.key : first?.resource ? null : first?.key ?? null)
 		setSelectedResourceFile(first?.resource?.kind === 'skill' && !first.change ? 'SKILL.md' : null)
@@ -460,48 +657,11 @@ export default function ResourceLibrary() {
 		enabled: Boolean(profileId && selectedLocalChange && selectedResourceFile && localChangeSummary.data),
 		staleTime: 20_000,
 	})
-	useEffect(() => {
-		if (!profileId || !localChanges.data?.changes.length) return
-		let cancelled = false
-		const timeout = window.setTimeout(() => {
-			void (async () => {
-				// Change reviews are normally read in sequence. Warm the compact tree
-				// and its first changed file while the user is looking at the list,
-				// one item at a time so the Electron main process stays responsive.
-				for (const change of localChanges.data!.changes.slice(0, 24)) {
-					if (cancelled) return
-					let summary: DotagentsLibraryLocalChangePreviewJson
-					try {
-						summary = await queryClient.fetchQuery({
-							queryKey: ['dotagents-library-local-change-summary', profileId, change.id],
-							queryFn: () => invoke('dotagents_library_local_change_preview', { profileId, skillId: change.id }),
-							staleTime: 20_000,
-						})
-					} catch {
-						// The selected item will show its normal per-item error. One
-						// unreadable change must not stop warming the rest of the list.
-						continue
-					}
-					if (cancelled) return
-					const comparison = summary.comparison
-					const firstFile = comparison
-						? [...comparison.changed_files, ...comparison.only_on_computer, ...comparison.only_in_library][0]
-						: summary.local_files[0]
-					if (!firstFile) continue
-					try {
-						await queryClient.prefetchQuery({
-							queryKey: ['dotagents-library-local-change-file', profileId, change.id, firstFile],
-							queryFn: () => invoke('dotagents_library_local_change_preview', { profileId, skillId: change.id, file: firstFile }),
-							staleTime: 20_000,
-						})
-					} catch {
-						// See the per-file state when the user opens it.
-					}
-				}
-			})()
-		}, 250)
-		return () => { cancelled = true; window.clearTimeout(timeout) }
-	}, [localChanges.data?.changes, profileId, queryClient])
+	// Do not warm previews for a batch of changed skills on first entry. Each
+	// preview can read and compare a whole directory; even sequential IPC work
+	// competes with pointer and scroll events on a large library. The selected
+	// item still loads immediately above, and subsequent items are cached once
+	// the user explicitly opens them.
 	const resourceContent = useQuery<DotagentsResourceContentJson>({
 		queryKey: ['dotagents-resource-content', profileId, selectedResourceKey, selectedResourceFile],
 		queryFn: () => invoke('dotagents_resource_content', { profileId: profileId!, key: selectedResourceKey!, ...(selectedResourceFile ? { file: selectedResourceFile } : {}) }),
@@ -541,15 +701,16 @@ export default function ResourceLibrary() {
 	}, [selectedFiles, selectedResourceFile])
 	const deferredResourceContent = useDeferredValue(resourceContent.data)
 	const resourceContentIsStale = Boolean(resourceContent.data && deferredResourceContent?.content_path !== resourceContent.data.content_path)
-  const counts = useMemo(() => Object.fromEntries(kinds.map(({ kind }) => [kind, overview.data?.resources.filter((entry) => entry.kind === kind).length ?? 0])), [overview.data?.resources])
   const libraryEmpty = overview.isSuccess && overview.data.resources.length === 0
-  const localChangeCount = localChanges.data?.changes.length ?? 0
-  const profile = profiles.data?.find((candidate) => candidate.profile_id === profileId) ?? profiles.data?.[0] ?? null
+  // A skill deliberately kept outside this library is visible for management,
+  // but it is not outstanding work and must not turn the whole library amber.
+  const localChangeCount = (localChanges.data?.changes ?? []).filter((change) => change.kind !== 'kept-local').length
   const selectedReviewableChange = selectedLocalChange
-    && (selectedLocalChange.kind === 'new-local' || (profile?.mode === 'private' && selectedLocalChange.kind === 'changed-local'))
+    && (selectedLocalChange.kind === 'new-local' || selectedLocalChange.kind === 'kept-local' || (profile?.mode === 'private' && selectedLocalChange.kind === 'changed-local'))
     ? selectedLocalChange
     : null
-  const remoteLibraryUrl = profile?.remote_identity && /^https?:\/\//i.test(profile.remote_identity) ? profile.remote_identity : null
+  const selectedChangeIsIncluded = Boolean(selectedReviewableChange && selectedNewLocalIds.includes(selectedReviewableChange.id))
+  const remoteLibraryUrl = repositoryBrowserUrl(profile?.remote_identity)
   const repairableCodes = useMemo(
     () => [...new Set((health.data?.issues ?? []).filter((issue) => issue.repairable).map((issue) => issue.code))],
     [health.data?.issues],
@@ -573,24 +734,116 @@ export default function ResourceLibrary() {
     }
   }
 
-  async function saveReviewedNewLocalChanges() {
+  function openSecretFinding(skillId: string, relativePath: string, line: number, column: number) {
+    void invoke('open_sync_secret_finding', { skillId, relativePath, line, column }).then(({ openedAtLine }) => {
+      if (!openedAtLine) toast('Opened the file. Install Cursor or VS Code to jump directly to the flagged line.', 'default')
+    }).catch((cause) => {
+      toast(cause instanceof Error ? cause.message : String(cause), 'destructive')
+    })
+  }
+
+  function toggleChangeForSave(skillId: string) {
+    setSelectedNewLocalIds((current) => current.includes(skillId)
+      ? current.filter((id) => id !== skillId)
+      : [...current, skillId])
+  }
+
+  function collapseSection(section: 'changes' | 'new') {
+    setSectionAnimation({ section, phase: 'collapsing' })
+    window.setTimeout(() => {
+      setCollapsedSections((current) => new Set(current).add(section))
+      setSectionAnimation(null)
+    }, 140)
+  }
+
+  function toggleSectionSelection(section: 'changes' | 'new', ids: string[]) {
+    const allSelected = ids.length > 0 && ids.every((id) => selectedNewLocalIds.includes(id))
+    if (!allSelected) collapseSection(section)
+    setSelectedNewLocalIds((current) => {
+      return allSelected
+        ? current.filter((id) => !ids.includes(id))
+        : [...new Set([...current, ...ids])]
+    })
+  }
+
+  function toggleSectionCollapsed(section: 'changes' | 'new') {
+    if (!collapsedSections.has(section)) return collapseSection(section)
+    setCollapsedSections((current) => {
+      const next = new Set(current)
+      next.delete(section)
+      return next
+    })
+    setSectionAnimation({ section, phase: 'expanding' })
+    window.setTimeout(() => setSectionAnimation(null), 140)
+  }
+
+  function renderSectionHeader(sectionHeader: NonNullable<LibraryListEntry['sectionHeader']>, sticky = false) {
+    const collapsible = sectionHeader.section === 'changes' || sectionHeader.section === 'new'
+    const collapsed = collapsible && collapsedSections.has(sectionHeader.section as 'changes' | 'new')
+    const selected = sectionHeader.selectableIds.filter((id) => selectedNewLocalIds.includes(id)).length
+    const label = sectionHeader.section === 'changes' ? 'Changes'
+      : sectionHeader.section === 'new' ? 'New'
+        : sectionHeader.section === 'kept' ? 'Kept on this computer' : 'Library'
+    const Icon = sectionHeader.section === 'changes' ? FileDiff
+      : sectionHeader.section === 'new' ? FileText : CheckCircle2
+    return <div className={cn(
+      'flex min-h-10 items-center gap-2 border-b border-border/60 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground',
+      sticky ? 'bg-card shadow-[0_5px_10px_-8px_rgb(0_0_0_/_0.55)]' : 'bg-muted/[0.18]',
+    )}>
+      {collapsible ? <button type="button" onClick={() => toggleSectionCollapsed(sectionHeader.section as 'changes' | 'new')} className="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"><Icon className="size-3 shrink-0" /><span className="truncate">{label} ({sectionHeader.total}{sectionHeader.selectableIds.length > 0 && <><span className="text-muted-foreground/60"> · </span><span className={cn(selected > 0 && 'text-primary')}>{selected} selected</span></>})</span><ChevronDown className={cn('ml-auto size-3.5 shrink-0 transition-transform', collapsed && '-rotate-90')} /></button> : <span className="flex min-w-0 flex-1 items-center gap-2"><Icon className="size-3 shrink-0" /><span className="truncate">{label} ({sectionHeader.total})</span></span>}
+      {sectionHeader.selectableIds.length > 0 && <Button size="xs" variant={selected === sectionHeader.selectableIds.length ? 'outline' : 'default'} className="h-6 shrink-0 px-2 text-[10px] normal-case tracking-normal" onClick={() => toggleSectionSelection(sectionHeader.section as 'changes' | 'new', sectionHeader.selectableIds)} disabled={syncBusy !== 'idle'}>{selected === sectionHeader.selectableIds.length ? 'Clear' : 'Select all'}</Button>}
+    </div>
+  }
+
+  async function saveReviewedNewLocalChanges(acknowledgedSecretFindingKeys: string[] = []) {
     if (!profileId || !newLocalPreview) return
     setSyncBusy('saving')
     try {
-      await invoke('dotagents_library_new_local_apply', { profileId, planId: newLocalPreview.plan_id })
-      const savedCount = newLocalPreview.skills.length + newLocalPreview.linked_skills.length
-      const savedSummary = [
-        newLocalPreview.skills.length > 0 && `${newLocalPreview.skills.length} saved as ${newLocalPreview.skills.length === 1 ? 'a copy' : 'copies'}`,
-        newLocalPreview.linked_skills.length > 0 && `${newLocalPreview.linked_skills.length} kept linked to source`,
-      ].filter(Boolean).join(' · ')
+      const result = await invoke('dotagents_library_new_local_apply', { profileId, planId: newLocalPreview.plan_id, acknowledgedSecretFindingKeys })
       const changedCount = newLocalPreview.updated_skill_ids.length
-      const action = changedCount > 0
-        ? `${savedCount} ${savedCount === 1 ? 'skill was' : 'skills were'} saved to your library (${changedCount} ${changedCount === 1 ? 'updated' : 'updated'})`
-        : `${savedCount} ${savedCount === 1 ? 'skill was' : 'skills were'} added to your library`
-      toast(`${action}${savedSummary ? `: ${savedSummary}.` : '.'}`)
+      const savedSummary = [
+        newLocalPreview.skills.length > 0 && `${newLocalPreview.skills.length} ${newLocalPreview.skills.length === 1 ? 'skill' : 'skills'} saved as ${newLocalPreview.skills.length === 1 ? 'a copy' : 'copies'}`,
+        newLocalPreview.linked_skills.length > 0 && `${newLocalPreview.linked_skills.length} ${newLocalPreview.linked_skills.length === 1 ? 'skill' : 'skills'} linked to the original source`,
+      ].filter(Boolean).join(' · ')
+      toast({
+        title: changedCount > 0 ? 'Library updated' : 'Added to library',
+        description: `${savedSummary}${result.pushed ? '.' : ' saved locally.'}`,
+      }, 'default', remoteLibraryUrl ? { label: 'Open repository', onClick: () => openUrl(remoteLibraryUrl) } : undefined)
       setNewLocalPreview(null)
       setSelectedNewLocalIds([])
-      setFilter('all')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['sync-profiles'] }),
+        queryClient.invalidateQueries({ queryKey: ['dotagents-resource-overview', profileId] }),
+        queryClient.invalidateQueries({ queryKey: ['dotagents-library-local-changes', profileId] }),
+      ])
+    } catch (cause) {
+      toast(cause instanceof Error ? cause.message : String(cause), 'destructive')
+    } finally {
+      setSyncBusy('idle')
+    }
+  }
+
+  async function reviewLibrarySkillRemoval(skillId: string) {
+    if (!profileId) return
+    setSyncBusy('reviewing')
+    try {
+      setRemovalPreview(await invoke('dotagents_library_removal_preview', { profileId, skillId }))
+    } catch (cause) {
+      toast(cause instanceof Error ? cause.message : String(cause), 'destructive')
+    } finally {
+      setSyncBusy('idle')
+    }
+  }
+
+  async function applyLibrarySkillRemoval() {
+    if (!profileId || !removalPreview) return
+    setSyncBusy('saving')
+    try {
+      await invoke('dotagents_library_removal_apply', { profileId, planId: removalPreview.plan_id })
+      toast(`${removalPreview.skill_name} was removed from the library and synced.`, 'default', remoteLibraryUrl ? { label: 'Open repository', onClick: () => openUrl(remoteLibraryUrl) } : undefined)
+      setRemovalPreview(null)
+      setSelectedResourceKey(null)
+      setSelectedChangeKey(null)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['sync-profiles'] }),
         queryClient.invalidateQueries({ queryKey: ['dotagents-resource-overview', profileId] }),
@@ -649,7 +902,7 @@ export default function ResourceLibrary() {
       if (!actionable) {
         setRemoteReview(null)
         refreshLibraryState()
-        toast('Your library and this computer are already in sync.')
+        toast('Your library and this computer are already in sync.', 'default', remoteLibraryUrl ? { label: 'Open repository', onClick: () => openUrl(remoteLibraryUrl) } : undefined)
         return
       }
       setRemoteReview(nextReview)
@@ -679,7 +932,7 @@ export default function ResourceLibrary() {
     const actionable = nextReview.library_update_only || nextReview.dependency_changes.length > 0 || nextReview.skills.some((skill) => !['unchanged', 'kept-local'].includes(skill.action))
     setRemoteReview(actionable ? nextReview : null)
     refreshLibraryState()
-    if (!actionable) toast('Your library and this computer are now in sync.')
+    if (!actionable) toast('Your library and this computer are now in sync.', 'default', remoteLibraryUrl ? { label: 'Open repository', onClick: () => openUrl(remoteLibraryUrl) } : undefined)
   }
 
   async function resolveRemoteSkill(skill: SyncThreeWayReviewJson['skills'][number], decision: 'library' | 'local' | 'keep') {
@@ -766,16 +1019,23 @@ export default function ResourceLibrary() {
   }
 
   const initialLocalCheckPending = Boolean(profileId && localChanges.isLoading && !localChanges.data)
+  // Do not present a conclusion before the profile and its first library
+  // snapshot exist. Cached data renders immediately; cold loads get a
+  // skeleton, and the empty state is reserved for a confirmed empty library.
+  const libraryListPending = profiles.isLoading
+    || (!profileId && !profiles.isError)
+    || overview.isLoading
+    || initialLocalCheckPending
   const syncStatus = useMemo(() => {
     if (initialLocalCheckPending) return { label: 'Checking changes on this computer', tone: 'text-muted-foreground', kind: 'checking' as const }
-    if ((localChanges.data?.changes.length ?? 0) > 0) return { label: `${localChanges.data!.changes.length} ${localChanges.data!.changes.length === 1 ? 'change needs' : 'changes need'} review`, tone: 'text-amber-700 dark:text-amber-300', kind: 'local' as const }
+    if (localChangeCount > 0) return { label: `${localChangeCount} ${localChangeCount === 1 ? 'change needs' : 'changes need'} review`, tone: 'text-primary', kind: 'local' as const }
     if (profile?.remote_trust_required) return { label: 'Review remote access', tone: 'text-amber-700 dark:text-amber-300', kind: 'remote' as const }
     if (profile?.check_error) return { label: 'Could not check for updates', tone: 'text-amber-700 dark:text-amber-300', kind: 'check-error' as const }
     if (overview.data?.changed || profile?.changed) return { label: 'Local changes found', tone: 'text-amber-700 dark:text-amber-300', kind: 'local' as const }
     if ((profile?.ahead ?? 0) > 0) return { label: `${profile!.ahead} ${profile!.ahead === 1 ? 'change is' : 'changes are'} waiting to upload`, tone: 'text-amber-700 dark:text-amber-300', kind: 'local' as const }
     if ((profile?.behind ?? 0) > 0) return { label: `${profile!.behind} ${profile!.behind === 1 ? 'update is' : 'updates are'} ready to review`, tone: 'text-primary', kind: 'remote' as const }
-    return { label: 'Up to date on this computer', tone: 'text-emerald-700 dark:text-emerald-300', kind: 'fresh' as const }
-  }, [initialLocalCheckPending, localChanges.data?.changes.length, overview.data?.changed, profile])
+    return { label: 'Up to date', tone: 'text-emerald-700 dark:text-emerald-300', kind: 'fresh' as const }
+  }, [initialLocalCheckPending, localChangeCount, overview.data?.changed, profile])
   const syncActionLabel = statusRefreshBusy
     ? 'Stop checking'
     : syncBusy === 'reviewing' && remoteReviewRequestRef.current
@@ -808,10 +1068,7 @@ export default function ResourceLibrary() {
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
       <header className="shrink-0 border-b border-border/70 px-6 pb-5 pt-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <LibraryBig className="size-5 text-primary" aria-hidden="true" />
-            <h1 className="text-[clamp(1.35rem,2.2vw,1.85rem)] font-semibold leading-tight tracking-[-0.045em]">Agent Library</h1>
-          </div>
+          <h1 className="text-lg font-semibold tracking-[-0.03em] text-foreground">Agent Library</h1>
           <div className="flex items-center gap-2">
             {(profiles.data?.length ?? 0) > 1 && (
               <label className="relative"><span className="sr-only">Active library</span><select value={profileId ?? ''} onChange={(event) => void chooseActiveLibrary(event.target.value)} className="h-9 appearance-none rounded-md border border-border bg-background pl-3 pr-8 text-xs font-medium outline-none focus:ring-2 focus:ring-ring/40">{profiles.data?.map((profile) => <option key={profile.profile_id} value={profile.profile_id}>{libraryDisplayName(profile)}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" /></label>
@@ -835,10 +1092,17 @@ export default function ResourceLibrary() {
               </Tooltip>
             ) : <span>{libraryDisplayName(profile)}</span>)}
             {profile && <span aria-hidden="true">·</span>}
-            <span>{overview.data?.resources.length ?? 0} items</span>
-            <span aria-hidden="true">·</span>
-            <span className={cn('inline-flex items-center gap-1.5 font-medium', statusRefreshBusy ? 'text-muted-foreground' : syncStatus.tone)}>{statusRefreshBusy || syncStatus.kind === 'checking' ? <Loader2 className="size-3.5 animate-spin" /> : syncStatus.kind === 'fresh' ? <CheckCircle2 className="size-3.5" /> : <span className="size-1.5 rounded-full bg-current" />}{statusRefreshBusy ? 'Checking saved library' : syncStatus.label}</span>
-            {showSyncAction && (
+            {libraryListPending ? <>
+              <span className="h-3 w-14 animate-skeleton" aria-label="Loading item count" />
+              <span aria-hidden="true">·</span>
+              <span className="h-3 w-24 animate-skeleton" aria-label="Loading library status" />
+            </> : <>
+              <span>{overview.data!.resources.length} items</span>
+              <span aria-hidden="true">·</span>
+              <span className={cn('inline-flex items-center gap-1.5 font-medium', statusRefreshBusy ? 'text-muted-foreground' : syncStatus.tone)}>{statusRefreshBusy || syncStatus.kind === 'checking' ? <Loader2 className="size-3.5 animate-spin" /> : syncStatus.kind === 'fresh' ? <CheckCircle2 className="size-3.5" /> : <span className="size-1.5 rounded-full bg-current" />}{statusRefreshBusy ? 'Checking saved library' : syncStatus.label}</span>
+              {selectedNewLocalIds.length > 0 && !statusRefreshBusy && <><span aria-hidden="true">·</span><span className="font-medium text-primary">{selectedNewLocalIds.length} selected</span></>}
+            </>}
+            {!libraryListPending && showSyncAction && (
               <button
                 type="button"
                 onClick={() => statusRefreshBusy ? cancelStatusRefresh() : syncBusy === 'reviewing' && remoteReviewRequestRef.current ? cancelRemoteReview() : profile?.remote_trust_required ? void reviewRemoteAccess() : syncStatus.kind === 'remote' ? void reviewRemoteChanges() : void refreshLibraryState({ foreground: true })}
@@ -849,14 +1113,6 @@ export default function ResourceLibrary() {
                 {syncActionLabel}
               </button>
             )}
-          </div>
-          <div className="w-full sm:w-56 sm:shrink-0">
-            <SearchInput
-              value={search}
-              onChange={setSearch}
-              placeholder="Search library"
-              debounce={0}
-            />
           </div>
         </div>
       </header>
@@ -940,7 +1196,7 @@ export default function ResourceLibrary() {
             <div className="mt-4 rounded-xl border border-amber-500/30 bg-background/80 p-4">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-800 dark:text-amber-200">Reviewed repair</p><p className="mt-1 text-sm font-medium">Keep device-only state out of the portable library</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Add <span className="font-mono text-foreground">{repairPreview.actions.flatMap((action) => action.add).join(' and ')}</span> to <span className="font-mono text-foreground">.gitignore</span>. No skills, resources, commits, or remotes will change.</p></div>
-                <div className="flex shrink-0 gap-2"><Button size="sm" variant="ghost" onClick={() => { setRepairPreview(null); setRepairError(null) }} disabled={repairBusy !== 'idle'}>Cancel</Button><Button size="sm" onClick={() => void applyRepair()} disabled={repairBusy !== 'idle' || repairPreview.has_blockers || repairPreview.actions.length === 0}>{repairBusy === 'applying' ? <><Loader2 className="size-3.5 animate-spin" />Repairing…</> : <><ShieldCheck className="size-3.5" />Apply reviewed repair</>}</Button></div>
+                <div className="flex shrink-0 gap-2"><Button size="sm" variant="outline" className="min-w-[5.5rem]" onClick={() => { setRepairPreview(null); setRepairError(null) }} disabled={repairBusy !== 'idle'}>Cancel</Button><Button size="sm" onClick={() => void applyRepair()} disabled={repairBusy !== 'idle' || repairPreview.has_blockers || repairPreview.actions.length === 0}>{repairBusy === 'applying' ? <><Loader2 className="size-3.5 animate-spin" />Repairing…</> : <><ShieldCheck className="size-3.5" />Apply reviewed repair</>}</Button></div>
               </div>
             </div>
           )}
@@ -949,98 +1205,168 @@ export default function ResourceLibrary() {
       )}
 
 		<div className="flex min-h-0 flex-1 flex-col">
-				<div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/70 px-6 py-3">
-					<div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter library by type">
-						<button type="button" onClick={() => setFilter('all')} className={cn('rounded-md px-2.5 py-1 text-xs font-medium transition-colors', filter === 'all' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground')}>All items <span className="ml-1 opacity-75">{(overview.data?.resources.length ?? 0) + (localChanges.data?.changes.filter((change) => !overview.data?.resources.some((resource) => resource.id === change.id)).length ?? 0)}</span></button>
-						<button type="button" onClick={() => { setFilter('changes'); setNewLocalPreview(null) }} className={cn('rounded-md px-2.5 py-1 text-xs font-medium transition-colors', filter === 'changes' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground')}>Changes <span className="ml-1 opacity-75">{localChangeCount}</span></button>
-						{kinds.map(({ kind: value, label }) => <button key={value} type="button" onClick={() => setFilter(value)} className={cn('rounded-md px-2.5 py-1 text-xs font-medium transition-colors', filter === value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground')}>{label}<span className="ml-1 opacity-75">{counts[value] ?? 0}</span></button>)}
-					</div>
-				</div>
-				{localChangeCount > 0 && selectedNewLocalIds.length > 0 && !newLocalPreview && <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-muted/20 px-6 py-2.5 text-xs">
-          <p className="text-muted-foreground">{selectedNewLocalIds.length} {selectedNewLocalIds.length === 1 ? 'item is' : 'items are'} selected. You will confirm the exact plan before anything is saved.</p>
+				{selectedNewLocalIds.length > 0 && !newLocalPreview && <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-muted/20 px-6 py-2.5 text-xs">
+          <p className="min-w-0 truncate text-muted-foreground">{selectedNewLocalIds.length} {selectedNewLocalIds.length === 1 ? 'skill is' : 'skills are'} ready to save. Review the plan before anything changes.</p>
           <div className="flex shrink-0 items-center gap-2">
-            <Button size="xs" onClick={() => void reviewNewLocalChanges()} disabled={syncBusy !== 'idle'}>{syncBusy === 'reviewing' ? <><Loader2 className="size-3.5 animate-spin" />Preparing…</> : <><Cloud className="size-3.5" />Save {selectedNewLocalIds.length} selected</>}</Button>
+            <Button size="xs" variant="outline" className="min-w-16" onClick={() => setSelectedNewLocalIds([])} disabled={syncBusy !== 'idle'}>Cancel</Button>
+            <Button size="xs" onClick={() => void reviewNewLocalChanges()} disabled={syncBusy !== 'idle'}>{syncBusy === 'reviewing' ? <><Loader2 className="size-3.5 animate-spin" />Preparing…</> : <>Review and save</>}</Button>
           </div>
         </div>}
 				<div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-					<div className="relative min-h-0 min-w-0 flex-1 max-lg:max-h-[44%] max-lg:flex-none lg:w-[clamp(22rem,32vw,28rem)] lg:flex-none">
-            <div ref={resourceListScrollRef} className="h-full min-h-0 overflow-y-auto">
+					<div className="relative flex min-h-0 min-w-0 flex-1 flex-col max-lg:!w-full max-lg:max-h-[44%] max-lg:flex-none lg:flex-none" style={{ width: listPane.width }}>
+            <div className="shrink-0 border-b border-border/70 p-3">
+              <SearchInput
+                value={search}
+                onChange={setSearch}
+                placeholder="Search library"
+                debounce={0}
+              />
+            </div>
+						<div className="relative flex min-h-0 flex-1 flex-col">
+							<div ref={resourceListScrollRef} onScroll={(event) => updateStickySectionHeader(event.currentTarget.scrollTop)} className="min-h-0 flex-1 overflow-y-auto">
           {overview.isError ? (
             <div className="grid min-h-72 place-items-center text-center"><div><AlertTriangle className="mx-auto size-7 text-red-500" /><p className="mt-3 text-sm font-medium">Agent Library could not be loaded</p><p className="mt-1 text-xs text-muted-foreground">Nothing changed. Retry the local library review.</p><Button size="sm" variant="outline" className="mt-4" onClick={() => overview.refetch()}>Try again</Button></div></div>
-						) : overview.isLoading || initialLocalCheckPending ? Array.from({ length: 7 }).map((_, index) => <div key={index} className="flex animate-pulse items-center gap-3 border-b border-border/60 px-4 py-3.5"><div className="size-9 rounded-lg bg-muted" /><div className="space-y-2"><div className="h-3 w-36 rounded bg-muted" /><div className="h-2.5 w-52 rounded bg-muted/60" /></div></div>) : visible.length === 0 ? (
-							<div className="grid min-h-72 place-items-center text-center"><div><LibraryBig className="mx-auto size-7 text-muted-foreground/50" /><p className="mt-3 text-sm font-medium">No {filter === 'all' ? 'library items' : filter === 'changes' ? 'changes' : `${filter}s`} here yet</p><p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{libraryEmpty ? 'Skiller will show agent content here after you review and save changes found on this computer.' : `This library has no ${filter === 'changes' ? 'changes' : filter} items matching the current view.`}</p></div></div>
-						) : visible.map((entry, index) => {
+						) : libraryListPending ? Array.from({ length: 7 }).map((_, index) => <div key={index} className="flex items-center gap-3 border-b border-border/60 px-4 py-3.5"><div className="size-9 animate-skeleton" /><div className="space-y-2"><div className="h-3 w-36 animate-skeleton" /><div className="h-2.5 w-52 animate-skeleton" /></div></div>) : visible.length === 0 ? (
+							<div className="grid min-h-72 place-items-center text-center"><div><LibraryBig className="mx-auto size-7 text-muted-foreground/50" /><p className="mt-3 text-sm font-medium">No library items here yet</p><p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{libraryEmpty ? 'Skiller will show agent content here after you review and save changes found on this computer.' : 'No library items match your search.'}</p></div></div>
+						) : <div className="relative w-full" style={{ height: resourceListVirtualizer.getTotalSize() }}>{resourceListVirtualizer.getVirtualItems().map((virtualRow) => {
+              const entry = visible[virtualRow.index]
+              if (!entry) return null
+              const sectionHeader = entry.sectionHeader
+              if (sectionHeader) {
+				return <div key={virtualRow.key} data-index={virtualRow.index} ref={resourceListVirtualizer.measureElement} className="absolute left-0 top-0 w-full" style={{ transform: `translateY(${virtualRow.start}px)` }}>
+					{renderSectionHeader(sectionHeader)}
+                </div>
+              }
               const resource = entry.resource
               const change = entry.change
-              const definition = kinds.find((item) => item.kind === resource?.kind) ?? kinds[0]
-              const Icon = definition.icon
+              const packageGroup = entry.package
               const selected = resource ? resource.key === selectedResourceKey : entry.key === selectedChangeKey
+              const sectionAnimationClass = sectionAnimation && librarySectionFor(entry) === sectionAnimation.section
+                ? sectionAnimation.phase === 'collapsing' ? 'animate-library-section-collapse' : 'animate-library-section-expand'
+                : null
               // Like GitHub's Files changed view, review controls live beside the
-              // changed item in the main list. The Changes filter only narrows
-              // focus; it must not be a required detour before taking action.
-              const reviewableChange = change && (change.kind === 'new-local' || (profile?.mode === 'private' && change.kind === 'changed-local')) ? change : null
-              const statusCode = change?.kind === 'new-local' ? '??' : change?.kind === 'changed-local' ? 'M' : change?.kind === 'missing-local' ? 'D' : null
+              // changed item in the main list. Changes always stay at the top.
+              const reviewableChange = change && (change.kind === 'new-local' || change.kind === 'kept-local' || (profile?.mode === 'private' && change.kind === 'changed-local')) ? change : null
+              const statusCode = change?.kind === 'new-local' ? '??' : change?.kind === 'kept-local' ? 'Local' : change?.kind === 'changed-local' ? 'M' : change?.kind === 'missing-local' ? 'D' : null
               const statusLabel = change?.kind === 'new-local' ? 'New' : statusCode
-              const previous = visible[index - 1]
-              const showsChangeGroups = filter === 'all' || filter === 'changes'
-              const startsTrackedChanges = showsChangeGroups
-                && Boolean(change)
-                && change?.kind !== 'new-local'
-                && (!previous?.change || previous.change.kind === 'new-local')
-              const startsUntracked = showsChangeGroups
-                && change?.kind === 'new-local'
-                && previous?.change?.kind !== 'new-local'
-              const startsCleanLibrary = filter === 'all' && !change && Boolean(previous?.change)
-							return <div key={entry.key}>
-                  {startsTrackedChanges && <div className="flex items-center gap-2 border-b border-border/60 bg-muted/[0.18] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"><FileDiff className="size-3" />Changes</div>}
-                  {startsUntracked && <div className="flex items-center gap-2 border-b border-border/60 bg-muted/[0.18] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"><FileText className="size-3" />New on this computer</div>}
-                  {startsCleanLibrary && <div className="flex items-center gap-2 border-b border-border/60 bg-muted/[0.18] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"><CheckCircle2 className="size-3" />Library</div>}
-					<button type="button" onClick={() => { setSelectedResourceKey(resource?.key ?? null); setSelectedChangeKey(change ? entry.key : null); setSelectedResourceFile(resource?.kind === 'skill' && !change ? 'SKILL.md' : null) }} className={cn('relative flex w-full items-center gap-3 border-b border-border/60 px-4 py-3.5 text-left transition-colors', selected ? 'bg-primary/[0.12] shadow-[inset_3px_0_0_hsl(var(--primary))]' : 'hover:bg-muted/30')}>
-                    {reviewableChange ? <label className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md hover:bg-muted/50" onClick={(event) => event.stopPropagation()}><input type="checkbox" className="cursor-pointer" checked={selectedNewLocalIds.includes(reviewableChange.id)} onChange={() => setSelectedNewLocalIds((current) => current.includes(reviewableChange.id) ? current.filter((id) => id !== reviewableChange.id) : [...current, reviewableChange.id])} aria-label={`Include ${reviewableChange.display_name}`} /></label> : <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/[0.07] text-primary"><Icon className="size-4" /></span>}
-                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{resource?.id ?? change?.display_name}</p><p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">{resource?.path ?? 'skills/' + (change?.id ?? '')}</p></div>
-                    <div className="flex shrink-0 items-center gap-1.5">{statusCode && <Tooltip content={change?.kind === 'new-local' ? 'New on this computer' : change?.kind === 'changed-local' ? 'Changed on this computer' : 'No longer on this computer'}><span className={cn('grid min-w-6 place-items-center rounded-md px-1.5 py-1 font-mono text-[10px] font-semibold', statusCode === '??' ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300' : statusCode === 'D' ? 'bg-destructive/12 text-destructive' : 'bg-amber-500/15 text-amber-800 dark:text-amber-200')}>{statusLabel}</span></Tooltip>}<span className="rounded-md bg-muted/60 px-2 py-1 text-[10px] font-medium text-muted-foreground">{definition.label}</span></div>
-                  </button>
-                </div>
-            })}
-						</div>
-							<ScrollFade viewportRef={resourceListScrollRef} />
+							return <div key={virtualRow.key} data-index={virtualRow.index} ref={resourceListVirtualizer.measureElement} className="absolute left-0 top-0 w-full" style={{ transform: `translateY(${virtualRow.start}px)` }}>
+					<div className={cn('px-2 pb-1', sectionAnimationClass)}>
+						{packageGroup ? <button type="button" className="w-full rounded-xl border-[0.5px] border-primary/15 bg-primary/[0.04] px-3 py-3 text-left transition-colors hover:bg-primary/[0.08]" onClick={() => navigate(`/skills?skill=${encodeURIComponent(packageGroup.id)}`)}>
+							<div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-sm font-medium">{packageGroup.id}</p><span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">Package</span></div><p className="mt-0.5 text-xs text-muted-foreground">{packageGroup.resources.length} skills · Managed from All Skills</p></div><ChevronDown className="size-4 shrink-0 -rotate-90 text-muted-foreground" /></div>
+						</button> :
+						<button
+							type="button"
+							onClick={() => {
+								markRecentlyAddedSkillSeen(resource);
+								setSelectedResourceKey(resource?.key ?? null);
+								setSelectedChangeKey(change ? entry.key : null);
+								setSelectedResourceFile(resource?.kind === 'skill' && !change ? 'SKILL.md' : null);
+								resourceListVirtualizer.scrollToIndex(virtualRow.index, { align: 'start' });
+							}}
+							className={cn(
+								'w-full rounded-xl border-[0.5px] px-3 py-2.5 text-left transition-all duration-200',
+								selected
+									? 'glass'
+									: resource?.recently_added_at
+										? 'border-transparent bg-emerald-500/[0.045] hover:bg-emerald-500/[0.075]'
+										: 'border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]',
+							)}
+						>
+							<div className="flex min-w-0 items-start gap-2">
+								{reviewableChange && <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md hover:bg-muted/50" onClick={(event) => event.stopPropagation()}><Checkbox checked={selectedNewLocalIds.includes(reviewableChange.id)} onCheckedChange={() => toggleChangeForSave(reviewableChange.id)} aria-label={`Include ${reviewableChange.display_name} in save`} /></span>}
+								<div className="min-w-0 flex-1">
+									<div className="flex min-w-0 items-start justify-between gap-2">
+										<div className="min-w-0 flex-1">
+									<div className="flex min-w-0 items-center gap-1.5">
+										<Tooltip content={resource?.id ?? change?.display_name ?? ''}><p className="min-w-0 flex-1 truncate text-sm font-medium">{resource?.id ?? change?.display_name}</p></Tooltip>
+										{resource?.recently_added_at && <span className="shrink-0 rounded-full bg-emerald-500/12 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">New</span>}
+									</div>
+									{resource?.description && <Tooltip content={resource.description}><p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{resource.description}</p></Tooltip>}
+										</div>
+										{statusCode && <Tooltip content={change?.kind === 'new-local' ? 'New on this computer' : change?.kind === 'kept-local' ? 'Kept on this computer, outside this library' : change?.kind === 'changed-local' ? 'Changed on this computer' : 'No longer on this computer'}><span className={cn('grid min-w-6 shrink-0 place-items-center rounded-md px-1.5 py-1 font-mono text-[10px] font-semibold', statusCode === '??' ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300' : statusCode === 'Local' ? 'bg-muted text-muted-foreground' : statusCode === 'D' ? 'bg-destructive/12 text-destructive' : 'bg-amber-500/15 text-amber-800 dark:text-amber-200')}>{statusLabel}</span></Tooltip>}
+									</div>
+									<div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] font-medium text-muted-foreground">
+										<Tooltip content={resource?.path ?? 'skills/' + (change?.id ?? '')}><span className="min-w-0 flex-1 truncate font-mono">{resource?.path ?? 'skills/' + (change?.id ?? '')}</span></Tooltip>
+										<span className="shrink-0 rounded-full bg-secondary px-1.5 py-0.5 text-secondary-foreground">Skill</span>
+										{resource?.package_id && <Tooltip content={`${resource.package_id} is updated as one package from All Skills`}><button type="button" className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-primary" onClick={(event) => { event.stopPropagation(); navigate(`/skills?skill=${encodeURIComponent(resource.package_id!)}`) }}>Managed from All Skills</button></Tooltip>}
+									</div>
+								</div>
+							</div>
+						</button>
+						}
 					</div>
-						<aside className="flex min-h-0 flex-1 flex-col border-t border-border/70 lg:w-[54%] lg:border-l lg:border-t-0">
-              {(selectedResource || selectedLocalChange) ? <>
+                </div>
+							})}</div>}
+						</div>
+							{stickySectionHeader && <div className="pointer-events-none absolute inset-x-0 top-0 z-20"><div className="pointer-events-auto">{renderSectionHeader(stickySectionHeader, true)}</div></div>}
+							<ScrollFade viewportRef={resourceListScrollRef} />
+							{keptSkillsBelowViewport && (
+								<button
+									type="button"
+									onClick={() => resourceListVirtualizer.scrollToIndex(firstKeptLocalIndex, { align: 'start' })}
+									className="z-20 flex h-9 shrink-0 w-full items-center justify-between gap-3 border-t border-border/70 bg-card px-4 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
+								>
+									<span className="truncate">Scroll to kept skills</span>
+									<ArrowDown className="size-3.5 shrink-0" aria-hidden="true" />
+								</button>
+							)}
+						</div>
+						<ResizeHandle
+							className="linear-resize-handle--flush-right hidden lg:block"
+							onPointerDown={listPane.onPointerDown}
+							onMouseDown={listPane.onMouseDown}
+							isResizing={listPane.isResizing}
+						/>
+					</div>
+					<aside className="flex min-h-0 flex-1 flex-col border-t border-border/70 lg:border-l lg:border-t-0">
+              {libraryListPending ? <LibraryDetailSkeleton /> : (selectedResource || selectedLocalChange) ? <>
                 <div className="shrink-0 border-b border-border/70 px-5 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold">{selectedResource?.id ?? selectedLocalChange?.display_name}</p>
+                      {selectedResource?.description && <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{selectedResource.description}</p>}
                       <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">{selectedResource?.path ?? selectedLocalChange?.detail}</p>
                       {selectedResource && <p className="mt-1 text-[10px] text-muted-foreground">Source: {selectedResource.source_url ? <button type="button" className="text-primary underline-offset-2 hover:underline" onClick={() => openUrl(selectedResource.source_url!)}>{selectedResource.source_label}</button> : selectedResource.source_label}</p>}
+                      {selectedResource?.package_id && <button type="button" className="mt-1 text-[10px] text-primary underline-offset-2 hover:underline" onClick={() => navigate(`/skills?skill=${encodeURIComponent(selectedResource.package_id!)}`)}>Managed from All Skills · {selectedResource.package_id}</button>}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
+                      {selectedResource && !selectedLocalChange && (
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => void reviewLibrarySkillRemoval(selectedResource.id)}
+                          disabled={syncBusy !== 'idle'}
+                        >
+                          <Trash2 className="size-3.5" />Remove from library
+                        </Button>
+                      )}
                       {selectedReviewableChange && (
                         <Button
                           size="xs"
-                          onClick={() => void reviewNewLocalChanges([selectedReviewableChange.id])}
+                          variant={selectedChangeIsIncluded ? 'outline' : 'default'}
+                          onClick={() => toggleChangeForSave(selectedReviewableChange.id)}
                           disabled={syncBusy !== 'idle'}
                         >
-                          {syncBusy === 'reviewing' ? <><Loader2 className="size-3.5 animate-spin" />Preparing…</> : <><Cloud className="size-3.5" />Save to library</>}
+                          {selectedChangeIsIncluded ? <><CheckCircle2 className="size-3.5" />Included in save</> : <><Cloud className="size-3.5" />Add to library</>}
                         </Button>
                       )}
-                      {selectedLocalChange ? <Tooltip content={selectedLocalChange.kind === 'new-local' ? 'New on this computer' : selectedLocalChange.kind === 'changed-local' ? 'Changed on this computer' : 'No longer on this computer'}><span className="rounded-md bg-muted/60 px-2 py-1 font-mono text-[10px] font-semibold text-muted-foreground">{selectedLocalChange.kind === 'new-local' ? 'New' : selectedLocalChange.kind === 'changed-local' ? 'M' : 'D'}</span></Tooltip> : <span className="rounded-md bg-muted/60 px-2 py-1 text-[10px] font-medium text-muted-foreground">{kinds.find((item) => item.kind === selectedResource?.kind)?.label}</span>}
+                      {selectedLocalChange ? <Tooltip content={selectedLocalChange.kind === 'new-local' ? 'New on this computer' : selectedLocalChange.kind === 'kept-local' ? 'Kept on this computer, outside this library' : selectedLocalChange.kind === 'changed-local' ? 'Changed on this computer' : 'No longer on this computer'}><span className="rounded-md bg-muted/60 px-2 py-1 font-mono text-[10px] font-semibold text-muted-foreground">{selectedLocalChange.kind === 'new-local' ? 'New' : selectedLocalChange.kind === 'kept-local' ? 'Local' : selectedLocalChange.kind === 'changed-local' ? 'M' : 'D'}</span></Tooltip> : <span className="rounded-md bg-muted/60 px-2 py-1 text-[10px] font-medium text-muted-foreground">Skill</span>}
                     </div>
                   </div>
                 </div>
-                <div className="flex min-h-0 flex-1">
-                  <nav className="w-44 shrink-0 overflow-y-auto border-r border-border/70 bg-muted/[0.16] py-2" aria-label="Files in selected library item">
-                    <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Files</p>
-					{selectedFiles.length === 0 && (selectedLocalChange ? localChangeSummary.isLoading : resourceContent.isLoading) ? <div className="space-y-2 px-3 py-2.5 animate-pulse"><div className="h-3 w-24 rounded bg-muted" /><div className="h-3 w-16 rounded bg-muted/70" /></div> : selectedFiles.length === 0 ? <p className="px-3 py-2 text-[11px] text-muted-foreground">No changed files to preview</p> : null}
-                    {selectedFiles.map((file) => <button key={`${file.status ?? 'clean'}:${file.path}`} type="button" onClick={() => setSelectedResourceFile(file.path)} className={cn('flex w-full items-center gap-2 px-3 py-2 text-left font-mono text-[11px] transition-colors', selectedResourceFile === file.path ? 'bg-primary/[0.12] text-foreground' : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground')}>
-                      {file.status ? <Tooltip content={file.status === 'modified' ? 'Changed' : file.status === 'added' ? 'New' : 'Removed'}><span className={cn('grid size-4 shrink-0 place-items-center rounded text-[9px] font-sans font-bold', file.status === 'deleted' ? 'bg-destructive/12 text-destructive' : file.status === 'added' ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300' : 'bg-amber-500/15 text-amber-800 dark:text-amber-200')}>{file.status === 'modified' ? 'M' : file.status === 'added' ? 'A' : 'D'}</span></Tooltip> : /(?:png|jpe?g|gif|webp)$/i.test(file.path) ? <Image className="size-3.5 shrink-0" /> : <FileText className="size-3.5 shrink-0" />}
-                      <span className="min-w-0 truncate">{file.path}</span>
-                    </button>)}
-                  </nav>
-                  <div className="min-w-0 flex-1 overflow-y-auto px-5 py-5">
-					{(selectedLocalChange ? localChangeSummary.isLoading || !selectedResourceFile || localChangeFilePreview.isLoading : resourceContent.isLoading || resourceContentIsStale) ? <div className="space-y-3 animate-pulse"><div className="h-4 w-40 rounded bg-muted" /><div className="h-3 w-full rounded bg-muted/70" /><div className="h-3 w-5/6 rounded bg-muted/70" /></div> : localChangeFilePreview.data?.file_preview ? <div>{localChangeFilePreview.data.file_preview.image_data_url ? <ImagePreview source={localChangeFilePreview.data.file_preview.image_data_url} alt={localChangeFilePreview.data.file_preview.path} /> : localChangeFilePreview.data.file_preview.diff ? <><div className="mb-3 flex items-center gap-2 text-xs font-medium"><FileDiff className="size-3.5 text-primary" />Changes in this file</div><FileChangePreview diff={localChangeFilePreview.data.file_preview.diff} /></> : <p className="rounded-lg border border-border/70 bg-muted/25 p-4 text-xs text-muted-foreground">{localChangeFilePreview.data.file_preview.unavailable_reason}</p>}</div> : resourceContent.isError ? <div className="grid min-h-48 place-items-center text-center"><div><AlertTriangle className="mx-auto size-6 text-amber-600" /><p className="mt-3 text-sm font-medium">Preview is unavailable</p><p className="mt-1 text-xs text-muted-foreground">{resourceContent.error instanceof Error ? resourceContent.error.message : 'Refresh the library and try again.'}</p></div></div> : deferredResourceContent?.image_data_url ? <ImagePreview source={deferredResourceContent.image_data_url} alt={selectedResourceFile ?? selectedResource?.id ?? 'Library image'} /> : deferredResourceContent ? <MarkdownContent content={deferredResourceContent.content} /> : <div className="grid min-h-48 place-items-center text-center text-xs text-muted-foreground">Choose a file to inspect its change.</div>}
-                  </div>
-                </div>
+					<SkillContentBrowser
+						files={selectedFiles}
+						selectedFile={selectedResourceFile}
+						onSelectFile={setSelectedResourceFile}
+						loading={selectedFiles.length === 0 && (selectedLocalChange ? localChangeSummary.isLoading : resourceContent.isLoading)}
+						emptyFiles={<p className="px-3 py-2 text-[11px] text-muted-foreground">No changed files to preview</p>}
+						ariaLabel="Files in selected library item"
+						className="rounded-none border-0"
+						previewClassName="px-5 py-5"
+					>
+					{(selectedLocalChange ? localChangeSummary.isLoading || !selectedResourceFile || localChangeFilePreview.isLoading : resourceContent.isLoading || resourceContentIsStale) ? <div className="space-y-3"><div className="h-4 w-40 animate-skeleton" /><div className="h-3 w-full animate-skeleton" /><div className="h-3 w-5/6 animate-skeleton" /></div> : localChangeFilePreview.data?.file_preview ? <div>{localChangeFilePreview.data.file_preview.image_data_url ? <ImagePreview source={localChangeFilePreview.data.file_preview.image_data_url} alt={localChangeFilePreview.data.file_preview.path} /> : localChangeFilePreview.data.file_preview.diff ? <><div className="mb-3 flex items-center gap-2 text-xs font-medium"><FileDiff className="size-3.5 text-primary" />Changes in this file</div><FileChangePreview diff={localChangeFilePreview.data.file_preview.diff} /></> : <p className="rounded-lg border border-border/70 bg-muted/25 p-4 text-xs text-muted-foreground">{localChangeFilePreview.data.file_preview.unavailable_reason}</p>}</div> : resourceContent.isError ? <div className="grid min-h-48 place-items-center text-center"><div><AlertTriangle className="mx-auto size-6 text-amber-600" /><p className="mt-3 text-sm font-medium">Preview is unavailable</p><p className="mt-1 text-xs text-muted-foreground">{resourceContent.error instanceof Error ? resourceContent.error.message : 'Refresh the library and try again.'}</p></div></div> : deferredResourceContent?.image_data_url ? <ImagePreview source={deferredResourceContent.image_data_url} alt={selectedResourceFile ?? selectedResource?.id ?? 'Library image'} /> : deferredResourceContent ? <MarkdownContent content={deferredResourceContent.content} /> : <div className="grid min-h-48 place-items-center text-center text-xs text-muted-foreground">Choose a file to inspect its change.</div>}
+					</SkillContentBrowser>
               </> : <div className="grid flex-1 place-items-center text-center text-xs text-muted-foreground">Choose a library item to inspect it.</div>}
 						</aside>
 				</div>
@@ -1061,9 +1387,18 @@ export default function ResourceLibrary() {
       />
       <SaveSelectionDialog
         preview={newLocalPreview}
+        destination={profile ? libraryDisplayName(profile) : 'your connected library'}
+        destinationUrl={remoteLibraryUrl}
         busy={syncBusy === 'saving'}
         onClose={() => setNewLocalPreview(null)}
-        onConfirm={() => void saveReviewedNewLocalChanges()}
+        onConfirm={(acknowledgedSecretFindingKeys) => void saveReviewedNewLocalChanges(acknowledgedSecretFindingKeys)}
+        onOpenSecretFinding={openSecretFinding}
+      />
+      <RemoveSkillDialog
+        preview={removalPreview}
+        busy={syncBusy === 'saving'}
+        onClose={() => setRemovalPreview(null)}
+        onConfirm={() => void applyLibrarySkillRemoval()}
       />
     </div>
   )

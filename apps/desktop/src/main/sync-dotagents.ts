@@ -7,7 +7,6 @@ import { libraryManifestSchema, type LibraryLock, type LibraryManifest } from "d
 import { localConfigSchema, mergeConfig, parseLocalConfig, parsePortableConfig, resolveSkillAgentSelection, type LocalConfig } from "dotagents/config";
 import { planCanonicalLibraryPublication } from "dotagents/canonical-library";
 import type { LibraryPublishCandidate } from "dotagents/library-publish";
-import { SCOPE_DESCRIPTOR_FILE, readPortableScopeDescriptor, type PortableScope } from "dotagents/scope";
 import {
   DENY_ALL_SOURCE_SECURITY_POLICY,
   parseSourceSecurityPolicy,
@@ -47,10 +46,6 @@ export type CanonicalSyncLibraryOptions = {
   /** Device cache outside the portable repository during preflight. */
   cacheRoot?: string;
 };
-
-function defaultPortableScope(mode: SyncManifest["profile"]["mode"]): PortableScope {
-  return mode === "team" ? "project" : "personal";
-}
 
 function portableLibraryReadme(name: string, skillNames: string[]): string {
   const skills = skillNames.length
@@ -121,6 +116,21 @@ export function readLocalSyncSourceSecurityPolicy(workspace: string): SourceSecu
   return parseLocalConfig(readFileSync(path, "utf8")).source_security ?? DENY_ALL_SOURCE_SECURITY_POLICY;
 }
 
+/** Device-only library membership decisions. They are deliberately kept out of Git. */
+export function readLocalSyncLibraryExclusions(workspace: string): Record<string, { integrity: string }> {
+  if (!isCanonicalSyncLibrary(workspace)) return {};
+  const path = join(workspace, LOCAL_CONFIG);
+  if (!existsSync(path)) return {};
+  return { ...parseLocalConfig(readFileSync(path, "utf8")).library_exclusions };
+}
+
+export function readLocalSyncRecentlyAddedSkills(workspace: string): Record<string, string> {
+  if (!isCanonicalSyncLibrary(workspace)) return {};
+  const path = join(workspace, LOCAL_CONFIG);
+  if (!existsSync(path)) return {};
+  return { ...parseLocalConfig(readFileSync(path, "utf8")).library_recently_added };
+}
+
 function writeLocalConfig(workspace: string, next: LocalConfig): void {
   const path = join(workspace, LOCAL_CONFIG);
   const temporary = `${path}.${randomUUID()}.tmp`;
@@ -130,6 +140,64 @@ function writeLocalConfig(workspace: string, next: LocalConfig): void {
   } finally {
     rmSync(temporary, { force: true });
   }
+}
+
+/**
+ * Keep a skill on this computer without repeatedly treating it as a new
+ * candidate for this particular library. A changed hash returns it to review.
+ */
+export function writeLocalSyncLibraryExclusion(
+  workspace: string,
+  skill: { id: string; integrity: string },
+): void {
+  if (!isCanonicalSyncLibrary(workspace)) {
+    throw new Error("Local library choices are supported only by canonical dotagents libraries");
+  }
+  const path = join(workspace, LOCAL_CONFIG);
+  const existing: LocalConfig = existsSync(path)
+    ? parseLocalConfig(readFileSync(path, "utf8"))
+    : localConfigSchema.parse({ schema_version: 1 });
+  writeLocalConfig(workspace, localConfigSchema.parse({
+    ...existing,
+    schema_version: 1,
+    library_exclusions: {
+      ...existing.library_exclusions,
+      [skill.id]: { integrity: skill.integrity },
+    },
+  }));
+}
+
+export function clearLocalSyncLibraryExclusions(workspace: string, skillIds: readonly string[]): void {
+  if (!isCanonicalSyncLibrary(workspace) || skillIds.length === 0) return;
+  const path = join(workspace, LOCAL_CONFIG);
+  if (!existsSync(path)) return;
+  const existing = parseLocalConfig(readFileSync(path, "utf8"));
+  const library_exclusions = { ...existing.library_exclusions };
+  for (const skillId of skillIds) delete library_exclusions[skillId];
+  writeLocalConfig(workspace, localConfigSchema.parse({ ...existing, library_exclusions }));
+}
+
+export function markLocalSyncSkillsRecentlyAdded(workspace: string, skillIds: readonly string[]): void {
+  if (!isCanonicalSyncLibrary(workspace) || skillIds.length === 0) return;
+  const path = join(workspace, LOCAL_CONFIG);
+  const existing: LocalConfig = existsSync(path)
+    ? parseLocalConfig(readFileSync(path, "utf8"))
+    : localConfigSchema.parse({ schema_version: 1 });
+  const library_recently_added = { ...existing.library_recently_added };
+  const now = new Date().toISOString();
+  for (const skillId of skillIds) library_recently_added[skillId] = now;
+  writeLocalConfig(workspace, localConfigSchema.parse({ ...existing, library_recently_added }));
+}
+
+export function clearLocalSyncRecentlyAddedSkill(workspace: string, skillId: string): void {
+  if (!isCanonicalSyncLibrary(workspace)) return;
+  const path = join(workspace, LOCAL_CONFIG);
+  if (!existsSync(path)) return;
+  const existing = parseLocalConfig(readFileSync(path, "utf8"));
+  if (!existing.library_recently_added[skillId]) return;
+  const library_recently_added = { ...existing.library_recently_added };
+  delete library_recently_added[skillId];
+  writeLocalConfig(workspace, localConfigSchema.parse({ ...existing, library_recently_added }));
 }
 
 export function writeLocalSyncSourceSecurityPolicy(
@@ -240,8 +308,14 @@ export async function planCanonicalSyncLibrary(
       ...(skill.installations?.length ? { installationAgentSlugs: skill.installations } : {}),
     };
     const bundled = plan.bundledSkills.find((entry) => entry.id === skill.id);
-    if (!bundled) throw new Error(`Canonical publish plan has no bundled source for ${skill.id}`);
-    const base = { id: skill.id, sourcePath: bundled.sourcePath, ...(plan.forkedFrom[skill.id] ? { forkedFrom: plan.forkedFrom[skill.id] } : {}), ...(skill.installations?.length ? { installationAgentSlugs: skill.installations } : {}) };
+    // A granular save only carries the newly reviewed skill(s). Existing
+    // bundled skills remain in the merged manifest and are already present in
+    // this checked-out library, so use that verified copy as their source.
+    // Requiring every previous local source to be rediscovered made adding one
+    // skill fail on an unrelated existing skill (for example, `adapt`).
+    const existingSourcePath = join(workspace, skill.path);
+    if (!bundled && !existsSync(existingSourcePath)) throw new Error(`Canonical publish plan has no bundled source for ${skill.id}`);
+    const base = { id: skill.id, sourcePath: bundled?.sourcePath ?? existingSourcePath, ...(plan.forkedFrom[skill.id] ? { forkedFrom: plan.forkedFrom[skill.id] } : {}), ...(skill.installations?.length ? { installationAgentSlugs: skill.installations } : {}) };
     if (plan.vendoredOrigins[skill.id]) return { kind: "vendored", ...base, origin: plan.vendoredOrigins[skill.id]! };
     if (plan.snapshotOrigins[skill.id]) return { kind: "snapshot", ...base, origin: plan.snapshotOrigins[skill.id]! };
     return { kind: "owned", ...base };
@@ -297,10 +371,6 @@ export async function planCanonicalSyncLibrary(
     metadata: { skiller_sync: resolvedMetadata },
   });
   const existingReadme = join(workspace, "README.md");
-  const existingScope = join(workspace, SCOPE_DESCRIPTOR_FILE);
-  const storedScope = existsSync(existingScope) ? readPortableScopeDescriptor(workspace) : null;
-  const portableScope = storedScope?.scope
-    ?? (isCanonicalSyncLibrary(workspace) ? null : defaultPortableScope(plan.manifest.profile.mode));
   const skillNames = plan.manifest.skills.map((skill) => skill.id).sort((left, right) => left.localeCompare(right, "en"));
   return {
     manifest: resolvedManifest,
@@ -310,7 +380,6 @@ export async function planCanonicalSyncLibrary(
     portableFiles: {
       ...canonicalCore.portableFiles,
       "skills.json": `${JSON.stringify(resolvedManifest, null, 2)}\n`,
-      ...(portableScope ? { [SCOPE_DESCRIPTOR_FILE]: `${JSON.stringify({ schema_version: 1, scope: portableScope }, null, 2)}\n` } : {}),
       ...(!existsSync(existingReadme) ? { "README.md": portableLibraryReadme(resolvedManifest.name, skillNames) } : {}),
     },
   };

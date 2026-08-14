@@ -8,9 +8,8 @@ export function isLibraryDocumentationOnlyUpdate(files: string[]): boolean {
     file === 'skills.json'
     || file === 'skills.lock'
     || file === 'dotagents.yaml'
-    || file === 'resources.json'
     || file === '.gitignore'
-    || /^(skills|instructions|commands|subagents)\//.test(file)
+    || /^skills\//.test(file)
   ))
 }
 

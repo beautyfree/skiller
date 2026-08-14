@@ -26,6 +26,7 @@ import {
   planLibraryPush,
   type GitClonePlan,
   type GitCommitPlan,
+  type GitWorkspaceSecretAcknowledgement,
 } from "dotagents/git-workspace";
 import {
   exactSourceSecurityPolicy,
@@ -298,20 +299,29 @@ export async function applySyncWorkspaceRemoteTrust(
 export async function commitSyncWorkspace(
   workspacePath: string,
   message: string,
+  options: { acknowledgedSecretFindings?: readonly GitWorkspaceSecretAcknowledgement[] } = {},
 ): Promise<string | null> {
   if (!isCanonicalSyncLibrary(workspacePath)) throw new Error("Sync requires a canonical dotagents library");
   const visibility = readSyncManifestFromWorkspace(workspacePath).profile.mode;
   const plan = await planLibraryCommit(workspacePath, message, visibility);
-  if (plan.hasBlockers) {
-      const detail =
-        plan.secretFindings.length > 0
-          ? `${plan.secretFindings.length} possible secret(s)`
+  const unacknowledgedSecretFindings = plan.secretFindings.filter((finding) =>
+    !(options.acknowledgedSecretFindings ?? []).some((acknowledgement) =>
+      acknowledgement.file === finding.file &&
+      acknowledgement.rule === finding.rule &&
+      acknowledgement.line === finding.line &&
+      acknowledgement.column === finding.column,
+    ),
+  );
+  if (unacknowledgedSecretFindings.length > 0 || plan.unsafePaths.length > 0 || plan.auditErrors.length > 0) {
+    const detail =
+        unacknowledgedSecretFindings.length > 0
+          ? `${unacknowledgedSecretFindings.length} possible secret(s)`
           : plan.unsafePaths.length > 0
             ? `unsafe portable paths: ${plan.unsafePaths.join(", ")}`
             : plan.auditErrors.map((issue) => issue.message).join("; ");
       throw new Error(`Canonical library commit is blocked: ${detail}`);
   }
-  return applyLibraryCommit(plan);
+  return applyLibraryCommit(plan, undefined, options);
 }
 
 /** Build a no-write review for portable changes already made inside a managed library. */

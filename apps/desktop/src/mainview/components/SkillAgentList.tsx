@@ -60,7 +60,7 @@ export const SkillAgentList = memo(function SkillAgentList({
 	}
 
   return (
-    <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2">
+    <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2 2xl:grid-cols-3">
       {visibleAgents.map((agent) => {
         const installation = skill?.installations.find(
           (i) => i.agent_slug === agent.slug

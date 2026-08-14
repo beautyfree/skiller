@@ -80,4 +80,22 @@ describe("bundled conflict preview", () => {
     });
     expect(previewNewLocalBundleFile({ localPath: local, file: "SKILL.md", files: ["SKILL.md"] }).diff).toContain("+ # Review");
   });
+
+  it("keeps a large text SKILL.md diff available for the virtualized renderer", () => {
+    const root = mkdtempSync(join(tmpdir(), "skiller-conflict-large-diff-"));
+    roots.push(root);
+    const library = join(root, "library");
+    const local = join(root, "local");
+    mkdirSync(library);
+    mkdirSync(local);
+    const previous = Array.from({ length: 1_829 }, (_, index) => `Old instruction ${index}`).join("\n");
+    const next = Array.from({ length: 1_829 }, (_, index) => `New instruction ${index}`).join("\n");
+    writeFileSync(join(library, "SKILL.md"), previous);
+    writeFileSync(join(local, "SKILL.md"), next);
+    const comparison = buildBundledConflictComparison({ id: "setup-gbrain", localPath: local, libraryPath: library });
+
+    const preview = previewBundledConflictFile({ libraryPath: library, localPath: local, file: "SKILL.md", comparison });
+    expect(preview.diff).toContain("- Old instruction 1828");
+    expect(preview.diff).toContain("+ New instruction 1828");
+  });
 });

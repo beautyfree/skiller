@@ -1,0 +1,10 @@
+node_modules
+**/node_modules
+out
+**/out
+.git
+.DS_Store
+artifacts
+artifacts-*
+apps/desktop
+docs

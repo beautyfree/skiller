@@ -11,7 +11,6 @@ import {
   X,
   ChevronDown,
   Cloud,
-  ShieldCheck,
 } from "lucide-react";
 import { getAgentIcon } from "@/mainview/lib/agentIcons";
 import { AgentIcon } from "@/mainview/components/AgentIcon";
@@ -50,7 +49,7 @@ export default function Dashboard() {
     refetch: refetchSkills,
   } = useSkills();
 
-  const { data: syncProfiles } = useQuery<SyncProfileStatusJson[]>({
+  const { data: syncProfiles, isLoading: syncProfilesLoading } = useQuery<SyncProfileStatusJson[]>({
     queryKey: ["sync-profiles"],
     queryFn: () => invoke("list_sync_profiles"),
     staleTime: 30_000,
@@ -140,13 +139,15 @@ export default function Dashboard() {
             {skillsCliLock && <span className="hidden lg:inline">{t("dashboard.skillsCliLock", { count: skillsCliLock.skills.length, version: skillsCliLock.version })}</span>}
           </div>
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <Button size="sm" variant={syncProfile ? "outline" : "default"} onClick={() => navigate("/library")}>
-            {syncProfile ? <ShieldCheck className="size-3.5" /> : <Cloud className="size-3.5" />}
-            {syncProfile ? t("dashboard.openSync") : t("dashboard.protectLibrary")}
-          </Button>
-          {!syncProfile && <p className="text-[11px] text-muted-foreground">{t("dashboard.remoteLibraryHint")}</p>}
-        </div>
+        {!syncProfilesLoading && !syncProfile && (
+          <div className="flex flex-col items-end gap-1">
+            <Button size="sm" onClick={() => navigate("/library")}>
+              <Cloud className="size-3.5" />
+              {t("dashboard.protectLibrary")}
+            </Button>
+            <p className="text-[11px] text-muted-foreground">{t("dashboard.remoteLibraryHint")}</p>
+          </div>
+        )}
       </header>
 
       {/* Agent cards */}
@@ -211,7 +212,7 @@ export default function Dashboard() {
           </div>
         </div>
         {agentsLoading ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,20.25rem),1fr))] gap-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="rounded-2xl p-4 glass-surface-tint">
                 <div className="flex items-center gap-3">
@@ -230,7 +231,7 @@ export default function Dashboard() {
             {t("dashboard.noAgentsMatch")}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,20.25rem),1fr))] gap-3">
             {filteredAgents.map((agent) => {
               const agentSkillCount = skillCountByAgent.get(agent.slug) ?? 0;
 

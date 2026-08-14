@@ -12,6 +12,8 @@ export type SyncInventoryItem = {
   description: string | null;
   whenToUse: string | null;
   contentHash: string;
+  /** Stable dotagents fingerprint used only for safe local-change detection. */
+  integrity: string;
   /** Native path remains in main process and is never sent to the renderer. */
   sourcePath: string;
   locations: SyncInventoryLocation[];
@@ -73,6 +75,7 @@ export async function scanSyncInventoryWithDotagents(configs: AgentConfig[], sha
       description: skill.description,
       whenToUse: skill.whenToUse,
       contentHash: skill.exportHash,
+      integrity: skill.integrity,
       sourcePath: skill.sourcePath,
       locations: orderedLocations(skill.locations.map((location) => ({ kind: location.kind, ...(location.agent ? { agentSlug: location.agent } : {}) }))),
       ...(skill.gitSource ? { gitSource: skill.gitSource } : {}),

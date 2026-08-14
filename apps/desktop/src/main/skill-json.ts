@@ -92,6 +92,8 @@ export function marketplaceSkillToJson(m: import("./marketplace-types").Marketpl
 		description: m.description ?? null,
 		author: m.author ?? null,
 		repository: m.repository ?? null,
+		catalog_id: m.catalog_id ?? null,
+		url: m.url ?? null,
 		skill_path: m.skill_path ?? null,
 		installs: m.installs ?? null,
 		source: m.source,

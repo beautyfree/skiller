@@ -30,7 +30,7 @@ import { useResizable } from '@/mainview/hooks/useResizable'
 import ResizeHandle from '@/mainview/components/ResizeHandle'
 import { useAgents } from '@/mainview/hooks/useAgents'
 import { useSkills, allAgents } from '@/mainview/hooks/useSkills'
-import type { SyncProfileStatusJson } from '@/shared/rpc-schema'
+import type { DotagentsLibraryLocalChangesJson, GlobalSkillUpdateCheckJson, SyncProfileStatusJson } from '@/shared/rpc-schema'
 import skillerMark from '@/mainview/assets/brand/skiller-mark.png'
 
 const GITHUB_REPO_URL =
@@ -141,12 +141,35 @@ function LayoutInner({
   // Agent Library. Its own inventory is independent and should be the first
   // thing the main process is free to answer.
   const { data: skills } = useSkills({ enabled: location.pathname !== '/library' })
+  // Source checks are intentionally independent from list rendering. The
+  // cached toolkit shows immediately; dotagents refreshes approved sources in
+  // the background at a bounded cadence and never opens auth UI.
+  const { data: globalSkillUpdates } = useQuery<GlobalSkillUpdateCheckJson>({
+    queryKey: ['global-skill-updates'],
+    queryFn: () => invoke('check_global_skill_updates'),
+    enabled: Boolean(skills),
+    staleTime: 15 * 60_000,
+    refetchInterval: 15 * 60_000,
+    refetchOnWindowFocus: false,
+  })
   const { data: syncProfiles } = useQuery<SyncProfileStatusJson[]>({
     queryKey: ['sync-profiles'],
     // Safe metadata check only: no local skills are touched, no merge/commit
     // is performed and Git is forbidden from showing an auth prompt.
     queryFn: () => invoke('refresh_sync_profiles'),
     refetchInterval: 5 * 60_000,
+  })
+  const activeLibraryProfileId = syncProfiles?.[0]?.profile_id
+  // The sidebar is the primary way to discover work that needs attention.
+  // Query the same lightweight local comparison Agent Library consumes, so a
+  // review requirement is visible before the user happens to open that page.
+  const { data: libraryLocalChanges } = useQuery<DotagentsLibraryLocalChangesJson>({
+    queryKey: ['dotagents-library-local-changes', activeLibraryProfileId],
+    queryFn: () => invoke('dotagents_library_local_changes', { profileId: activeLibraryProfileId! }),
+    enabled: Boolean(activeLibraryProfileId),
+    staleTime: 30_000,
+    refetchInterval: 5 * 60_000,
+    refetchOnWindowFocus: false,
   })
   const warmAgentLibrary = useCallback(() => {
     const profileId = syncProfiles?.[0]?.profile_id
@@ -161,7 +184,13 @@ function LayoutInner({
       staleTime: 30_000,
     })
   }, [queryClient, syncProfiles])
-  const syncNeedsReview = Boolean(syncProfiles?.some((profile) => profile.changed || profile.ahead > 0 || profile.behind > 0 || profile.check_error))
+  const localLibraryChangesNeedReview = (libraryLocalChanges?.changes ?? []).some((change) => change.kind !== 'kept-local')
+  const syncNeedsReview = localLibraryChangesNeedReview || Boolean(syncProfiles?.some((profile) => profile.changed || profile.ahead > 0 || profile.behind > 0 || profile.check_error))
+  const skillUpdatesNeedReview = Boolean(
+    globalSkillUpdates?.items.some((item) =>
+      item.state === 'update-available' || item.state === 'review-required' || item.state === 'local-changes',
+    ),
+  )
   const [searchParams] = useSearchParams()
 
   const detectedAgents = useMemo(
@@ -186,15 +215,17 @@ function LayoutInner({
   // agent vs inherited. Without this the same number on two agents could
   // mean very different things.
   const skillBreakdownByAgent = useMemo(() => {
-    const breakdown = new Map<string, { direct: number; inherited: number }>()
+    const breakdown = new Map<string, { direct: number; dotagents: number; otherShared: number }>()
     for (const skill of skills ?? []) {
       for (const inst of skill.installations) {
         const prev = breakdown.get(inst.agent_slug) ?? {
           direct: 0,
-          inherited: 0,
+          dotagents: 0,
+          otherShared: 0,
         }
-        if (inst.is_inherited) prev.inherited += 1
-        else prev.direct += 1
+        if (!inst.is_inherited) prev.direct += 1
+        else if (inst.inherited_from === 'shared') prev.dotagents += 1
+        else prev.otherShared += 1
         breakdown.set(inst.agent_slug, prev)
       }
     }
@@ -202,9 +233,11 @@ function LayoutInner({
   }, [skills])
 
   const sidebar = useResizable({
-    initial: 200,
-    min: 200,
-    max: 320,
+    // Match the shared Linear-derived shell in PostPost: the visual default
+    // is 230px while 220px remains the lower desktop resize boundary.
+    initial: 230,
+    min: 220,
+    max: 330,
     storageKey: 'sidebar-width',
   })
 
@@ -269,10 +302,10 @@ function LayoutInner({
 
       <div className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${WINDOW_EDGE_INSET_RIGHT}`}>
         {/* Sidebar — same plane as canvas */}
-        <aside
-          aria-label="Sidebar"
-          className="layout-sidebar flex h-full shrink-0 flex-col"
-          style={{ width: sidebar.width }}
+          <aside
+            aria-label="Sidebar"
+            className="layout-sidebar relative flex h-full shrink-0 flex-col"
+            style={{ width: sidebar.width }}
         >
           {loading ? (
             <div className="flex flex-1 flex-col px-3 pb-3 animate-pulse">
@@ -330,11 +363,10 @@ function LayoutInner({
                     >
                       <Puzzle className="size-4" aria-hidden="true" />
                       {t('sidebar.skills')}
-                      {skills && (
-                        <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/60">
-                          {skills.length}
-                        </span>
-                      )}
+                      <span className="ml-auto flex shrink-0 items-center gap-2">
+                        {skills && <span className="text-[10px] tabular-nums text-muted-foreground/60">{skills.length}</span>}
+                        {skillUpdatesNeedReview && <Tooltip content="Skill updates need review" side="right"><span className="size-1.5 rounded-full bg-primary" /></Tooltip>}
+                      </span>
                     </NavLink>
 
                     <NavLink to="/marketplace" className={navLinkClass}>
@@ -351,7 +383,7 @@ function LayoutInner({
                     >
                       <LibraryBig className="size-4" aria-hidden="true" />
                       Agent Library
-                      {syncNeedsReview && <Tooltip content="Library changes need review" side="right"><span className="ml-auto size-1.5 rounded-full bg-amber-500" /></Tooltip>}
+                      {syncNeedsReview && <span className="ml-auto flex shrink-0 items-center"><Tooltip content="Library changes need review" side="right"><span className="size-1.5 rounded-full bg-primary" /></Tooltip></span>}
                     </NavLink>
 
                   </div>
@@ -369,21 +401,20 @@ function LayoutInner({
                           const count = skillCountByAgent.get(agent.slug) ?? 0
                           const breakdown = skillBreakdownByAgent.get(
                             agent.slug,
-                          ) ?? { direct: 0, inherited: 0 }
+                          ) ?? { direct: 0, dotagents: 0, otherShared: 0 }
                           const isActive =
                             location.pathname === '/skills' &&
                             activeAgentSlug === agent.slug
-                          const tooltip =
-                            breakdown.inherited > 0
-                              ? t('sidebar.agentSkillsTooltip', {
-                                  direct: breakdown.direct,
-                                  inherited: breakdown.inherited,
-                                  name: agent.name,
-                                })
-                              : t('sidebar.agentSkillsTooltipDirectOnly', {
-                                  count: breakdown.direct,
-                                  name: agent.name,
-                                })
+                          const tooltip = breakdown.otherShared > 0
+                            ? t('sidebar.agentSkillsTooltipWithOtherShared', {
+                                direct: breakdown.direct,
+                                dotagents: breakdown.dotagents,
+                                other: breakdown.otherShared,
+                              })
+                            : t('sidebar.agentSkillsTooltip', {
+                                direct: breakdown.direct,
+                                dotagents: breakdown.dotagents,
+                              })
                           return (
                             <AgentSidebarRow
                               key={agent.slug}
@@ -415,9 +446,13 @@ function LayoutInner({
               </nav>
             </>
           )}
+          <ResizeHandle
+            className="linear-resize-handle--overlay"
+            onPointerDown={sidebar.onPointerDown}
+            onMouseDown={sidebar.onMouseDown}
+            isResizing={sidebar.isResizing}
+          />
         </aside>
-
-        <ResizeHandle onMouseDown={sidebar.onMouseDown} />
 
         {/* Main column: inset rounded panel — separate from sidebar; footer stays on canvas */}
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -425,7 +460,7 @@ function LayoutInner({
 <InsetScrollArea className="min-h-0 flex-1 pr-0" scroll={location.pathname !== '/library'}>
               {loading ? (
                 <div className="space-y-4 px-6 py-6 animate-pulse">
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,20.25rem),1fr))] gap-4">
                     <div className="h-24 rounded-lg bg-muted/30" />
                     <div className="h-24 rounded-lg bg-muted/30" />
                     <div className="h-24 rounded-lg bg-muted/30" />
@@ -711,7 +746,7 @@ function AgentSidebarRow({
       <Tooltip content={tooltip} side="right">
       <NavLink
         to={`/skills?agent=${agent.slug}`}
-        className={() => navLinkClass({ isActive })}
+        className={() => `${navLinkClass({ isActive })} w-full`}
         onContextMenu={openContextMenu}
       >
         <AgentIcon slug={agent.slug} />

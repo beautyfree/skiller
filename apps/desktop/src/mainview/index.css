@@ -316,8 +316,34 @@ html:not(.dark) .layout-root {
     @apply bg-sidebar cursor-default;
   }
 
-  .layout-sidebar {
+.layout-sidebar {
     background: transparent;
+  }
+
+  /* The continuation cue must match the surface below it. Tailwind opacity
+     variants can resolve custom color tokens incorrectly when the token is a
+     CSS variable or a vibrancy color, which previously made the sidebar fade
+     look black. */
+  .scroll-fade {
+    background: linear-gradient(
+      to bottom,
+      var(--scroll-fade-surface) 0%,
+      color-mix(in srgb, var(--scroll-fade-surface) 72%, transparent) 42%,
+      transparent 100%
+    );
+  }
+
+  .scroll-fade-card {
+    --scroll-fade-surface: var(--card);
+  }
+
+  .scroll-fade-sidebar {
+    --scroll-fade-surface: var(--ds-sidebar-vibrancy);
+  }
+
+  .scroll-fade-muted {
+    /* File panes sit on a quiet muted wash over the card, not on a flat gray. */
+    --scroll-fade-surface: color-mix(in srgb, var(--muted) 16%, var(--card));
   }
 
   /* Cross-platform window-drag regions. The `app-drag` class makes the element
@@ -404,6 +430,14 @@ html.skiller-macos-vibrancy .main-workspace-panel {
   background: var(--ds-vibrancy-panel);
 }
 
+html.skiller-macos-vibrancy .scroll-fade-card {
+  --scroll-fade-surface: var(--ds-vibrancy-panel);
+}
+
+html.skiller-macos-vibrancy .scroll-fade-sidebar {
+  --scroll-fade-surface: var(--ds-vibrancy-sidebar);
+}
+
 /* Section cards: match sidebar tint (high-opacity vars keep type readable) */
 html.skiller-macos-vibrancy .glass-panel {
   background: var(--ds-vibrancy-sidebar);
@@ -458,6 +492,14 @@ html.skiller-macos-vibrancy.dark .glass-inset {
 .modal-panel-flex {
   max-height: calc(100dvh - 2rem);
   overflow: hidden;
+}
+
+/* A dialog is a solid decision surface. The backdrop is the only translucent
+   layer; letting the floating-popover alpha bleed through made onboarding and
+   other modal panels look washed out against the page behind them. */
+.modal-shell .modal-panel,
+.modal-shell .modal-panel-flex {
+  background: var(--card);
 }
 
 /* Dialogs use a classic dimmed backdrop. Keep their surface readable without
@@ -524,6 +566,69 @@ html {
 
 html.dark {
   scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+/* Skiller is a desktop application: controls use the platform's ordinary
+   arrow cursor instead of the web-style hand. This also covers older local
+   cursor-pointer utilities while keeping text fields' I-beam intact. */
+:where(button, a, summary, label, select, [role="button"], [role="menuitem"], input[type="checkbox"], input[type="radio"]),
+.cursor-pointer {
+  cursor: default !important;
+}
+
+/* Shared panel resizer — copied from PostPost's Linear-derived sidebar rail.
+   The rail itself is easy to acquire; the visible guide stays intentionally
+   quiet until hover or drag. */
+.linear-resize-handle {
+  cursor: col-resize !important;
+  touch-action: none;
+}
+
+.linear-resize-handle::after {
+  position: absolute;
+  top: 12px;
+  right: 3.5px;
+  bottom: 12px;
+  left: 3px;
+  width: 0.5px;
+  border-radius: 4px;
+  background: linear-gradient(
+    lch(100 0 272 / 0) 0%,
+    lch(100 0 272 / 0.5) 15%,
+    lch(100 0 272 / 0.65) 50%,
+    lch(100 0 272 / 0.5) 85%,
+    lch(100 0 272 / 0) 100%
+  );
+  content: '';
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 250ms ease;
+}
+
+.linear-resize-handle:hover::after,
+.linear-resize-handle[data-resizing='true']::after {
+  opacity: 1;
+}
+
+/* Main sidebar uses an overlaid rail, rather than reserving a separate
+   flex-column. This is PostPost's shell geometry and keeps the content sheet
+   flush with the navigation while preserving the same easy-to-hit resize edge. */
+.linear-resize-handle--overlay {
+  position: absolute;
+  z-index: 30;
+  top: 14px;
+  right: -4px;
+  bottom: 40px;
+}
+
+/* In Agent Library the details column already owns the vertical border. Place
+   the rail over that exact edge instead of making a spacer between columns. */
+.linear-resize-handle--flush-right {
+  position: absolute;
+  z-index: 30;
+  top: 0;
+  right: -4px;
+  bottom: 0;
 }
 
 /* Internal panels (virtualized lists, review panes, and dialogs) own their
@@ -933,26 +1038,35 @@ html.skiller-macos-vibrancy.dark .glass-surface-tint.glass-stat {
 
 .dark .animate-skeleton {
   background: linear-gradient(90deg,
-      rgba(255, 255, 255, 0.04) 25%,
-      rgba(255, 255, 255, 0.09) 50%,
-      rgba(255, 255, 255, 0.04) 75%);
+      rgba(255, 255, 255, 0.065) 25%,
+      rgba(255, 255, 255, 0.14) 50%,
+      rgba(255, 255, 255, 0.065) 75%);
   background-size: 200% 100%;
 }
 
-@keyframes fade-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-
+/* Purposeful accordion feedback for Agent Library sections. Keep it short and
+   compositor-only: list geometry changes after the motion completes, which
+   avoids height animation and virtualizer remeasurement jank. */
+@keyframes library-section-collapse {
   to {
-    opacity: 1;
-    transform: translateY(0);
+    opacity: 0;
+    transform: translateY(-4px);
   }
 }
 
-.animate-fade-in-up {
-  animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+@keyframes library-section-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.animate-library-section-collapse {
+  animation: library-section-collapse 140ms ease-out both;
+}
+
+.animate-library-section-expand {
+  animation: library-section-expand 140ms ease-out both;
 }
 
 /* ─────────────────────────────────────────────

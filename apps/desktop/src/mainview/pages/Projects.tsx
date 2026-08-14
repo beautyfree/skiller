@@ -185,7 +185,7 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      <ResizeHandle onMouseDown={sidebar.onMouseDown} />
+      <ResizeHandle onPointerDown={sidebar.onPointerDown} onMouseDown={sidebar.onMouseDown} isResizing={sidebar.isResizing} />
 
       {/* Right: selected project's skills */}
       <div className="min-w-0 flex-1 overflow-y-auto">

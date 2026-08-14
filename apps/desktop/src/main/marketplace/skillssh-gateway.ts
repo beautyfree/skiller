@@ -17,7 +17,11 @@ function configuredGatewayBaseUrl(): string {
   }
 }
 
-function skillIdentifier(repoUrl: string, skillPath?: string | null, skillName?: string | null): string | null {
+function skillIdentifier(repoUrl: string, skillPath?: string | null, skillName?: string | null, catalogId?: string | null): string | null {
+  const explicitId = catalogId?.trim().split('/').filter(Boolean)
+  if (explicitId?.length && explicitId.length <= 3 && explicitId.every((segment) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(segment))) {
+    return explicitId.map(encodeURIComponent).join('/')
+  }
   try {
     const repository = new URL(repoUrl)
     if (repository.protocol !== 'https:') return null
@@ -44,9 +48,10 @@ export async function fetchSkillsShGatewaySnapshot(
   repoUrl: string,
   skillPath?: string | null,
   skillName?: string | null,
+  catalogId?: string | null,
 ): Promise<GatewaySnapshot | null> {
   const baseUrl = configuredGatewayBaseUrl()
-  const identifier = skillIdentifier(repoUrl, skillPath, skillName)
+  const identifier = skillIdentifier(repoUrl, skillPath, skillName, catalogId)
   if (!identifier) return null
   try {
     const response = await fetch(`${baseUrl}/api/v1/skills/${identifier}`, {

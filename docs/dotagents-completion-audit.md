@@ -1,5 +1,8 @@
 # dotagents and Skiller completion audit
 
+> Historical audit. Its scope composition and typed-resource claims are no
+> longer current: dotagents now carries global skills only.
+
 > Status: active acceptance record
 > Last verified: 2026-08-07
 > Rule: a checkbox means that the named evidence was executed or inspected in

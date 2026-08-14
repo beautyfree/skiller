@@ -1,8 +1,10 @@
 import {
+	DEFAULT_SKILL_EXPORT_LIMITS,
 	planSkillExport,
 	type SkillExportFile,
 	type SkillExportFinding,
 } from "dotagents/export-policy";
+import { sharedSkillsDir } from "./shared-skills";
 
 export type SyncExportFile = SkillExportFile;
 export type SyncExportFinding = SkillExportFinding;
@@ -19,7 +21,10 @@ export type BundledSkillExportPlan = {
 
 /** Compatibility facade over dotagents's canonical, read-only export policy. */
 export function planBundledSkillExport(id: string, sourcePath: string): BundledSkillExportPlan {
-	const plan = planSkillExport(id, sourcePath);
+	// Global .agents/skills is an explicit user-visible discovery root. dotagents
+	// may materialize a regular file link within it into the portable copy, while
+	// links to arbitrary locations remain blocked.
+	const plan = planSkillExport(id, sourcePath, { ...DEFAULT_SKILL_EXPORT_LIMITS, trustedFileRoots: [sharedSkillsDir()] });
 	return {
 		id,
 		sourcePath: plan.sourcePath,

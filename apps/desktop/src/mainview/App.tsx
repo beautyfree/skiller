@@ -21,6 +21,7 @@ import CloseConfirmDialog from './components/CloseConfirmDialog'
 import { useToast } from './components/ToastProvider'
 import AppUpdateBanner from './components/AppUpdateBanner'
 import ReleaseNotesDialog from './components/ReleaseNotesDialog'
+import { TooltipProvider } from './components/ui/tooltip'
 import releaseNotes from './release-notes.generated.json'
 import { shouldShowReleaseNotes, type ReleaseNote } from '@/shared/release-notes'
 
@@ -290,6 +291,7 @@ function AppInner() {
     let unlisten: (() => void) | undefined
     void listen('skills_changed', () => {
       queryClient.invalidateQueries({ queryKey: ['skills'] })
+      queryClient.invalidateQueries({ queryKey: ['global-skill-updates'] })
       queryClient.invalidateQueries({ queryKey: ['repo-skills'] })
       queryClient.invalidateQueries({ queryKey: ['agents'] })
     })
@@ -374,7 +376,9 @@ export default function App() {
   // views:// handler returns an empty body (no directory index).
   return (
     <HashRouter>
-      <AppInner />
+      <TooltipProvider>
+        <AppInner />
+      </TooltipProvider>
     </HashRouter>
   )
 }

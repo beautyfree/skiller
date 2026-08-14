@@ -33,7 +33,7 @@ function agent(globalPath: string, sharedPath: string) {
 }
 
 describe("shared skills scanner", () => {
-	it("keeps a readable shared library separate from agent installations", () => {
+	it("reports shared-library availability for an agent that explicitly reads it", () => {
 		const shared = root();
 		const codex = root();
 		writeSkill(shared, "writing");
@@ -41,10 +41,12 @@ describe("shared skills scanner", () => {
 		const skills = scanAllSkills([agent(codex, shared)], shared);
 		expect(skills).toHaveLength(1);
 		expect(skills[0]?.scope).toEqual({ kind: "SharedLibrary" });
-		expect(skills[0]?.installations).toEqual([]);
+		expect(skills[0]?.installations).toEqual([
+			expect.objectContaining({ agent_slug: "codex", is_inherited: true, inherited_from: "shared" }),
+		]);
 	});
 
-	it("shows an agent only when its folder explicitly links the shared skill", () => {
+	it("prefers a direct link over inherited shared-library availability", () => {
 		const shared = root();
 		const codex = root();
 		const skill = writeSkill(shared, "writing");
@@ -53,7 +55,9 @@ describe("shared skills scanner", () => {
 		const skills = scanAllSkills([agent(codex, shared)], shared);
 		expect(skills).toHaveLength(1);
 		expect(skills[0]?.scope).toEqual({ kind: "SharedLibrary" });
-		expect(skills[0]?.installations).toEqual([expect.objectContaining({ agent_slug: "codex", is_symlink: true })]);
+		expect(skills[0]?.installations).toEqual([
+			expect.objectContaining({ agent_slug: "codex", is_symlink: true, is_inherited: false }),
+		]);
 	});
 
 	it("shows a configured non-shared readable path as an inherited agent link", () => {

@@ -2,12 +2,28 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { scanSyncInventoryWithDotagents } from "./sync-inventory";
+import { scanSyncInventoryWithDotagents, syncInventoryRoots } from "./sync-inventory";
 
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
 
 describe("Agent Library inventory adapter", () => {
+  it("never scans project-scoped skill folders as part of the global inventory", () => {
+    const roots = syncInventoryRoots([
+      {
+        slug: "codex",
+        global_paths: ["/global/codex/skills"],
+        additional_readable_paths: [],
+        project_skills_dir: ".codex/skills",
+        detected: true,
+      } as never,
+    ], "/shared/.agents/skills");
+    expect(roots).toEqual([
+      { path: "/shared/.agents/skills", kind: "shared" },
+      { agentSlug: "codex", path: "/global/codex/skills", kind: "agent-local" },
+    ]);
+  });
+
   it("uses dotagents discovery to deduplicate a shared skill and a real agent link", async () => {
     const root = mkdtempSync(join(tmpdir(), "skiller-inventory-"));
     roots.push(root);

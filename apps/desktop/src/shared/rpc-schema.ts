@@ -254,6 +254,8 @@ export type MarketplaceSkillJson = {
   description?: string | null;
   author?: string | null;
   repository?: string | null;
+  catalog_id?: string | null;
+  url?: string | null;
   skill_path?: string | null;
   installs?: number | null;
   source: string;
@@ -278,6 +280,7 @@ export type UpdateProgressJson = {
   done: number;
   total: number;
   current_skill: string;
+  phase?: "preparing" | "fetching" | "applying" | "complete";
 };
 
 /** Safe aggregate-only progress while Sync Center checks approved Git sources. */
@@ -292,6 +295,44 @@ export type UpdateAllResultJson = {
   updated: string[];
   failed: [string, string][];
   skipped: number;
+};
+
+export type GlobalSkillUpdateCheckJson = {
+  checked_at: string;
+  items: {
+    skill: string;
+    description: string | null;
+    /** User-requested local location of the exact reviewed skill copy. */
+    local_path: string | null;
+    state: "up-to-date" | "update-available" | "local-changes" | "review-required" | "source-unavailable" | "not-trackable";
+    repository: string | null;
+    skill_path: string | null;
+    source: "git" | "local" | "skills.sh" | "clawhub" | "unknown";
+    managed: boolean;
+    local_integrity: string;
+    remote_integrity: string | null;
+    reason?: string;
+  }[];
+  new_from_sources: { skill: string; repository: string; skill_path: string; description: string | null }[];
+};
+
+/** Partial read-only snapshot emitted while sources are still being checked. */
+export type GlobalSkillUpdateProgressJson = {
+  phase: "started" | "progress" | "complete";
+  completed_sources: number;
+  total_sources: number;
+  items: GlobalSkillUpdateCheckJson["items"];
+};
+
+/** A reviewed Git update for one installed package that owns linked skills. */
+export type LinkedSkillPackageUpdateJson = {
+  plan_id: string;
+  package_name: string;
+  repository: string;
+  linked_skills: string[];
+  state: "up-to-date" | "ready" | "local-changes";
+  changed_files: string[];
+  local_changes: { path: string; status: string }[];
 };
 
 export type RepoProgressJson = {
@@ -581,29 +622,33 @@ export type SyncUndoPreviewJson = {
   }[];
 };
 
-export type DotagentsResourceKindJson = "skill" | "instruction" | "command" | "subagent";
-
 export type DotagentsResourceOverviewJson = {
   profile_id: string;
   mode: "private" | "team" | "public";
   changed: boolean;
   resources: {
     key: string;
-    kind: DotagentsResourceKindJson;
+    kind: "skill";
     id: string;
     path: string;
-    source: "skill-library" | "resource-v2";
+    /** A bounded human-readable summary extracted from the resource itself. */
+    description?: string;
+    source: "skill-library";
     /** Short portable provenance label; never exposes a local machine path. */
     source_label: string;
     /** Safe HTTPS provenance URL when the library recorded one. */
     source_url?: string;
+    /** Dependency package that owns this skill, when the library records it. */
+    package_id?: string;
+    /** Device-local marker for an item just saved into this library. */
+    recently_added_at?: string;
   }[];
 };
 
 export type DotagentsResourceContentJson = {
   profile_id: string;
   key: string;
-  kind: DotagentsResourceKindJson;
+  kind: "skill";
   id: string;
   path: string;
   files: string[];
@@ -624,7 +669,7 @@ export type DotagentsLibraryLocalChangesJson = {
   changes: {
     id: string;
     display_name: string;
-    kind: "new-local" | "changed-local" | "missing-local";
+    kind: "new-local" | "kept-local" | "changed-local" | "missing-local";
     detail: string;
   }[];
 };
@@ -633,7 +678,7 @@ export type DotagentsLibraryLocalChangesJson = {
 export type DotagentsLibraryLocalChangePreviewJson = {
   profile_id: string;
   id: string;
-  kind: "new-local" | "changed-local" | "missing-local";
+  kind: "new-local" | "kept-local" | "changed-local" | "missing-local";
   /** Portable relative files present on this computer for an untracked skill. */
   local_files: string[];
   /** Present when a saved bundled skill was modified locally. */
@@ -658,8 +703,16 @@ export type DotagentsLibraryNewLocalPreviewJson = {
   skills: { id: string; display_name: string; files: number; paths: string[] }[];
   linked_skills: { id: string; display_name: string; source: "Git" | "skills.sh" }[];
   skipped_skills: { id: string; display_name: string; reason: string }[];
-  secret_findings: { skill_id: string; rule: string; file: string; line: number }[];
+  secret_findings: { skill_id: string; rule: string; file: string; line: number; column: number; acknowledgement_key: string }[];
   has_blockers: boolean;
+};
+
+/** A reviewed, Git-backed removal from the portable library only. */
+export type DotagentsLibraryRemovalPreviewJson = {
+  profile_id: string;
+  plan_id: string;
+  skill_id: string;
+  skill_name: string;
 };
 
 export type DotagentsLibraryHealthJson = {
@@ -684,107 +737,6 @@ export type DotagentsLibraryRepairPreviewJson = {
     add: string[];
   }[];
   unsupported: { code: string; reason: string }[];
-};
-
-export type DotagentsScopeProfileJson = {
-  profile_id: string;
-  library: string;
-  scope: "personal" | "project" | null;
-  migration_required: boolean;
-  error: string | null;
-};
-
-export type DotagentsScopeCompositionPreviewJson = {
-  plan_id: string;
-  personal_profile_id: string | null;
-  project_profile_id: string | null;
-  exclusions: string[];
-  resources: {
-    key: string;
-    kind: DotagentsResourceKindJson;
-    id: string;
-    excluded_by_device: boolean;
-    origins: {
-      scope: "personal" | "project";
-      library: string;
-      kind: "owned" | "dependency";
-      resource_kind: DotagentsResourceKindJson;
-    }[];
-  }[];
-  conflicts: {
-    resource_key: string;
-    origins: {
-      scope: "personal" | "project";
-      library: string;
-      kind: "owned" | "dependency";
-      resource_kind: DotagentsResourceKindJson;
-    }[];
-  }[];
-  issues: {
-    code: string;
-    scope: "personal" | "project";
-    library: string;
-    resource_key: string;
-    message: string;
-  }[];
-  has_blockers: boolean;
-};
-
-export type DotagentsScopeCompositionUndoPreviewJson = {
-  plan_id: string;
-  history_id: string;
-  has_conflicts: boolean;
-  target: {
-    personal_profile_id: string | null;
-    project_profile_id: string | null;
-    exclusions: string[];
-  };
-  composition: DotagentsScopeCompositionPreviewJson | null;
-};
-
-export type DotagentsScopeOverviewJson = {
-  profiles: DotagentsScopeProfileJson[];
-  active: DotagentsScopeCompositionPreviewJson | null;
-  active_error: string | null;
-};
-
-export type DotagentsScopeMigrationPreviewJson = {
-  profile_id: string;
-  plan_id: string;
-  library: string;
-  scope: "personal" | "project";
-  file: "dotagents.scope.json";
-  content: { schema_version: 1; scope: "personal" | "project" };
-};
-
-export type DotagentsResourceSelectionJson = {
-  selection_id: string;
-  kind: DotagentsResourceKindJson;
-  name: string;
-  entry_type: "file" | "directory";
-};
-
-export type DotagentsResourceAdoptionRequestJson = {
-  profileId: string;
-  selectionId: string;
-  kind: DotagentsResourceKindJson;
-  id: string;
-  activation?: "always" | "conditional";
-  condition?: string;
-  invocation?: string;
-  role?: string;
-};
-
-export type DotagentsResourceAdoptionPreviewJson = {
-  plan_id: string;
-  profile_id: string;
-  source_name: string;
-  resource: { key: string; kind: DotagentsResourceKindJson; id: string; path: string };
-  files: number;
-  bytes: number;
-  license: { visibility: "private" | "team" | "public"; value: string | null; status: "private-only" | "reviewed" | "blocked" };
-  secret_findings: { rule: string; file: string; line: number; column: number }[];
-  blockers: { code: string; message: string }[];
 };
 
 export type SkillQualityIssueJson = {
@@ -1058,6 +1010,17 @@ export type AppRPCSchema = {
       };
       read_skills_cli_lock: { params?: void; response: SkillsCliLockJson };
       scan_all_skills: { params?: void; response: SkillJson[] };
+      check_global_skill_updates: { params?: void; response: GlobalSkillUpdateCheckJson };
+      review_linked_skill_package_update: { params: { repository: string }; response: LinkedSkillPackageUpdateJson };
+      apply_linked_skill_package_update: { params: { plan_id: string }; response: { package_name: string; updated_skills: string[] } };
+      apply_reviewed_global_skill_updates: {
+        params: { updates: { skill: string; repository: string; skill_path: string | null; expected_local_integrity: string; expected_remote_integrity: string }[] };
+        response: { updated: string[] };
+      };
+      review_global_skill_update: {
+        params: { skill: string; repository: string; skill_path: string | null; expected_local_integrity: string; expected_remote_integrity: string };
+        response: { skill: string; changes: { path: string; kind: "added" | "modified" | "removed"; local_size: number | null; remote_size: number | null }[] };
+      };
       scan_agent_skills: { params: { agentSlug: string }; response: SkillJson[] };
 		mark_skill_reviewed: { params: { skillId: string }; response: void };
 		claim_skill_ownership: { params: { skillId: string }; response: void };
@@ -1080,6 +1043,7 @@ export type AppRPCSchema = {
       scan_sync_inventory: { params?: void; response: SyncInventoryJson };
 		get_sync_skill_preview: { params: { skillId: string }; response: SyncSkillPreviewJson };
 		reveal_sync_secret_finding: { params: { skillId: string; relativePath: string }; response: void };
+		open_sync_secret_finding: { params: { skillId: string; relativePath: string; line?: number; column?: number }; response: { openedAtLine: boolean } };
 		reveal_sync_invalid_entry: { params: { invalidId: string }; response: void };
       sync_center_publish_preview: {
         params?: {
@@ -1142,10 +1106,13 @@ export type AppRPCSchema = {
         response: { restored: string[] };
       };
       dotagents_resource_overview: { params: { profileId: string }; response: DotagentsResourceOverviewJson };
+      dotagents_library_mark_seen: { params: { profileId: string; skillId: string }; response: { ok: true } };
       dotagents_library_local_changes: { params: { profileId: string }; response: DotagentsLibraryLocalChangesJson };
 		dotagents_library_local_change_preview: { params: { profileId: string; skillId: string; file?: string }; response: DotagentsLibraryLocalChangePreviewJson };
       dotagents_library_new_local_preview: { params: { profileId: string; skillIds: string[] }; response: DotagentsLibraryNewLocalPreviewJson };
-      dotagents_library_new_local_apply: { params: { profileId: string; planId: string }; response: { pushed: boolean } };
+		dotagents_library_new_local_apply: { params: { profileId: string; planId: string; acknowledgedSecretFindingKeys?: string[] }; response: { pushed: boolean } };
+      dotagents_library_removal_preview: { params: { profileId: string; skillId: string }; response: DotagentsLibraryRemovalPreviewJson };
+      dotagents_library_removal_apply: { params: { profileId: string; planId: string }; response: { pushed: boolean } };
       dotagents_resource_content: { params: { profileId: string; key: string; file?: string }; response: DotagentsResourceContentJson };
       dotagents_library_health: { params: { profileId: string }; response: DotagentsLibraryHealthJson };
       dotagents_library_repair_preview: {
@@ -1156,38 +1123,6 @@ export type AppRPCSchema = {
         params: { profileId: string; planId: string };
         response: { history_id: string };
       };
-      dotagents_scope_overview: { params: Record<string, never>; response: DotagentsScopeOverviewJson };
-      dotagents_scope_migration_preview: {
-        params: { profileId: string; scope: "personal" | "project" };
-        response: DotagentsScopeMigrationPreviewJson;
-      };
-      dotagents_scope_migration_apply: {
-        params: { profileId: string; planId: string };
-        response: { history_id: string };
-      };
-      dotagents_scope_composition_preview: {
-        params: {
-          personalProfileId: string | null;
-          projectProfileId: string | null;
-          exclusions: string[];
-        };
-        response: DotagentsScopeCompositionPreviewJson;
-      };
-      dotagents_scope_composition_apply: {
-        params: { planId: string };
-        response: DotagentsScopeCompositionPreviewJson;
-      };
-      dotagents_scope_composition_undo_preview: {
-        params: Record<string, never>;
-        response: DotagentsScopeCompositionUndoPreviewJson | null;
-      };
-      dotagents_scope_composition_undo_apply: {
-        params: { planId: string };
-        response: DotagentsScopeCompositionPreviewJson | null;
-      };
-      dotagents_resource_pick_source: { params: { kind: DotagentsResourceKindJson }; response: DotagentsResourceSelectionJson | null };
-      dotagents_resource_adopt_preview: { params: DotagentsResourceAdoptionRequestJson; response: DotagentsResourceAdoptionPreviewJson };
-      dotagents_resource_adopt_apply: { params: { planId: string }; response: { history_id: string; resource_key: string } };
       sync_apply_remote_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { restored: string[] } };
       sync_accept_remote_library_update: { params: { profileId: string; workspacePlanId: string; reconciliationPlanId: string }; response: { updated: boolean } };
       sync_apply_conflicting_remote_changes: { params: { profileId: string; skillIds: string[]; workspacePlanId: string; reconciliationPlanId: string }; response: { restored: string[] } };
@@ -1278,8 +1213,8 @@ export type AppRPCSchema = {
       read_skill_content: { params: { path: string }; response: string };
       write_skill_content: { params: { path: string; content: string }; response: void };
       install_from_git: { params: { repoUrl: string; skillRelativePath: string; targetAgents: string[] }; response: void };
-      fetch_remote_skill_content: { params: { repoUrl: string; skillName?: string | null; skillPath?: string | null; filePath?: string | null; source?: string | null }; response: string };
-      list_remote_skill_files: { params: { repoUrl: string; skillName?: string | null; skillPath?: string | null; source?: string | null }; response: string[] };
+      fetch_remote_skill_content: { params: { repoUrl: string; skillName?: string | null; skillPath?: string | null; filePath?: string | null; source?: string | null; catalogId?: string | null }; response: string };
+      list_remote_skill_files: { params: { repoUrl: string; skillName?: string | null; skillPath?: string | null; source?: string | null; catalogId?: string | null }; response: string[] };
       fetch_skillssh: { params: { sort: string; page: number }; response: MarketplaceSkillJson[] };
       fetch_clawhub: { params: { endpoint: string; params: Record<string, string> }; response: MarketplaceSkillJson[] };
       search_marketplace: { params: { query: string; source: string }; response: MarketplaceSkillJson[] };
@@ -1347,6 +1282,7 @@ export type AppRPCSchema = {
       pick_folder: { params?: { title?: string }; response: string | null };
       open_external: { params: { url: string }; response: boolean };
       reveal_path_in_folder: { params: { path: string }; response: void };
+		open_skill_folder: { params: { skillId: string }; response: void };
       app_update_status: { params?: void; response: AppUpdateStatusJson };
       app_update_check: { params?: void; response: AppUpdateStatusJson };
       app_update_download: { params?: void; response: AppUpdateStatusJson };
@@ -1356,6 +1292,7 @@ export type AppRPCSchema = {
       skills_changed: void;
       close_requested: void;
       skill_update_progress: UpdateProgressJson;
+      global_skill_update_progress: GlobalSkillUpdateProgressJson;
       repo_progress: RepoProgressJson;
       sync_source_review_progress: SyncSourceReviewProgressJson;
       shell_runtime_changed: { macosWindowBlur: boolean };
@@ -1372,6 +1309,7 @@ export type AppRPCSchema = {
       skills_changed: void;
       close_requested: void;
       skill_update_progress: UpdateProgressJson;
+      global_skill_update_progress: GlobalSkillUpdateProgressJson;
       repo_progress: RepoProgressJson;
       sync_source_review_progress: SyncSourceReviewProgressJson;
       shell_runtime_changed: { macosWindowBlur: boolean };

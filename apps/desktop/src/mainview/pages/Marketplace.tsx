@@ -7,9 +7,7 @@ import {
   Loader2,
   ExternalLink,
   User,
-  Tag,
   Check,
-  File,
   FolderKanban,
   MoreHorizontal,
 } from "lucide-react";
@@ -19,22 +17,29 @@ import { useAgents, type AgentConfig } from "@/mainview/hooks/useAgents";
 import { useSkills, type Skill } from "@/mainview/hooks/useSkills";
 import { SkillAgentList, installedAgentCount, busyKey, type BusyOp } from "@/mainview/components/SkillAgentList";
 import MarkdownContent from "@/mainview/components/MarkdownContent";
+import SkillContentBrowser from "@/mainview/components/SkillContentBrowser";
 import { useResizable } from "@/mainview/hooks/useResizable";
+import { useTransientViewState } from "@/mainview/hooks/useTransientViewState";
+import { SKILL_LIST_PANE } from "@/mainview/lib/shell-chrome";
 import ResizeHandle from "@/mainview/components/ResizeHandle";
 import { InsetScrollArea } from "@/mainview/components/InsetScrollArea";
+import { ScrollFade } from "@/mainview/components/ScrollFade";
 import SearchInput from "@/mainview/components/SearchInput";
 import { Button } from "@/mainview/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@/mainview/components/ui/dropdown-menu";
 import { Tooltip } from "@/mainview/components/ui/tooltip";
 import { useToast } from "@/mainview/components/ToastProvider";
 import InstallToProjectPicker from "@/mainview/components/InstallToProjectPicker";
 import { cn } from "@/mainview/lib/utils";
-import { extractMarkdownBody } from "@/mainview/lib/markdown";
+import { extractMarkdownBody, skillMarkdownDescription } from "@/mainview/lib/markdown";
 
 interface MarketplaceSkill {
   name: string;
   description: string | null;
   author: string | null;
   repository: string | null;
+  catalog_id?: string | null;
+  url?: string | null;
   skill_path?: string | null;
   installs: number | null;
   source: string;
@@ -48,23 +53,20 @@ const SOURCES = [
 export default function Marketplace() {
   const { t } = useTranslation();
   const { toast } = useToast();
-  const [source, setSource] = useState("skills.sh");
-  const [skillsshSort, setSkillsshSort] = useState("all-time");
-  const [clawhubSort, setClawhubSort] = useState("default");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [marketplaceView, setMarketplaceView] = useTransientViewState("marketplace-filters", {
+    source: "skills.sh",
+    skillsshSort: "all-time",
+    clawhubSort: "default",
+    searchQuery: "",
+  });
+  const { source, skillsshSort, clawhubSort, searchQuery } = marketplaceView;
   const [busyAgents, setBusyAgents] = useState<Map<string, BusyOp>>(new Map());
-  const [resolvedSummaries, setResolvedSummaries] = useState<Record<string, string>>({});
   // selectedKey drives list highlight (instant); detail uses deferred key
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const { data: agents } = useAgents();
   const { data: localSkills } = useSkills();
   const queryClient = useQueryClient();
-  const listPane = useResizable({
-    initial: 340,
-    min: 240,
-    max: 560,
-    storageKey: "marketplace-list-width",
-  });
+  const listPane = useResizable(SKILL_LIST_PANE);
 
   // Sort options with translations
   const SKILLSSH_SORTS = useMemo(() => [
@@ -81,19 +83,16 @@ export default function Marketplace() {
 
   // SearchInput fires debounced changes; we store the query for React Query
   const handleSearchChange = useCallback((value: string) => {
-    setSearchQuery(value);
-  }, []);
+    setMarketplaceView((previous) => ({ ...previous, searchQuery: value }));
+  }, [setMarketplaceView]);
 
   const detectedAgents = agents?.filter((a) => a.detected) ?? [];
   const currentSort = source === "skills.sh" ? skillsshSort : clawhubSort;
   const sorts = source === "skills.sh" ? SKILLSSH_SORTS : CLAWHUB_SORTS;
-  const setSort = source === "skills.sh" ? setSkillsshSort : setClawhubSort;
+  const setSort = (sort: string) => setMarketplaceView((previous) =>
+    source === "skills.sh" ? { ...previous, skillsshSort: sort } : { ...previous, clawhubSort: sort },
+  );
   const deferredSelectedKey = useDeferredValue(selectedKey);
-
-  const rememberSummary = useCallback((skill: MarketplaceSkill, summary: string) => {
-    const key = skillKey(skill);
-    setResolvedSummaries((current) => current[key] === summary ? current : { ...current, [key]: summary });
-  }, []);
 
   const {
     data: items,
@@ -158,7 +157,6 @@ export default function Marketplace() {
       return skillKey(list[index]);
     },
   });
-
   useEffect(() => {
     if (!selectedKey || !items?.length) return;
     const idx = items.findIndex((s) => skillKey(s) === selectedKey);
@@ -242,7 +240,7 @@ export default function Marketplace() {
     <div className="flex h-full min-h-0 flex-1">
       {/* Main list */}
       <div
-        className="flex h-full min-h-0 shrink-0 flex-col p-4"
+        className="flex h-full min-h-0 shrink-0 flex-col px-3 pt-3"
         style={{ width: listPane.width }}
       >
         <div className="flex shrink-0 flex-col space-y-3">
@@ -255,8 +253,7 @@ export default function Marketplace() {
                 variant={source === s.key ? "default" : "outline"}
                 size="sm"
                 onClick={() => {
-                  setSource(s.key);
-                  setSearchQuery("");
+                  setMarketplaceView((previous) => ({ ...previous, source: s.key, searchQuery: "" }));
                   setSelectedKey(null);
                 }}
               >
@@ -292,6 +289,7 @@ export default function Marketplace() {
 
         {/* Results (virtualized) */}
         <InsetScrollArea scroll={false} className="mt-3 flex-1">
+        <div className="relative h-full min-h-0">
         {isLoading ? (
           <div className="space-y-1.5 py-2">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -324,7 +322,7 @@ export default function Marketplace() {
         ) : (
           <div
             ref={listScrollRef}
-            className="h-full min-h-0 overflow-y-auto"
+            className="h-full min-h-0 overflow-y-auto pr-1"
           >
             <div
               className="relative w-full"
@@ -345,7 +343,7 @@ export default function Marketplace() {
                     <div className="pb-1">
                       <MarketplaceListItem
                         skill={skill}
-                        summary={resolvedSummaries[k]}
+                        summary={skill.description ?? undefined}
                         selected={selectedKey === k}
                         onSelect={setSelectedKey}
                       />
@@ -356,10 +354,12 @@ export default function Marketplace() {
             </div>
           </div>
         )}
+        <ScrollFade viewportRef={listScrollRef} />
+        </div>
         </InsetScrollArea>
       </div>
 
-      <ResizeHandle onMouseDown={listPane.onMouseDown} />
+      <ResizeHandle onPointerDown={listPane.onPointerDown} onMouseDown={listPane.onMouseDown} isResizing={listPane.isResizing} />
 
       {/* Detail panel — always occupies right column so empty state is explicit when nothing is selected */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -370,8 +370,7 @@ export default function Marketplace() {
         ) : selectedKey && selectedSkill ? (
           <MarketplaceSkillDetail
             skill={selectedSkill}
-            summary={resolvedSummaries[skillKey(selectedSkill)]}
-            onSummaryResolved={rememberSummary}
+            summary={undefined}
             busyAgents={busyAgents}
             detectedAgents={detectedAgents}
             localSkills={localSkills}
@@ -404,6 +403,7 @@ const MarketplaceListItem = memo(function MarketplaceListItem({
   onSelect: (key: string) => void;
 }) {
   const key = skillKey(skill);
+  const description = skill.description ?? summary;
   return (
     <button
       type="button"
@@ -416,19 +416,15 @@ const MarketplaceListItem = memo(function MarketplaceListItem({
       onClick={() => onSelect(key)}
     >
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-medium truncate">
-          {skill.name}
-        </h3>
+        <Tooltip content={skill.name}><h3 className="min-w-0 flex-1 truncate text-sm font-medium">{skill.name}</h3></Tooltip>
         {skill.installs != null && (
           <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
             {formatInstalls(skill.installs)}
           </span>
         )}
       </div>
-      {(skill.description ?? summary) && (
-        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-          {skill.description ?? summary}
-        </p>
+      {description && (
+        <Tooltip content={description}><p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{description}</p></Tooltip>
       )}
       <div className="flex items-center gap-2 mt-1">
         {skill.author && (
@@ -447,7 +443,6 @@ const MarketplaceListItem = memo(function MarketplaceListItem({
 function MarketplaceSkillDetail({
   skill,
   summary,
-  onSummaryResolved,
   busyAgents,
   detectedAgents,
   localSkills,
@@ -456,7 +451,6 @@ function MarketplaceSkillDetail({
 }: {
   skill: MarketplaceSkill;
   summary?: string;
-  onSummaryResolved: (skill: MarketplaceSkill, summary: string) => void;
   busyAgents: Map<string, BusyOp>;
   detectedAgents: AgentConfig[];
   localSkills: Skill[] | undefined;
@@ -466,9 +460,7 @@ function MarketplaceSkillDetail({
 }) {
   const { t } = useTranslation();
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-  const [actionsOpen, setActionsOpen] = useState(false);
   const [selectedRemoteFile, setSelectedRemoteFile] = useState<string | null>(null);
-  const actionsRef = useRef<HTMLDivElement>(null);
   const anyBusy = busyAgents.size > 0;
   const isInstalling = [...busyAgents.values()].some((op) => op === "installing" || op === "syncing");
   // Find the matching local skill (if any agent has it installed)
@@ -496,24 +488,7 @@ function MarketplaceSkillDetail({
 
   useEffect(() => {
     setSelectedRemoteFile(null);
-    setActionsOpen(false);
   }, [skillKey(skill)]);
-
-  useEffect(() => {
-    if (!actionsOpen) return;
-    const dismiss = (event: PointerEvent) => {
-      if (!actionsRef.current?.contains(event.target as Node)) setActionsOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setActionsOpen(false);
-    };
-    window.addEventListener("pointerdown", dismiss);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", dismiss);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [actionsOpen]);
 
   // Defer the heavy markdown rendering so detail panel paints instantly
   const currentSkillKey = skillKey(skill);
@@ -525,17 +500,18 @@ function MarketplaceSkillDetail({
   // Fetch the repository tree first. skills.sh identifies a skill by its path,
   // which is not reliably derivable from the visible display name.
   const { data: remoteFiles, isLoading: filesLoading, isError: filesFailed, refetch: refetchFiles } = useQuery<string[]>({
-    queryKey: ["skill-files", skill.repository, skillPath, skill.name],
+    queryKey: ["skill-files", skill.repository, skill.catalog_id, skillPath, skill.name],
     queryFn: async () => {
-      if (!skill.repository) return [];
+      if (!skill.repository && !(skill.source === "skills.sh" && skill.catalog_id)) return [];
       return (await invoke("list_remote_skill_files", {
-        repoUrl: skill.repository,
+        repoUrl: skill.repository ?? "",
         skillName: skill.name,
         skillPath,
         source: skill.source,
+        catalogId: skill.catalog_id,
       })) as string[];
     },
-    enabled: !!skill.repository && !isStale,
+    enabled: (!!skill.repository || (skill.source === "skills.sh" && !!skill.catalog_id)) && !isStale,
     staleTime: 30 * 60 * 1000,
     retry: false,
   });
@@ -549,29 +525,26 @@ function MarketplaceSkillDetail({
   const { data: remoteDocument, isLoading: contentLoading, isError: contentFailed, refetch: refetchContent } = useQuery<
     string | null
   >({
-    queryKey: ["skill-content", skill.repository, skillPath, activeRemoteFile],
+    queryKey: ["skill-content", skill.repository, skill.catalog_id, skillPath, activeRemoteFile],
     queryFn: async () => {
-      const repoUrl = skill.repository;
-      if (!repoUrl || !activeRemoteFile) return null;
+      const repoUrl = skill.repository ?? "";
+      if ((!repoUrl && !(skill.source === "skills.sh" && skill.catalog_id)) || !activeRemoteFile) return null;
       const text = (await invoke("fetch_remote_skill_content", {
         repoUrl,
         skillName: skill.name,
         skillPath,
         filePath: activeRemoteFile,
         source: skill.source,
+        catalogId: skill.catalog_id,
       })) as string;
       return text;
     },
-    enabled: !!skill.repository && !!activeRemoteFile && !isStale && !filesLoading,
+    enabled: (!!skill.repository || (skill.source === "skills.sh" && !!skill.catalog_id)) && !!activeRemoteFile && !isStale && !filesLoading,
     staleTime: 30 * 60 * 1000, // SKILL.md content rarely changes; cache 30 min
     retry: false,
   });
   const remoteContent = remoteDocument ? extractMarkdownBody(remoteDocument) : null;
   const remoteSummary = remoteDocument ? extractFrontmatterDescription(remoteDocument) : null;
-
-  useEffect(() => {
-    if (!skill.description && remoteSummary) onSummaryResolved(skill, remoteSummary);
-  }, [skill, remoteSummary, onSummaryResolved]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -587,39 +560,22 @@ function MarketplaceSkillDetail({
           <div className="flex items-start gap-3">
             <div className="flex min-w-0 items-center gap-1.5">
               <h2 className="truncate text-base font-[590] leading-6">{skill.name}</h2>
-              <div className="relative shrink-0" ref={actionsRef}>
+              <div className="shrink-0">
+                <DropdownMenu>
                 <Tooltip content={t("skills.action")}>
-                  <button
-                    type="button"
-                    className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-black/[0.06] hover:text-foreground dark:hover:bg-white/[0.08]"
-                    aria-label={t("skills.action")}
-                    aria-expanded={actionsOpen}
-                    onClick={() => setActionsOpen((open) => !open)}
-                  >
+                  <DropdownMenuTrigger render={<button type="button" className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-black/[0.06] hover:text-foreground dark:hover:bg-white/[0.08]" aria-label={t("skills.action")} />}>
                     <MoreHorizontal className="size-4 translate-y-px" />
-                  </button>
+                  </DropdownMenuTrigger>
                 </Tooltip>
-                {actionsOpen && (
-                  <div
-                    role="menu"
-                    className="absolute left-0 top-[calc(100%+0.35rem)] z-30 flex w-56 flex-col gap-1 rounded-xl border border-border bg-popover p-1.5 text-sm shadow-lg"
-                    onClickCapture={() => setActionsOpen(false)}
-                  >
-                    <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => setProjectPickerOpen(true)} disabled={!skill.repository}>
-                      <FolderKanban className="size-3.5" />{t("marketplace.installToProject")}
-                    </Button>
-                    {skill.repository && (
-                      <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => openUrl(skill.repository!)}>
-                        <ExternalLink className="size-3.5" />{t("marketplace.viewRepository")}
-                      </Button>
-                    )}
-                    {skill.source === "skills.sh" && (
-                      <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => openUrl("https://skills.sh")}>
-                        <Tag className="size-3.5" />{t("marketplace.viewOnSkillsSh")}
-                      </Button>
-                    )}
-                  </div>
-                )}
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuGroup>
+                  <DropdownMenuItem onClick={() => setProjectPickerOpen(true)} disabled={!skill.repository}>
+                    <FolderKanban />{t("marketplace.installToProject")}
+                  </DropdownMenuItem>
+                  {skill.repository && <DropdownMenuItem onClick={() => openUrl(skill.repository!)}><ExternalLink />{t("marketplace.viewRepository")}</DropdownMenuItem>}
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -639,22 +595,26 @@ function MarketplaceSkillDetail({
                 </span>
                 </Tooltip>
               ) : (
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="gap-1.5 min-w-[100px]"
-                  disabled={anyBusy || !detectedAgents.length || !skill.repository}
-                  onClick={() =>
-                    onInstall(notInstalledAgents.map((a) => a.slug))
-                  }
-                >
-                  {isInstalling ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Download className="size-3.5" />
-                  )}
-                  {isInstalling ? t("marketplace.installing") : t("marketplace.installAll")}
-                </Button>
+                <Tooltip content={t("marketplace.installAllHint")}>
+                  <span className="inline-flex">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="gap-1.5 min-w-[100px]"
+                      disabled={anyBusy || !detectedAgents.length || !skill.repository}
+                      onClick={() =>
+                        onInstall(notInstalledAgents.map((a) => a.slug))
+                      }
+                    >
+                      {isInstalling ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Download className="size-3.5" />
+                      )}
+                      {isInstalling ? t("marketplace.installing") : t("marketplace.installAll")}
+                    </Button>
+                  </span>
+                </Tooltip>
               )}
             </div>
           </div>
@@ -704,16 +664,6 @@ function MarketplaceSkillDetail({
           </>
         )) : null}
 
-        {/* Keep the second separator with the optional section. Without a
-            description, the agent section's separator already leads directly
-            into package information. */}
-        {skill.description && (
-          <>
-            <MarkdownContent content={skill.description} />
-            <hr className="border-border" />
-          </>
-        )}
-
         {/* Package Info */}
         <InfoSection label={t("marketplace.packageInfo")}>
           <InfoGrid>
@@ -725,6 +675,17 @@ function MarketplaceSkillDetail({
                 >
                   {skill.repository}
                   <ExternalLink className="size-3 shrink-0 mt-0.5" />
+                </button>
+              </InfoRow>
+            )}
+            {skill.url && (
+              <InfoRow label="URL">
+                <button
+                  className="inline-flex items-start gap-1 break-all text-left font-mono text-xs text-primary hover:underline"
+                  onClick={() => openUrl(skill.url!)}
+                >
+                  {skill.url}
+                  <ExternalLink className="mt-0.5 size-3 shrink-0" />
                 </button>
               </InfoRow>
             )}
@@ -759,26 +720,12 @@ function MarketplaceSkillDetail({
           ) : visibleFiles.length === 0 ? (
             <p className="rounded-lg border border-border/70 bg-muted/20 p-4 text-xs text-muted-foreground">This source has no readable skill files.</p>
           ) : (
-            <div className="grid min-h-64 grid-cols-[minmax(9rem,12rem)_minmax(0,1fr)] overflow-hidden rounded-lg border border-border">
-              <div className="border-r border-border bg-muted/20 py-1">
-                {visibleFiles.map((file) => (
-                  <button
-                    key={file}
-                    type="button"
-                    onClick={() => setSelectedRemoteFile(file)}
-                    className={cn(
-                      "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors",
-                      file === activeRemoteFile
-                        ? "bg-primary/10 text-foreground hover:bg-primary/[0.16]"
-                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                    )}
-                  >
-                    <File className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate font-mono">{file}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="min-w-0 overflow-auto p-4">
+            <SkillContentBrowser
+              files={visibleFiles}
+              selectedFile={activeRemoteFile}
+              onSelectFile={setSelectedRemoteFile}
+              ariaLabel="Files in this marketplace skill"
+            >
                 {contentLoading ? (
                   <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
                     <Loader2 className="size-3.5 animate-spin" />
@@ -792,8 +739,7 @@ function MarketplaceSkillDetail({
                     {contentFailed && <Button size="xs" variant="outline" className="mt-3" onClick={() => void refetchContent()}>Retry</Button>}
                   </div>
                 )}
-              </div>
-            </div>
+            </SkillContentBrowser>
           )}
         </InfoSection>
       </InsetScrollArea>
@@ -819,12 +765,7 @@ function skillKey(skill: MarketplaceSkill): string {
 }
 
 function extractFrontmatterDescription(markdown: string): string | null {
-  const frontmatter = markdown.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/);
-  if (!frontmatter) return null;
-  const match = frontmatter[1].match(/^description:\s*(.+)$/m);
-  if (!match) return null;
-  const value = match[1].trim().replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, "$1$2").trim();
-  return value || null;
+  return skillMarkdownDescription(markdown);
 }
 
 function InfoSection({

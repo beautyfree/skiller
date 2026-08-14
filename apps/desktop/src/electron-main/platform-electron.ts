@@ -1,4 +1,7 @@
 import { app, dialog, shell, type BrowserWindow } from "electron";
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type {
 	AppPlatform,
 	FileDialogOpts,
@@ -43,6 +46,18 @@ function wrapElectronWindow(win: BrowserWindow): PlatformWindow {
 	};
 }
 
+async function openPathAtLine(path: string, line: number, column = 1): Promise<boolean> {
+	if (process.platform !== "darwin") return false;
+	const appFolders = ["/Applications", join(app.getPath("home"), "Applications")];
+	const editor = ["Cursor", "Visual Studio Code", "Windsurf", "Zed"].find((name) =>
+		appFolders.some((folder) => existsSync(join(folder, `${name}.app`))),
+	);
+	if (!editor) return false;
+	return new Promise((resolve) => {
+		execFile("open", ["-a", editor, "--args", "--goto", `${path}:${line}:${column}`], (error) => resolve(!error));
+	});
+}
+
 function expandStartingFolder(raw: string | undefined): string | undefined {
 	if (!raw) return undefined;
 	if (raw.startsWith("~/")) {
@@ -58,6 +73,11 @@ export function createElectronPlatform(
 	return {
 		quit: () => app.quit(),
 		openExternal: (url: string) => shell.openExternal(url),
+		openPath: async (path: string) => {
+			const error = await shell.openPath(path);
+			if (error) throw new Error(error);
+		},
+		openPathAtLine,
 		showItemInFolder: (path: string) => shell.showItemInFolder(path),
 		trashItem: (path: string) => shell.trashItem(path),
 		pickFolder: async (opts?: FileDialogOpts) => {

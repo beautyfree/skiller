@@ -27,6 +27,9 @@ function parseSkillsApiResponse(jsonStr: string): MarketplaceSkill[] {
 		name?: string;
 		installs?: number;
 		installUrl?: string | null;
+		description?: string | null;
+		id?: string;
+		url?: string | null;
 	};
 	let parsed: { data?: ApiSkill[] };
 	try {
@@ -39,9 +42,11 @@ function parseSkillsApiResponse(jsonStr: string): MarketplaceSkill[] {
 		const owner = skill.source.split("/", 1)[0] ?? skill.source;
 		return [{
 			name: skill.name ?? skill.slug,
-			description: null,
+			description: skill.description ?? null,
 			author: owner,
 			repository: skill.installUrl ?? (skill.source.includes("/") ? `https://github.com/${skill.source}` : null),
+			catalog_id: skill.id ?? `${skill.source}/${skill.slug}`,
+			url: skill.url ?? `https://www.skills.sh/${skill.source}/${skill.slug}`,
 			skill_path: `skills/${skill.slug}`,
 			installs: skill.installs ?? null,
 			source: "skills.sh" as const,
@@ -75,7 +80,9 @@ async function fetchGatewaySkills(
 export async function fetchSkillssh(sort: string, page: number): Promise<MarketplaceSkill[]> {
 	return fetchGatewaySkills(
 		`api/v1/leaderboard?sort=${encodeURIComponent(sort)}&page=${page}`,
-		`skills.sh:${sort}:${page}`,
+    // v2 invalidates catalog rows cached before the gateway began resolving
+    // YAML block-scalar descriptions (the raw value was just `|`).
+    `skills.sh:v2:${sort}:${page}`,
 		"Failed to fetch skills.sh leaderboard through the marketplace gateway",
 	);
 }
@@ -83,7 +90,7 @@ export async function fetchSkillssh(sort: string, page: number): Promise<Marketp
 export async function searchSkillssh(query: string): Promise<MarketplaceSkill[]> {
 	return fetchGatewaySkills(
 		`api/v1/search?q=${encodeURIComponent(query)}`,
-		`skills.sh:search:${query}`,
+    `skills.sh:v2:search:${query}`,
 		"Failed to search skills.sh through the marketplace gateway",
 	);
 }

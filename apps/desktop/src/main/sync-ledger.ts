@@ -17,6 +17,8 @@ export type SyncLedger = {
 	observed_content_hashes?: Record<string, string>;
 	/** Local-only decision to keep a conflicting external skill at this pin. */
 	external_kept_sources?: Record<string, { repository: string; ref: string }>;
+	/** A person explicitly reviewed this exact skill-content finding on this computer. */
+	acknowledged_secret_findings?: Record<string, { acknowledged_at: string }>;
 };
 
 export function syncLedgerPath(profileId: string): string {

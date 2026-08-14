@@ -1,4 +1,5 @@
 import { proxySkillsShCatalog } from '../../src/catalog-proxy.js'
+import { getSkillsOidcToken } from '../../src/oidc.js'
 
 export default {
   async fetch(request: Request): Promise<Response> {
@@ -10,6 +11,6 @@ export default {
     const upstream = new URL('https://skills.sh/api/v1/skills/search')
     upstream.searchParams.set('q', query)
     upstream.searchParams.set('limit', '50')
-    return proxySkillsShCatalog(upstream, request.headers.get('x-vercel-oidc-token') ?? process.env.VERCEL_OIDC_TOKEN)
+    return proxySkillsShCatalog(upstream, await getSkillsOidcToken())
   },
 }

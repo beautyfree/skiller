@@ -126,4 +126,25 @@ describe('Agent Library local change classification', () => {
       expect.objectContaining({ id: 'iphone-use', kind: 'new-local' }),
     ])
   })
+
+  test('shows a deliberately kept local skill outside the new-skills group until its files change', () => {
+    const input = {
+      inventory: {
+        items: [{
+          candidateKey: 'local-only', displayName: 'Local only', description: null,
+          whenToUse: null, contentHash: hash('l'), sourcePath: '/private/skills/local-only', locations: [{ kind: 'shared' }],
+        }],
+        collisions: [], invalidPaths: 0, invalidEntries: [], linkedAliases: 0,
+      },
+      manifest: { schema_version: 3 as const, profile: { id: 'personal', mode: 'private' as const }, agent_policy: { mode: 'detected' as const }, skills: [] },
+      ledger: null,
+      restoreEntries: [],
+    }
+    expect(classifyLibraryLocalChanges({ ...input, libraryExclusions: { 'local-only': { integrity: hash('l') } } })).toEqual([
+      expect.objectContaining({ id: 'local-only', kind: 'kept-local' }),
+    ])
+    expect(classifyLibraryLocalChanges({ ...input, libraryExclusions: { 'local-only': { integrity: hash('x') } } })).toEqual([
+      expect.objectContaining({ id: 'local-only', kind: 'new-local' }),
+    ])
+  })
 })

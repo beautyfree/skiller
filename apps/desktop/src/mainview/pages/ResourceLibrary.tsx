@@ -664,7 +664,6 @@ export default function ResourceLibrary() {
 			: scrollTop > headerStart ? activeHeaderIndex : null)
 	}, [resourceListVirtualizer, sectionHeaderIndices])
 	useEffect(() => {
-		resourceListScrollRef.current?.scrollTo({ top: 0 })
 		// `measure` is the virtualizer's documented full-layout invalidation. It
 		// is needed when a collapsed section removes items and changes every
 		// following index; relying on scroll-time measurements caused stale gaps.
@@ -1455,7 +1454,6 @@ export default function ResourceLibrary() {
 								setSelectedResourceKey(resource?.key ?? null);
 								setSelectedChangeKey(change ? entry.key : null);
 								setSelectedResourceFile(resource?.kind === 'skill' && !change ? 'SKILL.md' : null);
-								resourceListVirtualizer.scrollToIndex(virtualRow.index, { align: 'start' });
 							}}
 							className={cn(
 								'w-full rounded-xl border-[0.5px] px-3 py-2.5 text-left transition-all duration-200',

@@ -261,6 +261,18 @@ export function readableTrpcError(name: string, response: unknown, status: numbe
   return `${name.replace(/_/g, ' ')} failed (HTTP ${status})`
 }
 
+/**
+ * Cancelling an in-flight read is normal when a view changes. Depending on the
+ * transport, it arrives as a DOMException, an Error named AbortError, or the
+ * browser's "operation was aborted" message. Treat only those shapes as a
+ * silent cancellation; every other failure remains user-visible.
+ */
+export function isAbortError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === 'AbortError') return true
+  if (error instanceof Error && error.name === 'AbortError') return true
+  return error instanceof Error && /^(?:the )?operation was aborted\.?$/i.test(error.message.trim())
+}
+
 async function callTrpcProcedure<T>(
   name: string,
   input: unknown,
@@ -341,6 +353,11 @@ export function openUrl(url: string): void {
 
 export function revealItemInDir(path: string): void {
   void invoke('reveal_path_in_folder', { path })
+}
+
+/** Open a discovered skill's directory itself, rather than merely revealing a file in it. */
+export function openSkillFolder(skillId: string): void {
+  void invoke('open_skill_folder', { skillId })
 }
 
 export async function pickFolder(options?: {

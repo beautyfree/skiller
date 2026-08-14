@@ -4,3 +4,7 @@ out
 **/out
 .git
 .DS_Store
+artifacts
+artifacts-*
+apps/desktop
+docs

@@ -3,7 +3,7 @@ import { cn } from '@/mainview/lib/utils'
 
 type ScrollFadeProps = {
 	viewportRef: RefObject<HTMLElement | null>
-	surface?: 'card' | 'sidebar'
+	surface?: 'card' | 'sidebar' | 'muted'
 	className?: string
 }
 
@@ -22,7 +22,8 @@ export function ScrollFade({ viewportRef, surface = 'card', className }: ScrollF
 		const update = () => {
 			cancelAnimationFrame(frame)
 			frame = requestAnimationFrame(() => {
-				setHasContentAbove(viewport.scrollTop > 2)
+				const next = viewport.scrollTop > 2
+				setHasContentAbove((current) => current === next ? current : next)
 			})
 		}
 
@@ -43,8 +44,8 @@ export function ScrollFade({ viewportRef, surface = 'card', className }: ScrollF
 		<span
 			aria-hidden="true"
 			className={cn(
-				'pointer-events-none absolute inset-x-0 top-0 z-10 h-7 bg-gradient-to-b via-40% to-transparent transition-opacity duration-300 ease-out',
-				surface === 'sidebar' ? 'from-sidebar/55 via-sidebar/18' : 'from-card/55 via-card/18',
+				'scroll-fade pointer-events-none absolute inset-x-0 top-0 z-10 h-7 transition-opacity duration-300 ease-out',
+				surface === 'sidebar' ? 'scroll-fade-sidebar' : surface === 'muted' ? 'scroll-fade-muted' : 'scroll-fade-card',
 				hasContentAbove ? 'opacity-100' : 'opacity-0',
 				className,
 			)}

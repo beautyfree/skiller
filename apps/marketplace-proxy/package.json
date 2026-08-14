@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@skiller/marketplace-contracts": "workspace:*"
+    "@skiller/marketplace-contracts": "workspace:*",
+    "@vercel/oidc": "^3.8.4",
+    "yaml": "^2.8.3"
   },
   "devDependencies": {
     "typescript": "~5.8.3",

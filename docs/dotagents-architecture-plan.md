@@ -1,5 +1,8 @@
 # beautyfree/dotagents — architecture and delivery plan
 
+> Archived design record. The proposed scope composition and additional resource
+> kinds were removed: dotagents now carries global skills only.
+
 > Status: active implementation plan  
 > Created: 2026-08-03  
 > Owners: beautyfree/dotagents core and Skiller integration  

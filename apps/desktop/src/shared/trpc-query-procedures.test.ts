@@ -29,10 +29,6 @@ describe("tRPC query procedure registry", () => {
 			"dotagents_library_local_changes",
 			"dotagents_library_health",
 			"dotagents_library_repair_preview",
-			"dotagents_scope_overview",
-			"dotagents_scope_migration_preview",
-			"dotagents_scope_composition_preview",
-			"dotagents_resource_adopt_preview",
 			"list_remote_skill_files",
 		]) {
 			expect(isTrpcQueryProcedure(name)).toBe(true);
@@ -54,15 +50,11 @@ describe("tRPC query procedure registry", () => {
 			"sync_keep_local_changes",
 			"sync_keep_external_local_changes",
 			"sync_undo_apply",
-			"dotagents_resource_pick_source",
 			// Content takes a selected-file payload and intentionally remains POST.
 			"dotagents_resource_content",
 			"dotagents_library_new_local_preview",
 			"dotagents_library_new_local_apply",
 			"dotagents_library_repair_apply",
-			"dotagents_scope_migration_apply",
-			"dotagents_scope_composition_apply",
-			"dotagents_resource_adopt_apply",
 			"skill_quality_dry_start",
 			"skill_quality_measured_start",
 		]) {

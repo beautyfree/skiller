@@ -5,7 +5,7 @@ export interface SkillInstallation {
   agent_slug: string;
   path: string;
   is_symlink: boolean;
-	/** Deprecated compatibility field. New scans always return false. */
+	/** The agent reads this skill from another declared root, rather than owning a copy. */
   is_inherited: boolean;
   inherited_from: string | null;
 }

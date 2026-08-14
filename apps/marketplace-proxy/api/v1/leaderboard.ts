@@ -1,4 +1,5 @@
 import { proxySkillsShCatalog } from '../../src/catalog-proxy.js'
+import { getSkillsOidcToken } from '../../src/oidc.js'
 
 export default {
   async fetch(request: Request): Promise<Response> {
@@ -13,6 +14,6 @@ export default {
     upstream.searchParams.set('view', sort === 'newest' ? 'all-time' : sort)
     upstream.searchParams.set('page', String(page - 1))
     upstream.searchParams.set('per_page', '50')
-    return proxySkillsShCatalog(upstream, request.headers.get('x-vercel-oidc-token') ?? process.env.VERCEL_OIDC_TOKEN)
+    return proxySkillsShCatalog(upstream, await getSkillsOidcToken())
   },
 }

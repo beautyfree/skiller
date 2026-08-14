@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { LibraryRepairSession, ResourceAdoptionSession, readResourceLibraryContent, readResourceLibraryOverview } from './resource-library'
+import { LibraryRepairSession, readResourceLibraryContent, readResourceLibraryOverview } from './resource-library'
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
@@ -21,40 +21,6 @@ function fixture(): { workspace: string; source: string } {
 }
 
 describe('Skiller resource library adapter', () => {
-  test('keeps native paths behind opaque selections and exposes only portable review data', async () => {
-    const current = fixture()
-    const session = new ResourceAdoptionSession()
-    const selected = session.registerSelection(current.source, 'command')
-    expect(JSON.stringify(selected)).not.toContain(current.source)
-    const preview = await session.preview({
-      workspace: current.workspace, profileId: 'personal', mode: 'public',
-      request: { profileId: 'personal', selectionId: selected.selection_id, kind: 'command', id: 'review', invocation: 'review' },
-    })
-    expect(preview).toMatchObject({ resource: { key: 'command:review', path: 'commands/review.md' }, blockers: [] })
-    expect(JSON.stringify(preview)).not.toContain(current.workspace)
-    const applied = await session.apply(preview.plan_id)
-    expect(applied.resource_key).toBe('command:review')
-    expect(readResourceLibraryOverview({ workspace: current.workspace, profileId: 'personal', mode: 'public', changed: true }).resources).toContainEqual(
-      expect.objectContaining({ key: 'command:review', source: 'resource-v2', source_label: 'Library resource' }),
-    )
-    expect(readFileSync(join(current.workspace, 'commands/review.md'), 'utf8')).toBe('# Review\n')
-  })
-
-  test('blocks secret-bearing sources without returning the value', async () => {
-    const current = fixture()
-    const secret = 'ghp_abcdefghijklmnopqrstuvwxyz123456'
-    writeFileSync(current.source, secret)
-    const session = new ResourceAdoptionSession()
-    const selected = session.registerSelection(current.source, 'instruction')
-    const preview = await session.preview({
-      workspace: current.workspace, profileId: 'personal', mode: 'private',
-      request: { profileId: 'personal', selectionId: selected.selection_id, kind: 'instruction', id: 'review' },
-    })
-    expect(preview.blockers).toContainEqual(expect.objectContaining({ code: 'secret' }))
-    expect(JSON.stringify(preview)).not.toContain(secret)
-    await expect(session.apply(preview.plan_id)).rejects.toThrow('blockers')
-  })
-
   test('returns only a bounded regular file for a selected library item', () => {
     const current = fixture()
     mkdirSync(join(current.workspace, 'skills', 'review'), { recursive: true })
@@ -97,6 +63,46 @@ describe('Skiller resource library adapter', () => {
 
     expect(readResourceLibraryOverview({ workspace: current.workspace, profileId: 'personal', mode: 'private', changed: false }).resources).toContainEqual(
       expect.objectContaining({ key: 'skill:review', source_label: 'github.com/example/review-tools', source_url: 'https://github.com/example/review-tools' }),
+    )
+  })
+
+  test('puts recently added skills first and exposes only the device-local marker', () => {
+    const current = fixture()
+    for (const id of ['older', 'newer']) {
+      mkdirSync(join(current.workspace, 'skills', id), { recursive: true })
+      writeFileSync(join(current.workspace, 'skills', id, 'SKILL.md'), `# ${id}\n`)
+    }
+    writeFileSync(join(current.workspace, 'skills.json'), `${JSON.stringify({ schema_version: 1, name: 'library', version: '1.0.0', license: 'MIT', skills: ['skills/older', 'skills/newer'], dependencies: {} })}\n`)
+
+    expect(readResourceLibraryOverview({
+      workspace: current.workspace,
+      profileId: 'personal',
+      mode: 'private',
+      changed: false,
+      recentlyAdded: { newer: '2026-08-12T02:00:00.000Z', older: '2026-08-12T01:00:00.000Z' },
+    }).resources).toEqual([
+      expect.objectContaining({ id: 'newer', recently_added_at: '2026-08-12T02:00:00.000Z' }),
+      expect.objectContaining({ id: 'older', recently_added_at: '2026-08-12T01:00:00.000Z' }),
+    ])
+  })
+
+  test('keeps the original dependency repository and parses a multiline YAML description', () => {
+    const current = fixture()
+    mkdirSync(join(current.workspace, 'skills', 'review'), { recursive: true })
+    writeFileSync(join(current.workspace, 'skills', 'review', 'SKILL.md'), [
+      '---', 'name: review', 'description: |', '  Inspect changes before publishing.', '  Keep the review focused and actionable.', '---', '# Review', '',
+    ].join('\n'))
+    writeFileSync(join(current.workspace, 'skills.json'), `${JSON.stringify({ schema_version: 1, name: 'library', version: '1.0.0', license: 'MIT', skills: ['skills/review'], dependencies: { 'review-source': { url: 'https://github.com/example/review-tools.git', ref: 'main', select: ['skills/review'] } } })}\n`)
+    writeFileSync(join(current.workspace, 'skills.lock'), `${JSON.stringify({ lockfile_version: 1, generated_by: 'dotagents', resolved: { 'review-source': { url: 'https://github.com/example/review-tools.git', requested_ref: 'main', commit: 'a'.repeat(40), integrity: 'sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=', skills: [{ name: 'review', path: 'skills/review' }] } } })}\n`)
+    writeFileSync(join(current.workspace, 'dotagents.yaml'), 'schema_version: 1\nskills:\n  review:\n    distribution: dependency\n')
+
+    expect(readResourceLibraryOverview({ workspace: current.workspace, profileId: 'personal', mode: 'private', changed: false }).resources).toContainEqual(
+      expect.objectContaining({
+        key: 'skill:review',
+        source_label: 'github.com/example/review-tools',
+        source_url: 'https://github.com/example/review-tools',
+        description: 'Inspect changes before publishing. Keep the review focused and actionable.',
+      }),
     )
   })
 

@@ -5,12 +5,12 @@ import {
   useCallback,
   useTransition,
   useDeferredValue,
+  useLayoutEffect,
   memo,
   useRef,
   Fragment,
   type RefObject,
 } from "react";
-import { createPortal } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -29,7 +29,6 @@ import {
   Trash2,
   LayoutList,
   FileText,
-  File,
   Ban,
   FolderKanban,
   FolderOpen,
@@ -37,7 +36,7 @@ import {
   Check,
   ListChecks,
 } from "lucide-react";
-import { invoke, listen, revealItemInDir, openUrl } from "@/mainview/lib/native";
+import { invoke, listen, revealItemInDir, openSkillFolder, openUrl } from "@/mainview/lib/native";
 import {
 	approxTokensFromChars,
 	formatApproxTok,
@@ -49,8 +48,51 @@ import { useRepos } from "@/mainview/hooks/useRepos";
 
 /** Skill extended with optional repo origin */
 type SkillWithRepo = Skill & { _repoName?: string };
+type GlobalSkillUpdateCheck = {
+  checked_at: string;
+  items: Array<{
+    skill: string;
+    description: string | null;
+    local_path: string | null;
+    state: "up-to-date" | "update-available" | "local-changes" | "review-required" | "source-unavailable" | "not-trackable";
+    repository: string | null;
+    skill_path: string | null;
+    source: "git" | "local" | "skills.sh" | "clawhub" | "unknown";
+    managed: boolean;
+    local_integrity: string;
+    remote_integrity: string | null;
+    reason?: string;
+  }>;
+  new_from_sources: Array<{ skill: string; repository: string; skill_path: string; description: string | null }>;
+};
+type GlobalSkillUpdateState = GlobalSkillUpdateCheck["items"][number]["state"];
+type LinkedSkillPackageUpdate = {
+  plan_id: string;
+  package_name: string;
+  repository: string;
+  linked_skills: string[];
+  state: "up-to-date" | "ready" | "local-changes";
+  changed_files: string[];
+  local_changes: { path: string; status: string }[];
+};
+type GlobalSkillUpdateProgress = {
+  phase: "started" | "progress" | "complete";
+  completed_sources: number;
+  total_sources: number;
+  items: GlobalSkillUpdateCheck["items"];
+};
+type InstallFilter = "all" | "direct" | "dotagents-only";
+
+function parseInstallFilter(value: string | null): InstallFilter {
+  if (value === "direct") return "direct";
+  // Preserve old deep links while using an explicit product term going forward.
+  if (value === "dotagents-only" || value === "inherited-only") return "dotagents-only";
+  return "all";
+}
 import { useAgents, type AgentConfig } from "@/mainview/hooks/useAgents";
 import { useResizable } from "@/mainview/hooks/useResizable";
+import { useTransientViewState } from "@/mainview/hooks/useTransientViewState";
+import { SKILL_LIST_PANE } from "@/mainview/lib/shell-chrome";
 import ResizeHandle from "@/mainview/components/ResizeHandle";
 import { InsetScrollArea } from "@/mainview/components/InsetScrollArea";
 import { Button } from "@/mainview/components/ui/button";
@@ -58,11 +100,13 @@ import { Tooltip } from "@/mainview/components/ui/tooltip";
 import InstallToProjectPicker from "@/mainview/components/InstallToProjectPicker";
 import SearchInput from "@/mainview/components/SearchInput";
 import MarkdownContent from "@/mainview/components/MarkdownContent";
+import SkillContentBrowser from "@/mainview/components/SkillContentBrowser";
 import { useToast } from "@/mainview/components/ToastProvider";
 import { cn, nativeSelectClass, nativeSelectChevronClass } from "@/mainview/lib/utils";
 import { extractMarkdownBody } from "@/mainview/lib/markdown";
 import { AgentIcon } from "@/mainview/components/AgentIcon";
 import { ScrollFade } from "@/mainview/components/ScrollFade";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/mainview/components/ui/dropdown-menu";
 
 function isRecentlyAdded(skill: Skill): boolean {
   return skill.library_state?.reviewed_at === null;
@@ -266,12 +310,16 @@ export default function SkillsManager() {
   const agentParam = searchParams.get("agent") ?? "all";
   const skillParam = searchParams.get("skill");
   const installParam = searchParams.get("install");
-  const [filter, setFilter] = useState<string>(agentParam);
-  const [installFilter, setInstallFilter] = useState<"all" | "direct" | "inherited-only">(() =>
-    installParam === "direct" || installParam === "inherited-only" ? installParam : "all",
-  );
+  const [savedFilters, setSavedFilters, restoredFilters] = useTransientViewState("all-skills-filters", {
+    filter: agentParam,
+    installFilter: parseInstallFilter(installParam),
+    searchQuery: "",
+  });
+  const { filter, installFilter, searchQuery } = savedFilters;
+  const setFilter = (filter: string) => setSavedFilters((previous) => ({ ...previous, filter }));
+  const setInstallFilter = (installFilter: InstallFilter) => setSavedFilters((previous) => ({ ...previous, installFilter }));
   const [busyAgents, setBusyAgents] = useState<Map<string, BusyOp>>(new Map());
-  const [searchQuery, setSearchQuery] = useState("");
+  const setSearchQuery = (searchQuery: string) => setSavedFilters((previous) => ({ ...previous, searchQuery }));
   const deferredSearch = useDeferredValue(searchQuery);
   const isSearchStale = deferredSearch !== searchQuery;
   // selectedId drives list highlight (instant); selectedSkill drives detail (deferred)
@@ -283,12 +331,97 @@ export default function SkillsManager() {
   const [batchRunning, setBatchRunning] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [panelMode, setPanelMode] = useState<"detail" | "editor">("detail");
-  const listPane = useResizable({
-    initial: 300,
-    min: 200,
-    max: 500,
-    storageKey: "skills-list-width",
+  const listPane = useResizable(SKILL_LIST_PANE);
+  // The current list remains immediately available from its cache. This check
+  // runs separately and silently: it only reads approved Git sources through
+  // dotagents and never blocks the All Skills experience.
+  const globalUpdateCheck = useQuery<GlobalSkillUpdateCheck>({
+    queryKey: ["global-skill-updates"],
+    queryFn: async () => (await invoke("check_global_skill_updates")) as GlobalSkillUpdateCheck,
+    staleTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
+  const [updatesReviewOpen, setUpdatesReviewOpen] = useState(false);
+  const [updateReviewScope, setUpdateReviewScope] = useState<string[] | null>(null);
+  const [expandedReviewPackages, setExpandedReviewPackages] = useState<Set<string>>(new Set());
+  const [selectedReviewedUpdateIds, setSelectedReviewedUpdateIds] = useState<Set<string>>(new Set());
+  const [reviewedUpdateProgress, setReviewedUpdateProgress] = useState<{ done: number; total: number; current_skill: string; phase?: "preparing" | "fetching" | "applying" | "complete" } | null>(null);
+  const [fileReview, setFileReview] = useState<{ skill: string; changes: { path: string; kind: "added" | "modified" | "removed"; local_size: number | null; remote_size: number | null }[] } | null>(null);
+  const [fileReviewLoading, setFileReviewLoading] = useState<string | null>(null);
+  const [linkedPackageReview, setLinkedPackageReview] = useState<LinkedSkillPackageUpdate | null>(null);
+  const [linkedPackageReviewing, setLinkedPackageReviewing] = useState(false);
+  const [applyingLinkedPackage, setApplyingLinkedPackage] = useState(false);
+  const [linkedPackageChangesOpen, setLinkedPackageChangesOpen] = useState(false);
+  const [globalUpdateScan, setGlobalUpdateScan] = useState<{ active: boolean; completed: number; total: number }>({ active: false, completed: 0, total: 0 });
+  const pendingGlobalUpdates = useMemo(
+    () =>
+      (globalUpdateCheck.data?.items ?? []).filter((item) =>
+        item.state === "update-available" || item.state === "review-required" || item.state === "local-changes",
+      ),
+    [globalUpdateCheck.data],
+  );
+  const updatesInReview = useMemo(
+    () => updateReviewScope === null
+      ? pendingGlobalUpdates
+      : pendingGlobalUpdates.filter((item) => updateReviewScope.includes(item.skill)),
+    [pendingGlobalUpdates, updateReviewScope],
+  );
+  // gstack is one suite even when an earlier installer left independent skill
+  // folders beside the current linked package. The group explains that split;
+  // it must not turn every legacy folder into its own fake package update.
+  const gstackReviewItems = useMemo(
+    () => updatesInReview.filter((item) => item.repository?.replace(/\/$/, "").replace(/\.git$/, "") === "https://github.com/garrytan/gstack"),
+    [updatesInReview],
+  );
+  const pendingUpdateReviewSummary = useMemo(() => {
+    const gstackItems = pendingGlobalUpdates.filter((item) => item.repository?.replace(/\/$/, "").replace(/\.git$/, "") === "https://github.com/garrytan/gstack");
+    const standaloneCount = pendingGlobalUpdates.length - gstackItems.length;
+    const packageCount = gstackItems.length > 0 ? 1 : 0;
+    return { packageCount, standaloneCount, linkedSkillCount: gstackItems.length, total: packageCount + standaloneCount };
+  }, [pendingGlobalUpdates]);
+  const globalUpdateActionsLocked = globalUpdateScan.active || globalUpdateCheck.isFetching;
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<GlobalSkillUpdateProgress>("global_skill_update_progress", (event) => {
+      const progress = event.payload;
+      if (progress.phase === "started") {
+        setGlobalUpdateScan({ active: true, completed: 0, total: 0 });
+        return;
+      }
+      if (progress.phase === "progress") {
+        setGlobalUpdateScan({ active: true, completed: progress.completed_sources, total: progress.total_sources });
+        queryClient.setQueryData<GlobalSkillUpdateCheck>(["global-skill-updates"], (current) => ({
+          checked_at: current?.checked_at ?? new Date().toISOString(),
+          items: progress.items,
+          new_from_sources: current?.new_from_sources ?? [],
+        }));
+        return;
+      }
+      setGlobalUpdateScan({ active: false, completed: progress.completed_sources, total: progress.total_sources });
+    }).then((dispose) => { unlisten = dispose; });
+    return () => unlisten?.();
+  }, [queryClient]);
+  const ungroupedUpdatesInReview = useMemo(
+    () => updatesInReview.filter((item) => !gstackReviewItems.includes(item)),
+    [updatesInReview, gstackReviewItems],
+  );
+  const actionableUpdatesInReview = useMemo(
+    () => updatesInReview.filter((item) => item.state === "update-available" && item.managed && item.repository && item.remote_integrity),
+    [updatesInReview],
+  );
+  const selectedActionableUpdatesInReview = useMemo(
+    () => actionableUpdatesInReview.filter((item) => selectedReviewedUpdateIds.has(item.skill)),
+    [actionableUpdatesInReview, selectedReviewedUpdateIds],
+  );
+  const updateBySkillId = useMemo(
+    () => new Map((globalUpdateCheck.data?.items ?? []).map((item) => [item.skill, item])),
+    [globalUpdateCheck.data],
+  );
+  const updateStatesBySkillId = useMemo(
+    () => new Map([...updateBySkillId].map(([skill, update]) => [skill, update.state])),
+    [updateBySkillId],
+  );
 
   // Sync agent filter from URL. When the agent changes (e.g. sidebar click), drop the
   // selected skill so the auto-select effect below picks the first skill applicable to
@@ -300,14 +433,13 @@ export default function SkillsManager() {
       setSelectedSkill(null);
       prevAgentParam.current = agentParam;
     }
-    setFilter(agentParam);
-  }, [agentParam]);
+    if (!restoredFilters || agentParam !== "all") setFilter(agentParam);
+  }, [agentParam, restoredFilters]);
 
   useEffect(() => {
-    setInstallFilter(
-      installParam === "direct" || installParam === "inherited-only" ? installParam : "all",
-    );
-  }, [installParam]);
+    const fromUrl = parseInstallFilter(installParam);
+    if (!restoredFilters || fromUrl !== "all") setInstallFilter(fromUrl);
+  }, [installParam, restoredFilters]);
 
   // Skills visible for the current agent filter, ignoring search (used for URL skill id + auto-select)
   const listWithoutSearch = useMemo(() => {
@@ -315,7 +447,7 @@ export default function SkillsManager() {
     const byAgent = filter === "all"
       ? available
       : available?.filter((s) => allAgents(s).includes(filter));
-    return byAgent?.filter((s) => matchesInstallFilter(s, installFilter));
+    return byAgent?.filter((s) => matchesInstallFilter(s, installFilter, filter === "all" ? null : filter));
   }, [mergedSkills, filter, installFilter]);
 
   /** Sum of listing-slice ~tok and full-file ~tok for skills visible under the agent filter (no budget / caps in UI). */
@@ -383,7 +515,7 @@ export default function SkillsManager() {
     setSelectedSkill(null);
   }
 
-  function changeInstallFilter(mode: "all" | "direct" | "inherited-only") {
+  function changeInstallFilter(mode: InstallFilter) {
     setInstallFilter(mode);
     setSearchParams(
       (prev) => {
@@ -452,7 +584,7 @@ export default function SkillsManager() {
     let list = filter === "all"
       ? available
       : available?.filter((s) => allAgents(s).includes(filter));
-    list = list?.filter((s) => matchesInstallFilter(s, installFilter));
+    list = list?.filter((s) => matchesInstallFilter(s, installFilter, filter === "all" ? null : filter));
     if (deferredSearch.trim()) {
       const q = deferredSearch.toLowerCase();
       list = list?.filter(
@@ -466,10 +598,25 @@ export default function SkillsManager() {
     // preserving the familiar alphabetical order inside each group.
     if (!list) return list;
     return [...list].sort((a, b) => {
+      const updatePriority = (skill: Skill) => {
+        const state = updateBySkillId.get(skill.id)?.state;
+        return state === "update-available" || state === "review-required" || state === "local-changes" ? 1 : 0;
+      };
+      const updates = updatePriority(b) - updatePriority(a);
+      if (updates) return updates;
       const freshness = Number(isRecentlyAdded(b)) - Number(isRecentlyAdded(a));
       return freshness || a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
     });
-  }, [mergedSkills, filter, installFilter, deferredSearch]);
+  }, [mergedSkills, filter, installFilter, deferredSearch, updateBySkillId]);
+
+  // Filtering may match a child skill but not its package name (for example
+  // “design review”). Keep the real package parent available to the list so
+  // collection structure never disappears just because of a search query.
+  const collectionParents = useMemo(() => {
+    const parents = new Map<string, SkillWithRepo>();
+    for (const skill of mergedSkills ?? []) if (!skill.collection) parents.set(skill.id, skill);
+    return parents;
+  }, [mergedSkills]);
 
   // A collection child is removed with its top-level collection. Inherited-only
   // skills have no direct installation for the batch uninstall operation to remove.
@@ -729,19 +876,129 @@ export default function SkillsManager() {
     }
   }
 
-  const [updating, setUpdating] = useState(false);
+  const updating = false;
+  const [applyingReviewedUpdates, setApplyingReviewedUpdates] = useState(false);
+
+  const reviewedUpdateProgressDisplay = useMemo(() => {
+    if (!reviewedUpdateProgress) return null;
+    const { done, total, current_skill: currentSkill, phase } = reviewedUpdateProgress;
+    if (phase === "fetching") return { percent: total === 0 ? 56 : 50 + Math.round((done / total) * 30), label: `Getting the latest version of ${currentSkill || "the selected skills"}…`, counter: `${done}/${total} checked` };
+    if (phase === "applying") return { percent: 88, label: `Applying one safe update for ${total} selected skill${total === 1 ? "" : "s"}…`, counter: "Final step" };
+    if (phase === "complete") return { percent: 100, label: "Updates complete", counter: `${total}/${total}` };
+    const next = Math.min(done + 1, total);
+    return { percent: total === 0 ? 8 : Math.max(8, Math.round((done / total) * 45)), label: currentSkill ? `Preparing ${next} of ${total}: ${currentSkill}` : "Preparing selected skills…", counter: `${done}/${total} checked` };
+  }, [reviewedUpdateProgress]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<{ done: number; total: number; current_skill: string; phase?: "preparing" | "fetching" | "applying" | "complete" }>("skill_update_progress", (event) => {
+      setReviewedUpdateProgress(event.payload);
+    }).then((dispose) => { unlisten = dispose; });
+    return () => unlisten?.();
+  }, []);
 
   async function handleUpdate(skillId: string) {
-    setUpdating(true);
     try {
-      await invoke("update_skill", { skillId });
-      await refreshAndReselect();
-      toast(t("skills.updateSuccess"));
-    } catch (e) {
-      console.error("Update failed:", e instanceof Error ? e.message : String(e));
-      toast(t("skills.updateFailed"), "destructive");
+      const cached = globalUpdateCheck.data?.items.find((item) => item.skill === skillId);
+      const checked = cached ? globalUpdateCheck.data : (await globalUpdateCheck.refetch()).data;
+      const item = checked?.items.find((candidate) => candidate.skill === skillId);
+      if (!item || item.state === "up-to-date" || item.state === "not-trackable") {
+        toast("This skill is already up to date.");
+        return;
+      }
+      setUpdateReviewScope([skillId]);
+      setSelectedReviewedUpdateIds(item.state === "update-available" && item.managed ? new Set([skillId]) : new Set());
+      setUpdatesReviewOpen(true);
+    } catch (error) {
+      console.error("Update check failed:", error instanceof Error ? error.message : String(error));
+      toast("Could not check this skill for updates. Nothing changed.", "destructive");
+    }
+  }
+
+  async function applyReviewedUpdates() {
+    const updates = selectedActionableUpdatesInReview.map((item) => ({
+      skill: item.skill,
+      repository: item.repository!,
+      skill_path: item.skill_path,
+      expected_local_integrity: item.local_integrity,
+      expected_remote_integrity: item.remote_integrity!,
+    }));
+    if (updates.length === 0) return;
+    setReviewedUpdateProgress({ done: 0, total: updates.length, current_skill: "", phase: "preparing" });
+    setApplyingReviewedUpdates(true);
+    try {
+      const result = (await invoke("apply_reviewed_global_skill_updates", { updates })) as { updated: string[] };
+      // Applying has already finished successfully at this point. Close the
+      // review before starting fresh scans: invalidating update data removes
+      // the rows from this modal, and waiting for those scans used to leave a
+      // misleading empty "Updates complete" state on screen.
+      setUpdatesReviewOpen(false);
+      toast(`${result.updated.length} skill${result.updated.length === 1 ? "" : "s"} updated`);
+      void refreshAndReselect().catch((error) => {
+        console.error("Could not refresh skills after update:", error instanceof Error ? error.message : String(error));
+      });
+      void queryClient.invalidateQueries({ queryKey: ["global-skill-updates"] });
+    } catch (error) {
+      console.error("Reviewed update failed:", error instanceof Error ? error.message : String(error));
+      const reason = error instanceof Error && error.message ? ` ${error.message}` : "";
+      toast(`Could not apply the selected update.${reason} Your local skill was left unchanged.`, "destructive");
     } finally {
-      setUpdating(false);
+      setApplyingReviewedUpdates(false);
+      setReviewedUpdateProgress(null);
+    }
+  }
+
+  async function reviewLinkedPackage(repository: string) {
+    setLinkedPackageReviewing(true);
+    try {
+      const review = (await invoke("review_linked_skill_package_update", { repository })) as LinkedSkillPackageUpdate;
+      setLinkedPackageReview(review);
+      setLinkedPackageChangesOpen(false);
+    } catch (error) {
+      console.error("Package update review failed:", error instanceof Error ? error.message : String(error));
+      const reason = error instanceof Error && error.message ? ` ${error.message}` : "";
+      toast(`Could not review this package update.${reason}`, "destructive");
+    } finally {
+      setLinkedPackageReviewing(false);
+    }
+  }
+
+  async function applyLinkedPackageUpdate() {
+    if (!linkedPackageReview || linkedPackageReview.state !== "ready") return;
+    setApplyingLinkedPackage(true);
+    try {
+      const result = (await invoke("apply_linked_skill_package_update", { plan_id: linkedPackageReview.plan_id })) as { package_name: string; updated_skills: string[] };
+      await queryClient.invalidateQueries({ queryKey: ["skills"] });
+      await queryClient.invalidateQueries({ queryKey: ["global-skill-updates"] });
+      await refreshAndReselect();
+      setLinkedPackageReview(null);
+      toast(`${result.package_name} updated — ${result.updated_skills.length} linked skills stay connected`);
+    } catch (error) {
+      console.error("Package update failed:", error instanceof Error ? error.message : String(error));
+      const reason = error instanceof Error && error.message ? ` ${error.message}` : "";
+      toast(`Could not update this package.${reason} Nothing was changed.`, "destructive");
+    } finally {
+      setApplyingLinkedPackage(false);
+    }
+  }
+
+  async function openFileReview(item: GlobalSkillUpdateCheck["items"][number]) {
+    if (!item.repository || !item.remote_integrity) return;
+    setFileReviewLoading(item.skill);
+    try {
+      const response = (await invoke("review_global_skill_update", {
+        skill: item.skill,
+        repository: item.repository,
+        skill_path: item.skill_path,
+        expected_local_integrity: item.local_integrity,
+        expected_remote_integrity: item.remote_integrity,
+      })) as { skill: string; changes: { path: string; kind: "added" | "modified" | "removed"; local_size: number | null; remote_size: number | null }[] };
+      setFileReview(response);
+    } catch (error) {
+      console.error("File review failed:", error instanceof Error ? error.message : String(error));
+      toast("Could not compare these files. Nothing was changed.", "destructive");
+    } finally {
+      setFileReviewLoading(null);
     }
   }
 
@@ -762,54 +1019,11 @@ export default function SkillsManager() {
     setSelectedSkill(fork);
   }
 
-  // ─── Update All ───
-  const [updatingAll, setUpdatingAll] = useState(false);
-  const [updateAllProgress, setUpdateAllProgress] = useState<{ done: number; total: number } | null>(null);
-
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    listen<{ done: number; total: number; current_skill: string }>(
-      "skill_update_progress",
-      (event) => {
-        setUpdateAllProgress({ done: event.payload.done, total: event.payload.total });
-      },
-    ).then((cleanup) => { unlisten = cleanup; });
-    return () => { unlisten?.(); };
-  }, []);
-
-  async function handleUpdateAll() {
-    setUpdatingAll(true);
-    setUpdateAllProgress(null);
-    try {
-      const result = (await invoke("update_all_skills")) as {
-        updated: string[];
-        failed: [string, string][];
-        skipped: number;
-      };
-      await queryClient.invalidateQueries({ queryKey: ["skills"] });
-      await refreshAndReselect();
-
-      if (result.failed.length === 0 && result.updated.length > 0) {
-        toast(t("skills.updateAllDone", { updated: result.updated.length }));
-      } else if (result.updated.length > 0) {
-        toast(t("skills.updateAllPartial", { updated: result.updated.length, failed: result.failed.length }), "destructive");
-      } else if (result.failed.length > 0) {
-        toast(t("skills.updateAllFailed"), "destructive");
-      }
-    } catch (e) {
-      console.error("Update all failed:", e instanceof Error ? e.message : String(e));
-      toast(t("skills.updateAllFailed"), "destructive");
-    } finally {
-      setUpdatingAll(false);
-      setUpdateAllProgress(null);
-    }
-  }
-
   return (
     <div className="flex h-full min-h-0">
       {/* Main list: header + filters scroll with pane; skill rows are virtualized */}
       <div
-        className="flex h-full min-h-0 shrink-0 flex-col p-4"
+        className="flex h-full min-h-0 shrink-0 flex-col px-3 pt-3"
         style={{ width: listPane.width }}
       >
         <div className="flex shrink-0 flex-col space-y-3">
@@ -871,23 +1085,22 @@ export default function SkillsManager() {
               </Button>
             )}
             {!batchSelectionMode && (
-              <Tooltip content={t("skills.updateAll")}>
+              <Tooltip content={globalUpdateActionsLocked ? "Checking installed skills for updates" : pendingGlobalUpdates.length > 0 ? "Review installed updates" : "Check installed skills for updates"}>
               <span className="inline-flex">
               <Button
                 variant="ghost"
-                size={updatingAll ? "sm" : "icon-sm"}
-                className={updatingAll ? "gap-1.5 text-xs" : ""}
-                disabled={updatingAll || isLoading}
-                onClick={handleUpdateAll}
+                size="icon-sm"
+                disabled={globalUpdateActionsLocked || isLoading}
+                onClick={() => {
+                  if (pendingGlobalUpdates.length > 0 && !globalUpdateActionsLocked) {
+                    setUpdateReviewScope(null);
+                    setSelectedReviewedUpdateIds(new Set());
+                    setUpdatesReviewOpen(true);
+                  }
+                  else void globalUpdateCheck.refetch();
+                }}
               >
-                <RefreshCw className={`size-3.5 ${updatingAll ? "animate-spin" : ""}`} />
-                {updatingAll && (
-                  <span>
-                    {updateAllProgress
-                      ? t("skills.updateAllProgress", { done: updateAllProgress.done, total: updateAllProgress.total })
-                      : t("skills.updating")}
-                  </span>
-                )}
+                <RefreshCw className={`size-3.5 ${globalUpdateCheck.isFetching ? "animate-spin" : ""}`} />
               </Button>
               </span>
               </Tooltip>
@@ -909,13 +1122,13 @@ export default function SkillsManager() {
               className={cn(nativeSelectClass, "h-8 w-full pl-3 pr-8 text-xs")}
               value={installFilter}
               onChange={(e) =>
-                changeInstallFilter(e.target.value as "all" | "direct" | "inherited-only")
+                changeInstallFilter(e.target.value as InstallFilter)
               }
               aria-label={t("skills.filterInstallAria")}
             >
               <option value="all">{t("skills.filterInstallAll")}</option>
               <option value="direct">{t("skills.filterDirect")}</option>
-              <option value="inherited-only">{t("skills.filterInheritedOnly")}</option>
+              <option value="dotagents-only">{t("skills.filterInheritedOnly")}</option>
             </select>
             <ChevronDown className={nativeSelectChevronClass} aria-hidden />
           </div>
@@ -928,6 +1141,26 @@ export default function SkillsManager() {
           placeholder={t("skills.filterPlaceholder")}
           debounce={0}
         />
+
+        {(pendingGlobalUpdates.length > 0 || globalUpdateScan.active) && (
+          <button
+            type="button"
+            className={cn("flex w-full items-center justify-between gap-3 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-left text-xs text-foreground transition-colors", globalUpdateActionsLocked ? "cursor-default" : "hover:bg-primary/10")}
+            disabled={globalUpdateActionsLocked}
+            onClick={() => {
+              if (globalUpdateActionsLocked) return;
+              setUpdateReviewScope(null);
+              setSelectedReviewedUpdateIds(new Set());
+              setUpdatesReviewOpen(true);
+            }}
+          >
+            {globalUpdateActionsLocked ? <><span><strong>Checking installed skills</strong>{globalUpdateScan.total > 0 ? ` · ${globalUpdateScan.completed}/${globalUpdateScan.total} sources checked` : "…"}</span><Loader2 className="size-3.5 shrink-0 animate-spin text-primary" /></> : <><span>
+                {pendingUpdateReviewSummary.packageCount > 0 && <><strong>1 package</strong> needs review · {pendingUpdateReviewSummary.linkedSkillCount} linked skills</>}
+                {pendingUpdateReviewSummary.packageCount > 0 && pendingUpdateReviewSummary.standaloneCount > 0 && " · "}
+                {pendingUpdateReviewSummary.standaloneCount > 0 && <><strong>{pendingUpdateReviewSummary.standaloneCount} update{pendingUpdateReviewSummary.standaloneCount === 1 ? "" : "s"}</strong> need review</>}
+              </span><span className="shrink-0 text-primary">Review</span></>}
+          </button>
+        )}
 
         {filter !== "all" && agentTokenTotals && (
           <Tooltip content={t("skills.agentTokensBarOverview")}>
@@ -988,6 +1221,8 @@ export default function SkillsManager() {
             batchSelectionMode={batchSelectionMode}
             batchSelectedIds={batchSelectedIds}
             onToggleBatch={toggleBatchSkill}
+            updateStates={updateStatesBySkillId}
+            collectionParents={collectionParents}
           />
         )}
         </InsetScrollArea>
@@ -1013,7 +1248,7 @@ export default function SkillsManager() {
         )}
       </div>
 
-      <ResizeHandle onMouseDown={listPane.onMouseDown} />
+      <ResizeHandle onPointerDown={listPane.onPointerDown} onMouseDown={listPane.onMouseDown} isResizing={listPane.isResizing} />
 
       {!selectedId && (
         <div className="flex min-w-0 flex-1 flex-col items-center justify-center px-6">
@@ -1055,6 +1290,7 @@ export default function SkillsManager() {
             onUninstallAll={requestUninstallAll}
             onUnlinkInherited={requestUnlinkInherited}
             onReveal={revealItemInDir}
+			onOpenFolder={openSkillFolder}
           />
         )
       )}
@@ -1086,6 +1322,110 @@ export default function SkillsManager() {
         }}
         onConfirm={handleBatchUninstall}
       />
+      {updatesReviewOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-5" role="dialog" aria-modal="true" aria-label="Review skill updates">
+          <section className="flex max-h-[min(42rem,calc(100vh-2.5rem))] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+            <header className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+              <div>
+                <h2 className="text-base font-semibold">Review installed skill updates</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Choose which installed skills to update. Nothing changes until you confirm.</p>
+              </div>
+              <Button variant="ghost" size="icon-sm" onClick={() => setUpdatesReviewOpen(false)} aria-label="Close update review"><X className="size-4" /></Button>
+            </header>
+            {actionableUpdatesInReview.length > 0 && (
+              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-2.5">
+                <p className="text-xs text-muted-foreground">{actionableUpdatesInReview.length} installed update{actionableUpdatesInReview.length === 1 ? "" : "s"} available</p>
+                {actionableUpdatesInReview.length > 1 && (
+                  <Button variant="secondary" size="xs" onClick={() => setSelectedReviewedUpdateIds(new Set(actionableUpdatesInReview.map((item) => item.skill)))} disabled={applyingReviewedUpdates || selectedActionableUpdatesInReview.length === actionableUpdatesInReview.length}>Select all</Button>
+                )}
+              </div>
+            )}
+            <div className="min-h-0 overflow-y-auto p-3">
+              <>
+                {gstackReviewItems.length > 0 && <div className="mb-2 overflow-hidden rounded-xl border border-primary/20 bg-primary/[0.035]">
+                  <button type="button" className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-primary/[0.05]" onClick={() => setExpandedReviewPackages((previous) => { const next = new Set(previous); if (next.has("gstack")) next.delete("gstack"); else next.add("gstack"); return next; })}>
+                    <span className="min-w-0"><span className="flex items-center gap-2"><span className="font-medium">gstack</span><span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">Package</span></span><span className="mt-1 block text-xs text-muted-foreground">{gstackReviewItems.length} earlier installed copies need review · the current linked package is separate</span></span>
+                    <ChevronRight className={cn("size-4 shrink-0 text-muted-foreground transition-transform", expandedReviewPackages.has("gstack") && "rotate-90")} />
+                  </button>
+                  <div className="flex flex-wrap items-center gap-2 border-t border-primary/15 px-4 py-2.5">
+                    <Button variant="secondary" size="xs" disabled={linkedPackageReviewing || applyingLinkedPackage} onClick={() => void reviewLinkedPackage(gstackReviewItems[0]!.repository!)}>
+                      {linkedPackageReviewing ? <Loader2 className="size-3 animate-spin" /> : "Check package update"}
+                    </Button>
+                    <Button variant="ghost" size="xs" onClick={() => void openUrl(gstackReviewItems[0]!.repository!)}>Open repository</Button>
+                    {linkedPackageReview && <span className="text-xs text-muted-foreground">{linkedPackageReview.state === "ready" ? `${linkedPackageReview.changed_files.length} package file${linkedPackageReview.changed_files.length === 1 ? "" : "s"} changed` : linkedPackageReview.state === "local-changes" ? `${linkedPackageReview.local_changes.length} local change${linkedPackageReview.local_changes.length === 1 ? "" : "s"} need review` : "Current package is up to date"}</span>}
+                  </div>
+                  {linkedPackageReview?.state === "ready" && <div className="flex items-center justify-between gap-3 border-t border-primary/15 px-4 py-2.5"><p className="text-xs leading-5 text-muted-foreground">This fast-forwards the package once. Its existing skill links remain intact.</p><Button size="xs" disabled={applyingLinkedPackage} onClick={() => void applyLinkedPackageUpdate()}>{applyingLinkedPackage ? <Loader2 className="size-3 animate-spin" /> : "Update gstack"}</Button></div>}
+                  {linkedPackageReview?.state === "local-changes" && <div className="border-t border-amber-500/20 bg-amber-500/[0.04] px-4 py-2.5"><p className="text-xs leading-5 text-amber-700 dark:text-amber-300">This package has local changes, so it will not be overwritten. Open its repository to follow its update instructions, or review and commit the local changes first.</p><Button variant="ghost" size="xs" className="mt-1.5" onClick={() => setLinkedPackageChangesOpen((open) => !open)}>{linkedPackageChangesOpen ? "Hide local changes" : `Show ${linkedPackageReview.local_changes.length} local changes`}</Button>{linkedPackageChangesOpen && <ul className="mt-2 max-h-44 divide-y divide-amber-500/10 overflow-y-auto rounded-md border border-amber-500/15 bg-background/50 font-mono text-[11px]">{linkedPackageReview.local_changes.map((change) => <li key={`${change.status}:${change.path}`} className="flex gap-2 px-2 py-1.5"><span className={cn("w-4 shrink-0 font-semibold", change.status.includes("D") ? "text-red-600 dark:text-red-400" : "text-amber-700 dark:text-amber-300")}>{change.status}</span><span className="min-w-0 break-all text-foreground/80">{change.path}</span></li>)}</ul>}</div>}
+                  {expandedReviewPackages.has("gstack") && <div className="border-t border-primary/15 px-4 py-2"><p className="mb-2 text-xs leading-5 text-muted-foreground">These copies predate the linked gstack package. They are grouped so the suite stays understandable, but they are not replaced by the package update.</p><ul className="divide-y divide-border/60">{gstackReviewItems.map((item) => <li key={`${item.skill}:${item.local_path}`} className="py-2 text-sm"><div className="flex items-center justify-between gap-3"><span className="min-w-0 truncate font-medium">{item.skill}</span><span className="shrink-0 text-[11px] text-muted-foreground">{item.state === "local-changes" ? "Local edits" : item.state === "update-available" ? "Update available" : "Review needed"}</span></div><div className="mt-1 space-y-0.5 text-[11px]"><button type="button" className="block max-w-full truncate font-mono text-primary hover:underline" onClick={() => item.repository && void openUrl(item.repository)}>{item.repository}</button>{item.local_path && <span className="block truncate font-mono text-muted-foreground">{item.local_path}</span>}</div></li>)}</ul></div>}
+                </div>}
+                {ungroupedUpdatesInReview.map((item) => (
+                <div key={item.skill} className="rounded-xl px-3 py-3 hover:bg-muted/50">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      {item.state === "update-available" && item.managed && (
+                        <BatchSelectionCheckbox
+                          checked={selectedReviewedUpdateIds.has(item.skill)}
+                          disabled={applyingReviewedUpdates}
+                          label={`Select ${item.skill} for update`}
+                          unavailableLabel="This update cannot be selected while another update is running"
+                          onChange={() => setSelectedReviewedUpdateIds((previous) => {
+                            const next = new Set(previous);
+                            if (next.has(item.skill)) next.delete(item.skill); else next.add(item.skill);
+                            return next;
+                          })}
+                          className="mt-0.5"
+                        />
+                      )}
+                      <div className="min-w-0"><p className="truncate text-sm font-medium">{item.skill}</p><p className="mt-0.5 text-xs text-muted-foreground">{item.state === "local-changes" ? "Changed on this computer — keep or compare before updating." : item.state === "review-required" ? "First tracked comparison — review before replacing it." : item.managed ? "A newer version is available from its recorded source." : "This installation is managed by its source. Update it there to keep the package links intact."}</p></div>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground">{item.managed ? "Can update safely" : "Managed elsewhere"}</span>
+                  </div>
+                  <div className="mt-2 space-y-0.5 text-[11px]"><button type="button" className="block max-w-full truncate font-mono text-primary hover:underline" onClick={() => item.repository && void openUrl(item.repository)}>{item.repository}</button>{item.local_path && <span className="block truncate font-mono text-muted-foreground">{item.local_path}</span>}</div>
+                  {item.state === "update-available" && item.managed && (
+                    <Button variant="ghost" size="xs" className="mt-2" disabled={fileReviewLoading === item.skill} onClick={() => void openFileReview(item)}>
+                      {fileReviewLoading === item.skill ? <Loader2 className="size-3 animate-spin" /> : "See file changes"}
+                    </Button>
+                  )}
+                </div>
+                ))}
+              </>
+            </div>
+            {applyingReviewedUpdates && reviewedUpdateProgressDisplay && (
+              <div className="shrink-0 border-t border-border bg-muted/20 px-5 py-3" role="status" aria-live="polite">
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span className="flex min-w-0 items-center gap-2 font-medium text-foreground"><Loader2 className="size-3.5 shrink-0 animate-spin text-primary" /> <span className="truncate">{reviewedUpdateProgressDisplay.label}</span></span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">{reviewedUpdateProgressDisplay.counter}</span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                  <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${reviewedUpdateProgressDisplay.percent}%` }} />
+                </div>
+              </div>
+            )}
+            <footer className="flex items-center justify-between gap-3 border-t border-border px-5 py-3">
+              <p className="text-xs text-muted-foreground">{actionableUpdatesInReview.length === 0 ? "Review-only items cannot be replaced automatically." : `${selectedActionableUpdatesInReview.length} of ${actionableUpdatesInReview.length} installed update${actionableUpdatesInReview.length === 1 ? "" : "s"} selected.`}</p>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={() => setUpdatesReviewOpen(false)} disabled={applyingReviewedUpdates}>Close</Button>
+                {actionableUpdatesInReview.length > 0 && (
+                  <Button onClick={() => void applyReviewedUpdates()} disabled={applyingReviewedUpdates || selectedActionableUpdatesInReview.length === 0}>
+                    {applyingReviewedUpdates ? <Loader2 className="size-4 animate-spin" /> : `Update ${selectedActionableUpdatesInReview.length} selected skill${selectedActionableUpdatesInReview.length === 1 ? "" : "s"}`}
+                  </Button>
+                )}
+              </div>
+            </footer>
+          </section>
+        </div>
+      )}
+      {fileReview && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/45 p-5" role="dialog" aria-modal="true" aria-label={`File changes for ${fileReview.skill}`}>
+          <section className="flex max-h-[min(38rem,calc(100vh-2.5rem))] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+            <header className="flex items-start justify-between gap-4 border-b border-border px-5 py-4"><div><h2 className="text-base font-semibold">{fileReview.skill}</h2><p className="mt-1 text-sm text-muted-foreground">Changed files</p></div><Button variant="ghost" size="icon-sm" onClick={() => setFileReview(null)} aria-label="Close file changes"><X className="size-4" /></Button></header>
+            <div className="min-h-0 overflow-y-auto p-3">
+              {fileReview.changes.length === 0 ? <p className="px-2 py-4 text-sm text-muted-foreground">No portable files changed.</p> : fileReview.changes.map((change) => <div key={change.path} className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-muted/50"><span className={cn("w-5 font-mono font-semibold", change.kind === "added" ? "text-emerald-600 dark:text-emerald-400" : change.kind === "removed" ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400")}>{change.kind === "added" ? "+" : change.kind === "removed" ? "−" : "~"}</span><span className="min-w-0 flex-1 truncate font-mono text-xs">{change.path}</span><span className="shrink-0 text-[11px] text-muted-foreground">{change.kind}</span></div>)}
+            </div>
+            <footer className="flex justify-end border-t border-border px-5 py-3"><Button variant="secondary" onClick={() => setFileReview(null)}>Close</Button></footer>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -1096,6 +1436,7 @@ type SkillVirtualRow =
   | {
       kind: "collection_header";
       parent: SkillWithRepo;
+      children: SkillWithRepo[];
       childCount: number;
       collapsed: boolean;
       key: string;
@@ -1112,6 +1453,8 @@ function SkillListGrouped({
   batchSelectionMode,
   batchSelectedIds,
   onToggleBatch,
+  updateStates,
+  collectionParents,
 }: {
   skills: SkillWithRepo[];
   selectedId: string | null;
@@ -1122,6 +1465,8 @@ function SkillListGrouped({
   batchSelectionMode: boolean;
   batchSelectedIds: Set<string>;
   onToggleBatch: (skillId: string) => void;
+  updateStates: Map<string, GlobalSkillUpdateState>;
+  collectionParents: Map<string, SkillWithRepo>;
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1139,36 +1484,40 @@ function SkillListGrouped({
     }
     // Find collection names that have children
     const collectionNames = new Set(children.keys());
-    const visibleIds = new Set(skills.map((skill) => skill.id));
 
     type Group =
       | { type: "standalone"; skill: SkillWithRepo }
       | { type: "collection"; parent: SkillWithRepo; children: SkillWithRepo[] };
     const result: Group[] = [];
+    const emittedCollections = new Set<string>();
     for (const skill of skills) {
       if (skill.collection) {
-        // Keep a matching child visible when filtering/searching has excluded
-        // its collection parent. Otherwise a correct result count could lead
-        // to an empty virtual list.
-        if (visibleIds.has(skill.collection)) continue;
-        result.push({ type: "standalone", skill });
+        if (emittedCollections.has(skill.collection)) continue;
+        const parent = collectionParents.get(skill.collection);
+        if (parent) {
+          result.push({ type: "collection", parent, children: children.get(skill.collection)! });
+          emittedCollections.add(skill.collection);
+        } else {
+          // A malformed collection never hides a discoverable skill.
+          result.push({ type: "standalone", skill });
+        }
         continue;
       }
       if (collectionNames.has(skill.id)) {
         // This skill is the parent of a collection
-        result.push({ type: "collection", parent: skill, children: children.get(skill.id)! });
+        if (!emittedCollections.has(skill.id)) {
+          result.push({ type: "collection", parent: skill, children: children.get(skill.id)! });
+          emittedCollections.add(skill.id);
+        }
       } else {
         result.push({ type: "standalone", skill });
       }
     }
     return result;
-  }, [skills]);
+  }, [skills, collectionParents]);
 
   const flatRows = useMemo((): SkillVirtualRow[] => {
     const rows: SkillVirtualRow[] = [];
-		if (groups.some((group) => isRecentlyAdded(group.type === "standalone" ? group.skill : group.parent))) {
-			rows.push({ kind: "section", title: "Recently added", key: "recently-added" });
-		}
     for (const group of groups) {
       if (group.type === "standalone") {
         rows.push({
@@ -1182,6 +1531,7 @@ function SkillListGrouped({
       rows.push({
         kind: "collection_header",
         parent: group.parent,
+        children: group.children,
         childCount: group.children.length,
         collapsed: isCollapsed,
         key: `h-${group.parent.id}`,
@@ -1198,22 +1548,31 @@ function SkillListGrouped({
   const virtualizer = useVirtualizer({
     count: flatRows.length,
     getScrollElement: () => scrollRef.current,
-    // Some rows include a second compact agent line. Start with the tallest
-    // normal row so virtual positioning never overlaps neighbours before the
-    // measured height arrives.
-    estimateSize: (index) => flatRows[index]?.kind === "section" ? 34 : 116,
+    // These estimates deliberately match the three visual row shapes. The old
+    // one-size 116px estimate made a filtered or newly-expanded collection
+    // look as if it had blank rows until scrolling eventually measured it.
+    estimateSize: (index) => {
+      const kind = flatRows[index]?.kind;
+      if (kind === "section") return 34;
+      // Start at the full card height. The measured value settles downward
+      // after paint, but a conservative estimate never lets a lazily rendered
+      // description or agent strip overlap the next item.
+      if (kind === "collection_header") return 112;
+      return 112;
+    },
     overscan: 12,
     getItemKey: (index) => flatRows[index]?.key ?? String(index),
   });
 
   // A search can shrink a long, already-scrolled list to a handful of rows.
   // React Virtual has no reason to reset the old offset by itself, which made
-  // the correct result count render as an empty pane. Start each new row set
-  // at its first result and remeasure its viewport.
-  useEffect(() => {
+  // the correct result count render as an empty pane. The row keys already
+  // invalidate changed measurements; calling `measure()` here would instead
+  // discard newly measured card heights and briefly show the estimates until
+  // the next user scroll.
+  useLayoutEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 });
-    virtualizer.measure();
-  }, [flatRows, virtualizer]);
+  }, [flatRows]);
 
   const toggle = (name: string) =>
     setCollapsed((prev) => ({ ...prev, [name]: !prev[name] }));
@@ -1234,7 +1593,7 @@ function SkillListGrouped({
     <div className="relative h-full min-h-0">
       <div
         ref={scrollRef}
-        className="h-full min-h-0 overflow-y-auto pr-2 transition-opacity"
+        className="h-full min-h-0 overflow-y-auto pr-1 transition-opacity"
         style={{ opacity: isSearchStale ? 0.5 : 1 }}
       >
       <div
@@ -1267,10 +1626,12 @@ function SkillListGrouped({
                     batchSelectionMode={batchSelectionMode}
                     batchSelected={batchSelectedIds.has(row.skill.id)}
                     onToggleBatch={onToggleBatch}
+                    updateState={updateStates.get(row.skill.id)}
                   />
                 ) : row.kind === "collection_header" ? (
                   <CollectionItem
                     parent={row.parent}
+                    children={row.children}
                     childCount={row.childCount}
                     selected={selectedId === row.parent.id}
                     collapsed={row.collapsed}
@@ -1280,6 +1641,7 @@ function SkillListGrouped({
                     batchSelectionMode={batchSelectionMode}
                     batchSelected={batchSelectedIds.has(row.parent.id)}
                     onToggleBatch={onToggleBatch}
+                    updateStates={updateStates}
                   />
                 ) : (
                   <div className="ml-3 border-l border-black/[0.06] dark:border-white/[0.06] pl-1">
@@ -1292,6 +1654,7 @@ function SkillListGrouped({
                       batchSelected={false}
                       batchSelectable={false}
                       onToggleBatch={onToggleBatch}
+                      updateState={updateStates.get(row.skill.id)}
                     />
                   </div>
                 )}
@@ -1353,6 +1716,7 @@ function BatchSelectionCheckbox({
 
 const CollectionItem = memo(function CollectionItem({
   parent,
+  children,
   childCount,
   selected,
   collapsed,
@@ -1362,8 +1726,10 @@ const CollectionItem = memo(function CollectionItem({
   batchSelectionMode,
   batchSelected,
   onToggleBatch,
+  updateStates,
 }: {
   parent: SkillWithRepo;
+  children: SkillWithRepo[];
   childCount: number;
   selected: boolean;
   collapsed: boolean;
@@ -1373,6 +1739,7 @@ const CollectionItem = memo(function CollectionItem({
   batchSelectionMode: boolean;
   batchSelected: boolean;
   onToggleBatch: (skillId: string) => void;
+  updateStates: Map<string, GlobalSkillUpdateState>;
 }) {
   const { t } = useTranslation();
   const directSlugs = installedAgents(parent);
@@ -1381,6 +1748,11 @@ const CollectionItem = memo(function CollectionItem({
     .filter((i) => i.is_inherited)
     .map((i) => i.agent_slug)
     .filter((s) => !directSlugs.includes(s));
+  const packageUpdates = children.filter((child) => {
+    const state = updateStates.get(child.id);
+    return state === "update-available" || state === "review-required" || state === "local-changes";
+  });
+  const isPackage = parent.id === "gstack";
 
   return (
     <div className="relative">
@@ -1394,7 +1766,7 @@ const CollectionItem = memo(function CollectionItem({
             : "border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]",
         )}
       >
-        <div className="flex items-start gap-0.5 w-full">
+        <div className="flex items-start gap-2 w-full">
           {batchSelectionMode && (
             <BatchSelectionCheckbox
               checked={batchSelected}
@@ -1419,6 +1791,7 @@ const CollectionItem = memo(function CollectionItem({
           >
             <div className="flex items-center gap-2 min-w-0">
               <h3 className="text-sm font-medium truncate">{parent.name}</h3>
+              {isPackage && <span className="shrink-0 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">Package</span>}
               <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
                 {childCount} skills
               </span>
@@ -1428,24 +1801,14 @@ const CollectionItem = memo(function CollectionItem({
                 {parent.description}
               </p>
             )}
-            <div className="flex flex-wrap gap-1 mt-1.5">
-              {directSlugs.map((slug) => (
-                <span
-                  key={slug}
-                  className="rounded-full border border-border bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground"
-                >
-                  {agents?.find((a) => a.slug === slug)?.name ?? slug}
-                </span>
-              ))}
-              {inheritedSlugs.map((slug) => (
-                <span
-                  key={slug}
-                  className="rounded-full border border-muted-foreground/35 bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
-                >
-                  {agents?.find((a) => a.slug === slug)?.name ?? slug}
-                </span>
-              ))}
-            </div>
+            <AgentChipsCompact
+              directSlugs={directSlugs}
+              inheritedSlugs={inheritedSlugs}
+              agents={agents}
+            />
+            {isPackage && packageUpdates.length > 0 && (
+              <span className="mt-1 inline-flex text-[10px] font-medium text-primary">{packageUpdates.length} update{packageUpdates.length === 1 ? "" : "s"} need review</span>
+            )}
           </button>
           {!batchSelectionMode && (
             <button
@@ -1479,6 +1842,7 @@ const SkillListItem = memo(function SkillListItem({
   batchSelected,
   batchSelectable,
   onToggleBatch,
+  updateState,
 }: {
   skill: SkillWithRepo;
   selected: boolean;
@@ -1491,6 +1855,7 @@ const SkillListItem = memo(function SkillListItem({
   batchSelected: boolean;
   batchSelectable?: boolean;
   onToggleBatch: (skillId: string) => void;
+  updateState?: GlobalSkillUpdateState;
 }) {
   const { t } = useTranslation();
   const directSlugs = directInstallSlugs(skill);
@@ -1525,15 +1890,24 @@ const SkillListItem = memo(function SkillListItem({
         }}
       >
         <div className="flex min-w-0 items-center gap-1.5">
-          <h3 className="min-w-0 flex-1 truncate text-sm font-medium" title={skill.name}>{skill.name}</h3>
+          <Tooltip content={skill.name}><h3 className="min-w-0 flex-1 truncate text-sm font-medium">{skill.name}</h3></Tooltip>
           {isRecentlyAdded(skill) && (
             <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
               New
             </span>
           )}
+          {updateState === "update-available" && (
+            <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">Update</span>
+          )}
+          {updateState === "local-changes" && (
+            <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">Changed</span>
+          )}
+          {updateState === "review-required" && (
+            <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">Review</span>
+          )}
         </div>
         {skill.description && (
-          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground" title={skill.description}>{skill.description}</p>
+          <Tooltip content={skill.description}><p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{skill.description}</p></Tooltip>
         )}
         <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-medium tabular-nums text-muted-foreground/90">
 		  {skill.scope.type === "SharedLibrary" && (
@@ -1603,7 +1977,7 @@ const SkillListItem = memo(function SkillListItem({
   );
 });
 
-const AGENT_CHIPS_MAX = 8;
+const AGENT_CHIPS_MAX = 5;
 
 function AgentChipsCompact({
   directSlugs,
@@ -1663,12 +2037,17 @@ function directInstallSlugs(skill: Skill): string[] {
     .map((i) => i.agent_slug);
 }
 
-function matchesInstallFilter(skill: Skill, mode: "all" | "direct" | "inherited-only"): boolean {
+function matchesInstallFilter(skill: Skill, mode: InstallFilter, agentSlug: string | null): boolean {
   if (mode === "all") return true;
-  const hasDirectInstall = directInstallSlugs(skill).length > 0;
-  const hasInherited = skill.installations.some((i) => i.is_inherited);
-  if (mode === "direct") return hasDirectInstall;
-  return !hasDirectInstall && hasInherited;
+  const installations = agentSlug === null
+    ? skill.installations
+    : skill.installations.filter((installation) => installation.agent_slug === agentSlug);
+  const hasDirectInstall = installations.some((installation) => !installation.is_inherited);
+  const hasDotagentsInstall = installations.some(
+    (installation) => installation.is_inherited && installation.inherited_from === "shared",
+  );
+  if (mode === "direct") return hasDirectInstall && !hasDotagentsInstall;
+  return hasDotagentsInstall && !hasDirectInstall;
 }
 
 function repoSlugFromUrl(url: string): string | null {
@@ -1732,6 +2111,7 @@ function SkillDetail({
   onUninstallAll,
   onUnlinkInherited,
   onReveal,
+	onOpenFolder,
 }: {
   skill: Skill;
   detectedAgents: AgentConfig[];
@@ -1751,6 +2131,7 @@ function SkillDetail({
   onUninstallAll: (skill: Skill) => void | Promise<void>;
   onUnlinkInherited: (skill: Skill) => void | Promise<void>;
   onReveal: (path: string) => void;
+	onOpenFolder: (skillId: string) => void;
 }) {
   const { t } = useTranslation();
   const directSlugs = directInstallSlugs(skill);
@@ -1769,11 +2150,7 @@ function SkillDetail({
 	const canImprove = skill.library_state?.ownership === "owned" || skill.library_state?.ownership === "forked";
   const agentLinkCount = installedAgentCount(skill, detectedAgents);
 
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-	const [actionsOpen, setActionsOpen] = useState(false);
-  const actionsHostRef = useRef<HTMLDivElement>(null);
-  const closeActions = useCallback(() => setActionsOpen(false), []);
-  useMenuDismissal(actionsOpen, closeActions, actionsHostRef);
+	const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 	const [forking, setForking] = useState(false);
 	const [forkName, setForkName] = useState(`my-${skill.id}`);
 	const [forkError, setForkError] = useState<string | null>(null);
@@ -1784,6 +2161,17 @@ function SkillDetail({
 		setForkError(null);
 		setForkName(`my-${skill.id}`);
 	}, [skill.id]);
+
+	// "New" is an unread marker, not a permanent property. A brief dwell time
+	// avoids clearing it from an accidental click, while persisting the result
+	// means returning to All Skills will not surface the same item as new again.
+	useEffect(() => {
+		if (!isRecentlyAdded(skill)) return;
+		const timer = window.setTimeout(() => {
+			void onMarkReviewed(skill.id).catch(() => undefined);
+		}, 700);
+		return () => window.clearTimeout(timer);
+	}, [onMarkReviewed, skill]);
 
 	async function createFork() {
 		if (forkPending) return;
@@ -1804,6 +2192,9 @@ function SkillDetail({
   const skillRoot = deferredSkillPath.endsWith("SKILL.md")
     ? deferredSkillPath.slice(0, -"SKILL.md".length).replace(/[\\/]$/, "")
     : deferredSkillPath;
+	const skillFolderPath = skill.canonical_path.endsWith("SKILL.md")
+		? skill.canonical_path.slice(0, -"SKILL.md".length).replace(/[\\/]$/, "")
+		: skill.canonical_path;
   const [selectedSkillFile, setSelectedSkillFile] = useState("SKILL.md");
 
   useEffect(() => {
@@ -1861,29 +2252,38 @@ function SkillDetail({
 		  <div className="flex items-center gap-3">
             <div className="flex min-w-0 items-center gap-1.5">
               <h2 className="truncate text-base font-[590] leading-6">{skill.name}</h2>
-			{!readOnly && (
-              <div className="relative shrink-0" ref={actionsHostRef}>
+            <div className="shrink-0">
+              <DropdownMenu>
                 <Tooltip content={t("skills.action")}>
-                <button
-                  type="button"
-                  className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-black/[0.06] hover:text-foreground dark:hover:bg-white/[0.08]"
-                  aria-label={t("skills.action")}
-                  aria-expanded={actionsOpen}
-                  onClick={() => setActionsOpen((open) => !open)}
-                >
-                  <MoreHorizontal className="size-4 translate-y-px" />
-                </button>
+                  <DropdownMenuTrigger render={<button type="button" className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-black/[0.06] hover:text-foreground dark:hover:bg-white/[0.08]" aria-label={t("skills.action")} />}>
+                    <MoreHorizontal className="size-4 translate-y-px" />
+                  </DropdownMenuTrigger>
                 </Tooltip>
-              </div>
-			)}
+                <DropdownMenuContent>
+					<DropdownMenuGroup>
+					{readOnly ? (
+						<DropdownMenuItem onClick={() => onOpenFolder(skill.id)}><FolderOpen />Open package folder</DropdownMenuItem>
+					) : <>
+						{canImprove && <DropdownMenuItem onClick={onEdit}><Pencil />{t("skills.editSkillMd")}</DropdownMenuItem>}
+						<DropdownMenuItem onClick={() => setProjectPickerOpen(true)}><FolderKanban />{t("skills.installToProject")}</DropdownMenuItem>
+						<DropdownMenuItem onClick={() => onReveal(skill.canonical_path)}><FolderOpen />{t("skills.revealInFinder")}</DropdownMenuItem>
+						{sourceRepo && <DropdownMenuItem disabled={updating} onClick={() => onUpdate(skill.id)}><RefreshCw className={updating ? "animate-spin" : undefined} />{updating ? t("skills.updating") : t("skills.updateFromSource")}</DropdownMenuItem>}
+						{syncTargets.length > 0 && <DropdownMenuItem disabled={busyAgents.size > 0} onClick={() => onSync(skill.id, syncTargets.map((agent) => agent.slug))}><Copy />Sync to {syncTargets.length} {syncTargets.length === 1 ? "agent" : "agents"}</DropdownMenuItem>}
+						<DropdownMenuSeparator />
+						{(() => {
+                    const agent = activeAgentSlug && detectedAgents.find((candidate) => candidate.slug === activeAgentSlug);
+                    if (!agent) return null;
+                    const installedOnActive = skill.installations.some((installation) => installation.agent_slug === agent.slug && !installation.is_inherited);
+                    const inheritedOnActive = skill.installations.some((installation) => installation.agent_slug === agent.slug && installation.is_inherited);
+                    if (!installedOnActive && !inheritedOnActive) return null;
+							return <DropdownMenuItem variant="destructive" onClick={() => onUninstall(skill.id, agent.slug)}><Trash2 />Remove from {agent.name}</DropdownMenuItem>;
+						})()}
+					</>}
+					</DropdownMenuGroup>
+                </DropdownMenuContent>
+				</DropdownMenu>
             </div>
-			<div className="ml-auto flex shrink-0 items-center gap-1">
-			{isRecentlyAdded(skill) && (
-			  <Button size="sm" variant="outline" className="shrink-0 gap-1.5" onClick={() => void onMarkReviewed(skill.id)}>
-				<Check className="size-3.5" /> Mark reviewed
-			  </Button>
-			)}
-			</div>
+            </div>
 		  </div>
           {skill.description && (
             <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
@@ -1941,6 +2341,15 @@ function SkillDetail({
                 </button>
               </>
             )}
+			<span className="text-xs text-muted-foreground">Location</span>
+			<button
+				type="button"
+				className="min-w-0 truncate text-left font-mono text-xs text-primary hover:underline"
+				title={skillFolderPath}
+				onClick={() => onOpenFolder(skill.id)}
+			>
+				{skillFolderPath}
+			</button>
             <span className="text-xs text-muted-foreground">{t("skills.scope")}</span>
             <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium w-fit ${
 			  skill.scope.type === "SharedLibrary"
@@ -2048,11 +2457,12 @@ function SkillDetail({
 		  </>
 		)}
 
-        {!readOnly && actionsOpen && actionsHostRef.current && createPortal(
+        {/* Legacy inline action list retained temporarily while the new portal menu
+            is rolled out; it is intentionally not rendered. */}
+        {false && (
           <div
             role="menu"
             className="absolute right-0 top-[calc(100%+0.35rem)] z-30 w-64 rounded-xl border border-border/70 bg-popover p-1.5 shadow-lg"
-            onClickCapture={() => setActionsOpen(false)}
           >
             <div className="flex flex-col gap-1">
 				{canImprove && <Button
@@ -2125,9 +2535,9 @@ function SkillDetail({
                  * viewing "All" or when the skill isn't on the active agent.
                  */}
                 {(() => {
-                  const agent =
-                    activeAgentSlug &&
-                    detectedAgents.find((a) => a.slug === activeAgentSlug);
+                  const agent = (activeAgentSlug
+                    ? detectedAgents.find((a) => a.slug === activeAgentSlug)
+                    : undefined) as AgentConfig;
                   if (!agent) return null;
                   const installedOnActive = skill.installations.some(
                     (i) => i.agent_slug === agent.slug && !i.is_inherited,
@@ -2256,8 +2666,7 @@ function SkillDetail({
                   </Button>
                 )}
             </div>
-          </div>,
-          actionsHostRef.current,
+          </div>
         )}
 
         <hr className="border-border" />
@@ -2273,14 +2682,14 @@ function SkillDetail({
           )}
           {skill.library_state?.ownership === "external" && (
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs leading-5 text-muted-foreground">External skill{sourceRepo ? <> from <button type="button" onClick={() => openUrl(sourceRepo)} className="font-medium text-primary hover:underline">its original source</button></> : ''}. Make an editable copy when you want to adapt it.</p>
+              <p className="text-xs leading-5 text-muted-foreground">External skill{sourceRepo ? <> from <Tooltip content={sourceRepo}><button type="button" onClick={() => openUrl(sourceRepo)} className="font-medium text-primary hover:underline">its original source</button></Tooltip></> : ''}. Make an editable copy when you want to adapt it.</p>
               {!forking ? (
                 <Button size="sm" variant="outline" className="h-8 shrink-0 gap-1.5" onClick={() => setForking(true)}><Copy className="size-3.5" />Make editable copy</Button>
               ) : (
                 <div className="w-full rounded-lg border border-border bg-background/70 p-3">
                   <label className="block text-xs font-medium">Name for your copy<input value={forkName} onChange={(event) => setForkName(event.target.value)} className="mt-1.5 h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
                   {forkError && <p className="mt-2 text-xs text-destructive">{forkError}</p>}
-                  <div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="ghost" disabled={forkPending} onClick={() => setForking(false)}>Cancel</Button><Button size="sm" disabled={forkPending || !forkName.trim()} onClick={() => void createFork()}>{forkPending && <Loader2 className="size-3.5 animate-spin" />}Create editable copy</Button></div>
+                  <div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="outline" className="min-w-[5.5rem]" disabled={forkPending} onClick={() => setForking(false)}>Cancel</Button><Button size="sm" disabled={forkPending || !forkName.trim()} onClick={() => void createFork()}>{forkPending && <Loader2 className="size-3.5 animate-spin" />}Create editable copy</Button></div>
                 </div>
               )}
             </div>
@@ -2292,17 +2701,14 @@ function SkillDetail({
 
         {/* Package contents — deferred so the surrounding detail paints first. */}
         <DetailSection label={t("skills.skillContent")}>
-          <div className="overflow-hidden rounded-xl border border-border/70 bg-muted/[0.12]">
-            <div className="flex min-h-[22rem]">
-              <nav className="w-44 shrink-0 overflow-y-auto border-r border-border/70 bg-muted/[0.18] py-2" aria-label="Files in this skill">
-                <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Files</p>
-                {filesLoading || isStale ? <div className="space-y-2 px-3 py-2 animate-pulse"><div className="h-3 w-20 rounded bg-muted" /><div className="h-3 w-28 rounded bg-muted/70" /></div> : visibleSkillFiles.map((file) => <button key={file} type="button" onClick={() => setSelectedSkillFile(file)} className={`flex w-full items-center gap-2 px-3 py-2 text-left font-mono text-[11px] transition-colors ${selectedSkillFile === file ? "bg-primary/[0.12] text-foreground" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"}`}><File className="size-3.5 shrink-0" /><span className="min-w-0 truncate">{file}</span></button>)}
-              </nav>
-              <div className="min-w-0 flex-1 overflow-y-auto px-5 py-4">
-                {isStale || filesLoading || docLoading ? <div className="space-y-3 animate-pulse"><div className="h-4 w-40 rounded bg-muted" /><div className="h-3 w-full rounded bg-muted/70" /><div className="h-3 w-5/6 rounded bg-muted/70" /></div> : docContent ? <MarkdownContent content={docContent} /> : <p className="text-xs text-muted-foreground italic">{t("skills.noContent")}</p>}
-              </div>
-            </div>
-          </div>
+          <SkillContentBrowser
+            files={visibleSkillFiles}
+            selectedFile={selectedSkillFile}
+            onSelectFile={setSelectedSkillFile}
+            loading={filesLoading || isStale}
+          >
+            {isStale || filesLoading || docLoading ? <div className="space-y-3 animate-pulse"><div className="h-4 w-40 rounded bg-muted" /><div className="h-3 w-full rounded bg-muted/70" /><div className="h-3 w-5/6 rounded bg-muted/70" /></div> : docContent ? <MarkdownContent content={docContent} /> : <p className="text-xs text-muted-foreground italic">{t("skills.noContent")}</p>}
+          </SkillContentBrowser>
         </DetailSection>
       </InsetScrollArea>
 
@@ -2569,7 +2975,7 @@ function SkillImprovementPanel({ skillId }: { skillId: string }) {
             </label>
           ))}
           <div className="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" disabled={saving} onClick={() => setOpen(false)}>Cancel</Button>
+            <Button size="sm" variant="outline" className="min-w-[5.5rem]" disabled={saving} onClick={() => setOpen(false)}>Cancel</Button>
             <Button size="sm" disabled={saving || !draft.prompt.trim() || !draft.actual.trim() || !draft.expected.trim()} onClick={() => void save()}>
               {saving && <Loader2 className="size-3.5 animate-spin" />} Save private observation
             </Button>

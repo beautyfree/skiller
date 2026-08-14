@@ -8,9 +8,8 @@ import { parsePortableConfig } from "dotagents/config";
 import { applyInitializeLibraryPlan, planInitializeLibrary } from "dotagents/init";
 import { scanOwnedSkill } from "dotagents/inventory";
 import { exactSourceSecurityPolicy } from "dotagents/source-policy";
-import { readPortableScopeDescriptor } from "dotagents/scope";
-import { createSyncPublishPlan, applySyncPublishFiles } from "./sync-publish";
-import { canonicalSyncAgentRouting, isCanonicalSyncLibrary, planCanonicalSyncLibrary, readCanonicalSyncLock, readLocalSyncAgentSelection, readLocalSyncSourceSecurityPolicy, readSyncManifestFromWorkspace, writeLocalSyncAgentSelection } from "./sync-dotagents";
+import { createSyncPublishPlan, applySyncPublishFiles, mergeBundledUpdateIntoManifest } from "./sync-publish";
+import { canonicalSyncAgentRouting, isCanonicalSyncLibrary, planCanonicalSyncLibrary, readCanonicalSyncLock, readLocalSyncAgentSelection, readLocalSyncLibraryExclusions, readLocalSyncSourceSecurityPolicy, readSyncManifestFromWorkspace, writeLocalSyncAgentSelection, writeLocalSyncLibraryExclusion } from "./sync-dotagents";
 import { applyReviewedSyncWorkspaceLocalPublish, assertSyncRemoteEmpty, cloneSyncWorkspace, commitSyncWorkspace, getSyncWorkspaceStatus, initializeSyncWorkspace, planSyncWorkspaceLocalPublish, pushSyncWorkspace } from "./sync-workspace";
 import { createSyncRestorePlan } from "./sync-restore";
 import { scanSyncInventoryWithDotagents } from "./sync-inventory";
@@ -46,6 +45,8 @@ describe("canonical dotagents Sync Center library", () => {
     });
     writeLocalSyncAgentSelection(clone, ["codex"]);
     expect(readLocalSyncAgentSelection(clone)).toEqual(["codex"]);
+    writeLocalSyncLibraryExclusion(clone, { id: "local-only", integrity: "a".repeat(64) });
+    expect(readLocalSyncLibraryExclusions(clone)).toEqual({ "local-only": { integrity: "a".repeat(64) } });
   }, 20_000);
 
   it("publishes, clones, and restores without creating a legacy Skiller manifest", async () => {
@@ -70,7 +71,6 @@ describe("canonical dotagents Sync Center library", () => {
       skills: ["skills/writing"],
       dependencies: {},
     });
-	expect(readPortableScopeDescriptor(workspace)).toEqual({ schema_version: 1, scope: "personal" });
 	const generatedReadme = readFileSync(join(workspace, "README.md"), "utf8");
 	expect(generatedReadme).toContain("dotagents setup");
 	expect(generatedReadme).toContain("`writing`");
@@ -93,6 +93,31 @@ describe("canonical dotagents Sync Center library", () => {
     const restore = createSyncRestorePlan(clone, restored);
     expect(restore.entries).toMatchObject([{ id: "writing", action: "create" }]);
   }, 20_000);
+
+  it("keeps existing bundled skills available when saving one newly reviewed skill", async () => {
+    const root = mkdtempSync(join(tmpdir(), "skiller-canonical-incremental-save-"));
+    roots.push(root);
+    const firstSource = join(root, "first-source");
+    const secondSource = join(root, "second-source");
+    const workspace = join(root, "library");
+    mkdirSync(firstSource, { recursive: true });
+    mkdirSync(secondSource, { recursive: true });
+    writeFileSync(join(firstSource, "SKILL.md"), "---\nname: adapt\ndescription: First skill.\n---\n# Adapt\n");
+    writeFileSync(join(secondSource, "SKILL.md"), "---\nname: smoke-test\ndescription: Second skill.\n---\n# Smoke test\n");
+
+    const initial = createSyncPublishPlan("agent-library", "private", [{ id: "adapt", sourcePath: firstSource }]);
+    const initialCanonical = await planCanonicalSyncLibrary(workspace, initial);
+    applySyncPublishFiles(workspace, initial, initialCanonical.portableFiles);
+
+    const addition = createSyncPublishPlan("agent-library", "private", [{ id: "smoke-test", sourcePath: secondSource }]);
+    const merged = mergeBundledUpdateIntoManifest(initial.manifest, addition, { allowNew: true });
+    const incrementalCanonical = await planCanonicalSyncLibrary(workspace, merged);
+    applySyncPublishFiles(workspace, merged, incrementalCanonical.portableFiles);
+
+    expect(readSyncManifestFromWorkspace(workspace).skills.map((skill) => skill.id)).toEqual(["adapt", "smoke-test"]);
+    expect(existsSync(join(workspace, "skills", "adapt", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(workspace, "skills", "smoke-test", "SKILL.md"))).toBe(true);
+  });
 
   it("carries a direct global agent skill through the canonical library without treating a skills-only folder as an install target", async () => {
     const root = mkdtempSync(join(tmpdir(), "skiller-direct-global-routing-"));
@@ -133,7 +158,7 @@ describe("canonical dotagents Sync Center library", () => {
     expect(canonicalSyncAgentRouting(workspace, [])?.forSkill("direct-writing")).toEqual([]);
   });
 
-  it("maps a new team library to project scope and preserves a custom README", async () => {
+  it("preserves a custom README for a team library", async () => {
     const root = mkdtempSync(join(tmpdir(), "skiller-canonical-team-scope-"));
     roots.push(root);
     const source = join(root, "source");
@@ -144,14 +169,12 @@ describe("canonical dotagents Sync Center library", () => {
     const publish = createSyncPublishPlan("team-library", "team", [{ id: "team-review", sourcePath: source }]);
     const initial = await planCanonicalSyncLibrary(workspace, publish);
     applySyncPublishFiles(workspace, publish, initial.portableFiles);
-    expect(readPortableScopeDescriptor(workspace)).toEqual({ schema_version: 1, scope: "project" });
 
     writeFileSync(join(workspace, "README.md"), "# Our team toolkit\n\nTeam-owned guidance.\n");
     const update = await planCanonicalSyncLibrary(workspace, publish);
     applySyncPublishFiles(workspace, publish, update.portableFiles);
 
     expect(readFileSync(join(workspace, "README.md"), "utf8")).toBe("# Our team toolkit\n\nTeam-owned guidance.\n");
-    expect(readPortableScopeDescriptor(workspace)).toEqual({ schema_version: 1, scope: "project" });
   });
 
   it("records an external skill as an immutable dependency instead of copying it", async () => {

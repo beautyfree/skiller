@@ -38,6 +38,10 @@ export interface PlatformWindow {
 export interface AppPlatform {
 	quit(): void;
 	openExternal(url: string): Promise<void> | void;
+	/** Open a local file or folder in the operating system's default file browser. */
+	openPath(path: string): Promise<void> | void;
+	/** Open a text file at a specific location when a supported editor is installed. */
+	openPathAtLine?(path: string, line: number, column?: number): Promise<boolean> | boolean;
 	showItemInFolder(path: string): void;
 	/** Move one exact local path to the operating system Trash/Recycle Bin. */
 	trashItem(path: string): Promise<void>;

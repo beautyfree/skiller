@@ -51,3 +51,4 @@ artifacts
 
 # OS files
 Thumbs.db
+.env*.local

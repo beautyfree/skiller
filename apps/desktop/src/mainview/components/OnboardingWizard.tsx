@@ -14,7 +14,7 @@ import { invoke, openUrl } from "@/mainview/lib/native";
 import { Button } from "@/mainview/components/ui/button";
 import { AgentIcon } from "@/mainview/components/AgentIcon";
 import { useAgents } from "@/mainview/hooks/useAgents";
-import { extractMarkdownBody } from "@/mainview/lib/markdown";
+import { extractMarkdownBody, skillMarkdownDescription } from "@/mainview/lib/markdown";
 import type { MarketplaceSkillJson } from "@/shared/rpc-schema";
 import skillerMark from "@/mainview/assets/brand/skiller-mark.png";
 
@@ -74,9 +74,9 @@ export default function OnboardingWizard({
 								source: s.source,
 								catalogId: s.catalog_id,
 							})) as string;
-							const frontmatter = parseFrontmatter(md);
-							if (frontmatter.description)
-								return [key, frontmatter.description] as const;
+							const description = skillMarkdownDescription(md);
+							if (description)
+								return [key, description] as const;
 							const body = extractMarkdownBody(md).trim();
 							const firstPara = body.split(/\n\s*\n/)[0]?.trim() ?? "";
 							return [key, firstPara || null] as const;
@@ -400,27 +400,6 @@ function formatInstalls(n: number): string {
 	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
 	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
 	return String(n);
-}
-
-/** Minimal YAML frontmatter parser — just pulls the `description` field. */
-function parseFrontmatter(md: string): { description?: string } {
-	const normalized = md.replace(/\r\n/g, "\n").trimStart();
-	if (!normalized.startsWith("---")) return {};
-	const end = normalized.indexOf("\n---", 3);
-	if (end < 0) return {};
-	const front = normalized.slice(3, end).trim();
-	const single = front.match(/^description:\s*(.+?)$/m);
-	if (single) {
-		let v = single[1].trim();
-		if (
-			(v.startsWith('"') && v.endsWith('"')) ||
-			(v.startsWith("'") && v.endsWith("'"))
-		) {
-			v = v.slice(1, -1);
-		}
-		return { description: v };
-	}
-	return {};
 }
 
 function StepDots({ current }: { current: Step }) {

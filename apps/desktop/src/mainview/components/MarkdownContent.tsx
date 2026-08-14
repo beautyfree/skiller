@@ -1,6 +1,7 @@
 import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { extractMarkdownBody } from "@/mainview/lib/markdown";
 
 const plugins = [remarkGfm];
 
@@ -10,6 +11,7 @@ const plugins = [remarkGfm];
  * Memoized — skips re-parse when content string is unchanged.
  */
 export default memo(function MarkdownContent({ content }: { content: string }) {
+  const body = extractMarkdownBody(content);
   return (
     <div className="select-text">
       <ReactMarkdown
@@ -131,7 +133,7 @@ export default memo(function MarkdownContent({ content }: { content: string }) {
         em: ({ children }) => <em className="italic">{children}</em>,
         }}
       >
-        {content}
+        {body}
       </ReactMarkdown>
     </div>
   );

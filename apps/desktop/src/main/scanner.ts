@@ -200,8 +200,17 @@ function mergeSkill(dedup: Map<string, Skill>, key: string, incoming: Skill): vo
 			existing.collection = incoming.collection;
 		}
 		for (const inst of incoming.installations) {
-			const dominated = existing.installations.some((e) => e.agent_slug === inst.agent_slug);
-			if (!dominated) existing.installations.push(inst);
+			const index = existing.installations.findIndex((e) => e.agent_slug === inst.agent_slug);
+			if (index === -1) {
+				existing.installations.push(inst);
+				continue;
+			}
+			// A physical install is stronger evidence than inherited visibility. Shared
+			// skills are scanned first, so retain a later direct link/copy when both
+			// describe the same agent and skill.
+			if (existing.installations[index]?.is_inherited && !inst.is_inherited) {
+				existing.installations[index] = inst;
+			}
 		}
 		return;
 	}
@@ -299,15 +308,27 @@ function scanSkillMdRoot(
 }
 
 /**
- * ~/.agents/skills is a library owned by the user, not by every agent that
- * understands the universal path. Agent links are discovered separately from
- * their own global folders and remain explicit installations.
+ * Scan the canonical shared library. It remains user-owned, but an agent that
+ * explicitly declares this exact root as readable can use every skill there.
+ * That is inherited availability rather than a per-agent copy or symlink.
  */
 function scanSharedRoot(
 	root: string,
+	configs: AgentConfig[],
 	dedup: Map<string, Skill>,
 	provenance: Record<string, LocalSkillSourceRecord>,
 ): void {
+	const sharedCanonical = resolveCanonical(root);
+	const readers = configs.filter((agent) =>
+		agent.detected && agent.additional_readable_paths.some((readable) => {
+			if (readable.source_agent !== "shared") return false;
+			try {
+				return resolveCanonical(readable.path) === sharedCanonical;
+			} catch {
+				return readable.path === root;
+			}
+		}),
+	);
 	for (const skillDir of collectSkillRoots(root)) {
 		const canonical = resolveCanonical(skillDir);
 		const skillMd = join(canonical, "SKILL.md");
@@ -334,7 +355,13 @@ function scanSharedRoot(
 			metadata: parsed.metadata,
 			collection: detectCollection(skillDir, root),
 			scope: { kind: "SharedLibrary" },
-			installations: [],
+			installations: readers.map((agent) => ({
+				agent_slug: agent.slug,
+				path: skillDir,
+				is_symlink: false,
+				is_inherited: true,
+				inherited_from: "shared",
+			})),
 			library_state: resolveLibraryState(dirName, provenance),
 		});
 	}
@@ -343,7 +370,7 @@ function scanSharedRoot(
 export function scanAllSkills(configs: AgentConfig[], sharedRoot = sharedSkillsDir()): Skill[] {
 	const dedup = new Map<string, Skill>();
 	const provenance = readLocalSkillSources();
-	if (existsSync(sharedRoot)) scanSharedRoot(sharedRoot, dedup, provenance);
+	if (existsSync(sharedRoot)) scanSharedRoot(sharedRoot, configs, dedup, provenance);
 
 	for (const agent of configs.filter((cfg) => cfg.detected || cfg.global_paths.length > 0)) {
 		for (const root of agent.global_paths) {

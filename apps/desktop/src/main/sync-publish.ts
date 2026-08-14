@@ -28,6 +28,14 @@ export type SyncPublishPlan = {
   secretFindings: ReturnType<typeof planLibraryPublish>["secretFindings"];
 };
 
+export type SyncPublishSecretAcknowledgement = {
+  skillId: string;
+  rule: string;
+  relativePath: string;
+  line: number;
+  column: number;
+};
+
 /**
  * Applies a reviewed subset update to an already-fetched manifest.  This is
  * used for granular "publish my local change" actions: an untouched remote
@@ -82,9 +90,20 @@ export function applySyncPublishFiles(
 	workspacePath: string,
 	plan: SyncPublishPlan,
 	portableFiles: Record<string, string>,
+	options: { acknowledgedSecretFindings?: readonly SyncPublishSecretAcknowledgement[] } = {},
 ): void {
 	const update = createSyncPublishWorkspacePlan(workspacePath, plan, portableFiles);
-	applyLibraryUpdatePlan(update, { portableFiles });
+	const acknowledgements = options.acknowledgedSecretFindings ?? [];
+	const approvedFindings = update.secretFindings.filter((finding) =>
+		acknowledgements.some((acknowledgement) =>
+			acknowledgement.skillId === finding.item &&
+			acknowledgement.rule === finding.rule &&
+			acknowledgement.line === finding.line &&
+			acknowledgement.column === finding.column &&
+			finding.relativePath === `skills/${acknowledgement.skillId}/${acknowledgement.relativePath}`,
+		),
+	);
+	applyLibraryUpdatePlan(update, { portableFiles, acknowledgedSecretFindings: approvedFindings });
 }
 
 /** Provider/UI adapter for dotagents's shared transactional workspace update. */

@@ -1,5 +1,8 @@
 # dotagents platform evolution RFC
 
+> Superseded. The scope and typed-resource phases described here were removed;
+> dotagents intentionally supports global skills only.
+
 > Status: active implementation contract  
 > Created: 2026-08-03  
 > Applies to: `beautyfree/dotagents` and the Skiller Sync Center  

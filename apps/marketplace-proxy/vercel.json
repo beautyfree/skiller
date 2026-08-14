@@ -9,7 +9,7 @@
     },
     {
       "source": "/api/v1/skills/:identifier*",
-      "destination": "/api/v1/skill-snapshot?identifier=:identifier*"
+      "destination": "/api/v1/skill-snapshot?identifier=:identifier"
     }
   ]
 }

@@ -369,6 +369,7 @@ const en = {
     updateBannerTitle: "Skiller {{version}} is available",
     updateBannerReadyTitle: "Update ready to install",
     updateBannerDescription: "You are on {{current}}. Download {{latest}} now.",
+    updateBannerViewChangelog: "What's new in {{version}}",
     updateBannerDownloading: "Downloading update — {{progress}}%",
     updateBannerAction: "Update",
     updateBannerUpdating: "Updating",

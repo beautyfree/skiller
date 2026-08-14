@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Download, RotateCw, X } from 'lucide-react'
+import { Download, ExternalLink, RotateCw, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import type { AppUpdateStatusJson } from '@/shared/rpc-schema'
@@ -87,6 +87,10 @@ export default function AppUpdateBanner() {
     writeDismissedVersion(version)
     setDismissedVersion(version)
   }, [status?.remoteVersion])
+
+  const handleViewChangelog = useCallback(() => {
+    if (status?.manualDownloadUrl) void openUrl(status.manualDownloadUrl)
+  }, [status?.manualDownloadUrl])
 
   const handlePrimaryAction = useCallback(async () => {
     if (!status) return
@@ -182,6 +186,16 @@ export default function AppUpdateBanner() {
                     latest,
                   })}
             </p>
+            {!downloading && !ready && !failed && status.manualDownloadUrl && (
+              <button
+                type="button"
+                className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                onClick={handleViewChangelog}
+              >
+                {t('settings.updateBannerViewChangelog', { version: latest })}
+                <ExternalLink className="size-3" aria-hidden="true" />
+              </button>
+            )}
           </div>
 
           <Button

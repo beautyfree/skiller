@@ -326,7 +326,7 @@ function RemoveSkillDialog({
 
 export default function ResourceLibrary() {
   const queryClient = useQueryClient()
-  const { toast } = useToast()
+  const { toast, dismiss } = useToast()
   const navigate = useNavigate()
   // Reuse the active profile immediately when Agent Library is reopened. This
   // avoids briefly rendering the empty state while the same cached profile is
@@ -363,8 +363,14 @@ export default function ResourceLibrary() {
   const listPane = useResizable(SKILL_LIST_PANE)
   const remoteReviewRequestRef = useRef<string | null>(null)
   const providerReconnectRequestRef = useRef<string | null>(null)
+  const providerReconnectCopyToastRef = useRef<string | null>(null)
   const statusRefreshRequestRef = useRef<string | null>(null)
   const lastBackgroundRefreshAtRef = useRef(0)
+
+  useEffect(() => () => {
+    const toastId = providerReconnectCopyToastRef.current
+    if (toastId) dismiss(toastId)
+  }, [dismiss])
 
   // The sidebar can be clicked while this route is already active. React Router
   // intentionally leaves the route mounted in that case, so explicitly return
@@ -1006,6 +1012,13 @@ export default function ResourceLibrary() {
     if (provider) setProviderReconnect({ provider })
   }
 
+  function dismissProviderReconnectCopyToast() {
+    const toastId = providerReconnectCopyToastRef.current
+    if (!toastId) return
+    dismiss(toastId)
+    providerReconnectCopyToastRef.current = null
+  }
+
   async function reconnectProvider() {
     const reconnect = providerReconnect
     if (!reconnect) return
@@ -1016,6 +1029,7 @@ export default function ResourceLibrary() {
       const started = await invoke('sync_provider_sign_in_start', { provider: reconnect.provider, requestId })
       if (providerReconnectRequestRef.current !== requestId) return
       if (!started.started) {
+        dismissProviderReconnectCopyToast()
         setProviderReconnect({ provider: reconnect.provider, error: 'Could not start the sign-in. Try again.' })
         return
       }
@@ -1023,17 +1037,19 @@ export default function ResourceLibrary() {
       const result = await invoke('sync_provider_sign_in_finish', { provider: reconnect.provider, requestId })
       if (providerReconnectRequestRef.current !== requestId) return
       if (!result.connected) {
+        dismissProviderReconnectCopyToast()
         setProviderReconnect({ provider: reconnect.provider, error: 'The sign-in was not completed. Try again when you are ready.' })
         return
       }
       acknowledgeProviderCredentialDisclosure(reconnect.provider)
       providerReconnectRequestRef.current = null
+      dismissProviderReconnectCopyToast()
       setProviderReconnect(null)
-      toast(`${reconnect.provider === 'github' ? 'GitHub' : 'GitLab'} reconnected. Checking this library now.`)
+      toast(`${reconnect.provider === 'github' ? 'GitHub' : 'GitLab'} reconnected. You can continue syncing this library.`)
       await queryClient.invalidateQueries({ queryKey: ['sync-profiles'] })
-      await reviewRemoteChanges(true)
     } catch (cause) {
       if (providerReconnectRequestRef.current !== requestId) return
+      dismissProviderReconnectCopyToast()
       setProviderReconnect({ provider: reconnect.provider, error: cause instanceof Error ? cause.message : 'The sign-in could not be completed. Try again.' })
     } finally {
       if (providerReconnectRequestRef.current === requestId) providerReconnectRequestRef.current = null
@@ -1043,6 +1059,7 @@ export default function ResourceLibrary() {
   function cancelProviderReconnect() {
     const requestId = providerReconnectRequestRef.current
     providerReconnectRequestRef.current = null
+    dismissProviderReconnectCopyToast()
     setProviderReconnect(null)
     if (requestId) void invoke('sync_provider_libraries_cancel', { requestId }).catch(() => undefined)
   }
@@ -1050,7 +1067,10 @@ export default function ResourceLibrary() {
   function copyProviderReconnectCode() {
     if (!providerReconnect?.userCode) return
     void navigator.clipboard.writeText(providerReconnect.userCode).then(
-      () => toast('Code copied.'),
+      () => {
+        dismissProviderReconnectCopyToast()
+        providerReconnectCopyToastRef.current = toast('Code copied. Finish signing in in your browser.')
+      },
       () => toast('Select the code and copy it manually.', 'destructive'),
     )
   }

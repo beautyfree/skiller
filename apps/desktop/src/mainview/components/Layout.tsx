@@ -200,7 +200,7 @@ function LayoutInner({
       toast({
         title: `Reconnect ${provider} to keep your library in sync`,
         description: 'Your library and installed skills are unchanged.',
-      }, 'default', { label: 'Open library', onClick: () => navigate('/library') })
+      }, 'default', { label: 'Open library', onClick: () => navigate('/library'), closeOnClick: false }, { timeoutMs: 20_000 })
     }
   }, [navigate, syncProfiles, toast])
   const skillUpdatesNeedReview = Boolean(

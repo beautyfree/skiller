@@ -14,10 +14,18 @@ type ToastMessage = string | {
 type ToastAction = {
   label: string
   onClick: () => void
+  /** Keep an important notice visible after its action changes the view. */
+  closeOnClick?: boolean
+}
+
+type ToastOptions = {
+  /** Explicit duration for notices that need time to be read. */
+  timeoutMs?: number
 }
 
 const ToastContext = createContext<{
-  toast: (message: ToastMessage, variant?: ToastVariant, action?: ToastAction) => void
+  toast: (message: ToastMessage, variant?: ToastVariant, action?: ToastAction, options?: ToastOptions) => string
+  dismiss: (toastId: string) => void
 } | null>(null)
 
 const toastManager = ToastPrimitive.createToastManager()
@@ -69,28 +77,33 @@ function ToastList() {
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const toast = useCallback((message: ToastMessage, variant: ToastVariant = 'default', action?: ToastAction) => {
+  const toast = useCallback((message: ToastMessage, variant: ToastVariant = 'default', action?: ToastAction, options?: ToastOptions) => {
     const content = typeof message === 'string' ? { description: message } : message
     let id = ''
     id = toastManager.add({
       ...content,
       type: variant,
-      timeout: getToastDismissMs(message),
+      timeout: options?.timeoutMs ?? getToastDismissMs(message),
       ...(action ? {
         actionProps: {
           children: action.label,
           className: buttonVariants({ variant: 'default', size: 'xs' }),
           onClick: () => {
             action.onClick()
-            toastManager.close(id)
+            if (action.closeOnClick !== false) toastManager.close(id)
           },
         },
       } : {}),
     })
+    return id
+  }, [])
+
+  const dismiss = useCallback((toastId: string) => {
+    toastManager.close(toastId)
   }, [])
 
   return (
-    <ToastContext.Provider value={{ toast }}>
+    <ToastContext.Provider value={{ toast, dismiss }}>
       <ToastPrimitive.Provider toastManager={toastManager} limit={3}>
         {children}
         <ToastPrimitive.Portal>

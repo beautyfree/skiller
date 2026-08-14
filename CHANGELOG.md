@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/beautyfree/skiller/compare/v0.3.1...v0.3.2) (2026-08-14)
+
+
+### Bug Fixes
+
+* **desktop:** complete reconnect flow cleanly ([cf51b7f](https://github.com/beautyfree/skiller/commit/cf51b7f58d0486285da8e271155c6ad49656937c))
+
 ## [0.3.1](https://github.com/beautyfree/skiller/compare/v0.3.0...v0.3.1) (2026-08-14)
 
 

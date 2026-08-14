@@ -88,9 +88,15 @@ jobs:
             echo "Draft ${REQUESTED_TAG} does not expose a target commit; rerun it through Release Please." >&2
             exit 1
           }
-          if [[ -n "${REQUESTED_TARGET}" && -n "${release_target}" && "${release_target}" != "${REQUESTED_TARGET}" ]]; then
-            echo "Draft ${REQUESTED_TAG} targets ${release_target}, expected ${REQUESTED_TARGET}." >&2
-            exit 1
+          if [[ -n "${REQUESTED_TARGET}" ]]; then
+            tag_target="$(git ls-remote "https://github.com/${REPOSITORY}.git" "refs/tags/${REQUESTED_TAG}^{}" | awk 'NR == 1 { print $1 }')"
+            if [[ -z "${tag_target}" ]]; then
+              tag_target="$(git ls-remote "https://github.com/${REPOSITORY}.git" "refs/tags/${REQUESTED_TAG}" | awk 'NR == 1 { print $1 }')"
+            fi
+            if [[ "${tag_target}" != "${REQUESTED_TARGET}" ]]; then
+              echo "Tag ${REQUESTED_TAG} resolves to ${tag_target:-nothing}, expected ${REQUESTED_TARGET}." >&2
+              exit 1
+            fi
           fi
 
           if [[ "$(jq -r '.draft' <<<"${release}")" != "true" ]]; then

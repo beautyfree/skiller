@@ -278,12 +278,11 @@ jobs:
           # assert that the distributable AppImage exists above.
           unpacked_dir="$(find artifacts -maxdepth 1 -type d -name 'linux-unpacked' -print -quit)"
           [[ -n "$unpacked_dir" ]] || { echo "Unpacked Linux directory was not produced"; exit 1; }
-          find "$unpacked_dir" -maxdepth 1 -mindepth 1 -printf '%M %f\n' | sort
-          app="$(find "$unpacked_dir" -maxdepth 1 -type f -perm -111 ! -name 'chrome-*' -print -quit)"
-          [[ -n "$app" ]] || { echo "Unpacked Linux application was not produced"; exit 1; }
+          app="$unpacked_dir/skiller"
+          [[ -f "$app" ]] || { echo "Unpacked Linux application was not produced"; exit 1; }
           chmod +x "$app"
           set +e
-          timeout 10s xvfb-run -a "$app" --no-sandbox
+          timeout 10s xvfb-run -a "$app" --no-sandbox --disable-gpu
           status=$?
           set -e
           [[ "$status" == "124" ]] || { echo "Packaged Linux application exited during startup (status $status)"; exit 1; }

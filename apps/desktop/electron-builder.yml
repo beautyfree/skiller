@@ -1,5 +1,8 @@
 appId: com.beautyfree.skiller
 productName: Skiller
+# Avoid deriving the Linux launcher name from the scoped workspace package
+# name (`@skiller/desktop`), which otherwise produces `@skillerdesktop`.
+executableName: skiller
 # The desktop package is installed through Bun's root workspace, so
 # electron-builder cannot reliably infer Electron from a nested node_modules
 # directory. Keep the packaging runtime explicit and reproducible.

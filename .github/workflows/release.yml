@@ -276,7 +276,10 @@ jobs:
           # negative. Electron-builder produces the same packaged application
           # in linux-unpacked; launch that bundle under Xvfb and separately
           # assert that the distributable AppImage exists above.
-          app="$(find artifacts -path '*linux-unpacked*/Skiller' -type f -print -quit)"
+          unpacked_dir="$(find artifacts -maxdepth 1 -type d -name 'linux-unpacked' -print -quit)"
+          [[ -n "$unpacked_dir" ]] || { echo "Unpacked Linux directory was not produced"; exit 1; }
+          find "$unpacked_dir" -maxdepth 1 -mindepth 1 -printf '%M %f\n' | sort
+          app="$(find "$unpacked_dir" -maxdepth 1 -type f -perm -111 ! -name 'chrome-*' -print -quit)"
           [[ -n "$app" ]] || { echo "Unpacked Linux application was not produced"; exit 1; }
           chmod +x "$app"
           set +e

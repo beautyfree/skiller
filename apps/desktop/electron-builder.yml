@@ -100,6 +100,8 @@ linux:
   extraFiles:
     - from: build-resources/linux-install.sh
       to: install.sh
+    - from: build-resources/com.beautyfree.skiller.metainfo.xml
+      to: usr/share/metainfo/com.beautyfree.skiller.metainfo.xml
   target:
     - target: AppImage
       arch: [x64]

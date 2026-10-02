@@ -41,6 +41,9 @@ jobs:
           trap 'rm -rf "$extract_dir"' EXIT
           (cd "$extract_dir" && "$appimage" --appimage-extract)
           test -x "$extract_dir/squashfs-root/AppRun"
+          sudo apt-get update
+          sudo apt-get install -y appstream
+          appstreamcli validate --no-net "$extract_dir/squashfs-root/usr/share/metainfo/com.beautyfree.skiller.metainfo.xml"
 
   verify-required:
     name: Verify

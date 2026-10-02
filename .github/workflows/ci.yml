@@ -30,6 +30,17 @@ jobs:
       - run: bun run typecheck
       - run: bun test
       - run: bun run build
+      - name: Verify Linux AppImage packaging
+        if: runner.os == 'Linux'
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          bun x electron-builder --linux AppImage --publish never
+          appimage="$(realpath ../../artifacts/*.AppImage)"
+          extract_dir="$(mktemp -d)"
+          trap 'rm -rf "$extract_dir"' EXIT
+          (cd "$extract_dir" && "$appimage" --appimage-extract)
+          test -x "$extract_dir/squashfs-root/AppRun"
 
   verify-required:
     name: Verify

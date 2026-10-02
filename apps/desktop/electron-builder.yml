@@ -7,6 +7,10 @@ executableName: skiller
 # electron-builder cannot reliably infer Electron from a nested node_modules
 # directory. Keep the packaging runtime explicit and reproducible.
 electronVersion: 41.2.1
+# Use electron-builder's static type2 runtime directly. Replacing the runtime
+# after packaging can corrupt the filesystem offset and updater blockmap.
+toolsets:
+  appimage: "1.0.2"
 # Match our GitHub Releases naming so download URLs stay predictable.
 artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
 copyright: Copyright © 2026 Skiller Contributors
@@ -75,6 +79,9 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+
+appImage:
+  artifactName: "${productName}-${version}-${arch}.${ext}"
 
 linux:
   icon: assets/icons/app/icon-512.png

@@ -26,7 +26,7 @@
     "test": "bun test",
     "dist:mac": "bun run generate:release-notes && electron-vite build && electron-builder --mac --arm64 --x64 --publish never && bash scripts/repack-dmg.sh arm64 && bash scripts/repack-dmg.sh x64",
     "dist:win": "bun run generate:release-notes && electron-vite build && electron-builder --win --publish never",
-    "dist:linux": "bun run generate:release-notes && electron-vite build && electron-builder --linux --publish never && node scripts/patch-appimage-runtime.mjs ../../artifacts"
+    "dist:linux": "bun run generate:release-notes && electron-vite build && electron-builder --linux --publish never"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",

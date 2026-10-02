@@ -57,7 +57,7 @@ They share `src/shared/**`; both type-check with `noEmit: true` so overlapping i
 | --- | --- | --- |
 | macOS (Apple Silicon) | `bun run dist:mac` | `Skiller-<version>-macos-arm64.dmg` (signed + notarized, drag-to-Applications layout) |
 | Windows x64 | `bun run dist:win` | `Skiller-<version>-win-x64.exe` (NSIS installer) |
-| Linux x64 | `bun run dist:linux` | `Skiller-<version>-linux-x86_64.{AppImage,deb}` |
+| Linux x64 | `bun run dist:linux` | `Skiller-<version>-x86_64.AppImage`, `Skiller-<version>-linux-amd64.deb`, `Skiller-<version>-linux-x64.tar.xz` |
 
 There are two ways to produce all three without owning three machines.
 

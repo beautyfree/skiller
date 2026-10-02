@@ -131,7 +131,6 @@ jobs:
         run: |
           bun run build
           bun x electron-builder --linux --publish never
-          bun run scripts/patch-appimage-runtime.mjs ../../artifacts
 
   build-desktop:
     name: Build ${{ matrix.label }}
@@ -257,7 +256,6 @@ jobs:
         run: |
           bun run build
           bun x electron-builder --linux --publish never
-          bun run scripts/patch-appimage-runtime.mjs ../../artifacts
 
       - name: Smoke-test packaged Linux app
         if: matrix.platform == 'linux'
@@ -266,16 +264,14 @@ jobs:
           set -euo pipefail
           appimage="$(find artifacts -maxdepth 1 -name '*.AppImage' -print -quit)"
           [[ -n "$appimage" ]] || { echo "AppImage was not produced"; exit 1; }
-          # GitHub's Ubuntu image ships an older unsquashfs than the AppImage
-          # builder uses, so extracting the AppImage here produces a false
-          # negative. Electron-builder produces the same packaged application
-          # in linux-unpacked; launch that bundle under Xvfb and separately
-          # assert that the distributable AppImage exists above.
-          unpacked_dir="$(find artifacts -maxdepth 1 -type d -name 'linux-unpacked' -print -quit)"
-          [[ -n "$unpacked_dir" ]] || { echo "Unpacked Linux directory was not produced"; exit 1; }
-          app="$unpacked_dir/skiller"
-          [[ -f "$app" ]] || { echo "Unpacked Linux application was not produced"; exit 1; }
-          chmod +x "$app"
+          # Exercise the distributable itself: linux-unpacked cannot detect
+          # a broken filesystem offset introduced by runtime replacement.
+          appimage="$(realpath "$appimage")"
+          extract_dir="$(mktemp -d)"
+          trap 'rm -rf "$extract_dir"' EXIT
+          (cd "$extract_dir" && "$appimage" --appimage-extract)
+          app="$extract_dir/squashfs-root/AppRun"
+          [[ -x "$app" ]] || { echo "AppImage launcher was not extracted"; exit 1; }
           set +e
           timeout 10s xvfb-run -a "$app" --no-sandbox --disable-gpu
           status=$?
@@ -344,5 +340,5 @@ jobs:
             grep -q "version: ${version}" <<<"${manifest}"
           done
           grep -q '^Skiller-.*win-x64\.exe$' <<<"${assets}"
-          grep -q '^Skiller-.*linux-x86_64\.AppImage$' <<<"${assets}"
+          grep -q '^Skiller-.*-x86_64\.AppImage$' <<<"${assets}"
           grep -q '^Skiller-.*macos-arm64\.dmg$' <<<"${assets}"

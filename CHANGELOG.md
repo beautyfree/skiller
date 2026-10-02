@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.5](https://github.com/beautyfree/skiller/compare/v0.3.4...v0.3.5) (2026-10-02)
+
+
+### Bug Fixes
+
+* fit startup window to display and add catalog screenshot metadata ([#69](https://github.com/beautyfree/skiller/issues/69)) ([5dae41f](https://github.com/beautyfree/skiller/commit/5dae41fa153d3f4f46f33583f38a88788726a992))
+
 ## [0.3.4](https://github.com/beautyfree/skiller/compare/v0.3.3...v0.3.4) (2026-10-02)
 
 

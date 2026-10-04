@@ -576,6 +576,29 @@
         gap: 20px;
       }
 
+      .footer-directory {
+        flex-basis: 100%;
+        padding-top: 8px;
+      }
+
+      .footer-directory a {
+        display: inline-block;
+        border-radius: 9px;
+      }
+
+      .footer-directory a:focus-visible {
+        outline: 2px solid var(--violet);
+        outline-offset: 4px;
+      }
+
+      .footer-directory img {
+        display: block;
+        width: 195px;
+        max-width: 100%;
+        height: auto;
+        border: 0;
+      }
+
       @media (prefers-reduced-motion: reduce) {
         html {
           scroll-behavior: auto;
@@ -835,6 +858,25 @@
             href="https://github.com/beautyfree/skiller/blob/main/docs/DEVELOPMENT.md"
             >Develop</a
           >
+        </div>
+        <div class="footer-directory">
+          <!-- Launchpadly — Skiller (listed-on) -->
+          <a
+            href="https://launchpadly.co/startup/skiller?ref=badge"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-launchpadly-badge="skiller"
+            data-launchpadly-badge-variant="listed-on"
+          >
+            <img
+              src="https://launchpadly.co/embed/badges/startup/skiller.svg?variant=listed-on"
+              alt="Skiller listed on Launchpadly Startup Directory"
+              width="260"
+              height="48"
+              loading="lazy"
+              decoding="async"
+            />
+          </a>
         </div>
       </footer>
     </div>

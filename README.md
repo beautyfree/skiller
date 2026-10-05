@@ -1,8 +1,8 @@
-# Skiller
+# Skiller — AI agent skills manager
 
 ![Skiller — Your skills. One place.](docs/images/readme/banner-street-v1.webp)
 
-Install, sync, and manage skills with Skiller across your coding agents from one desktop app.
+Skiller is a desktop **AI agent skills manager** for Claude Code, Codex, Cursor and other coding agents. Find, install, edit and sync `SKILL.md` packages from one place, with support for macOS, Windows and Linux.
 
 ## Why Skiller
 

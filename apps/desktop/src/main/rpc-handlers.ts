@@ -1,5 +1,5 @@
-import { listSkillPresets, saveSkillPreset, removeSkillPreset, reviewSkillPreset, applySkillPreset } from './skill-presets'
-import type { SkillPresetReviewJson } from '../shared/rpc-schema'
+import { listSkillPresets, skillSelection, saveSkillPreset, removeSkillPreset, reviewSkillPreset, applySkillPreset } from './skill-presets'
+import type { SkillPresetJson, SkillPresetReviewJson } from '../shared/rpc-schema'
 import { loadRegisteredAgents, saveCustomAgent, removeCustomAgent } from './custom-agents'
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
@@ -1853,28 +1853,31 @@ export function createRequestHandlers(ctx: {
   let provenanceBaselineReady = false
   const reviewedLinkedPackageUpdates = new Map<string, LinkedSkillPackageUpdate>()
 
-  const presetReviews = new Map<string, { review: SkillPresetReviewJson; expires: number }>()
+  const presetReviews = new Map<string, { review: SkillPresetReviewJson; selection: SkillPresetJson | null; expires: number }>()
   const handlers = {
     list_skill_presets: async () => listSkillPresets(),
     save_skill_preset: async (params: unknown) => saveSkillPreset(params, scanAllSkills(loadDetectedAgents())),
     remove_skill_preset: async (params: { id: string }) => removeSkillPreset(params?.id),
-    review_skill_preset: async (params: { id: string; target: SkillPresetReviewJson['target'] }) => {
-      const preset = listSkillPresets().find(item => item.id === params?.id)
-      if (!preset) throw new Error('Skill set no longer exists')
+    review_skill_preset: async (params: AppRPCSchema['bun']['requests']['review_skill_preset']['params']) => {
+      if (!params || typeof params !== 'object' || ('id' in params) === ('skillIds' in params)) throw new Error('Choose a set or a skill selection')
       const agents = loadDetectedAgents()
-      const review = reviewSkillPreset(preset, params.target, scanAllSkills(agents), agents, listProjects())
+      const inventory = scanAllSkills(agents)
+      const selection = 'skillIds' in params ? skillSelection({ name: 'Selected skills', skillIds: params.skillIds }, inventory) : null
+      const preset = selection ?? listSkillPresets().find(item => item.id === ('id' in params ? params.id : null))
+      if (!preset) throw new Error('Skill set no longer exists')
+      const review = reviewSkillPreset(preset, params.target, inventory, agents, listProjects())
       const now = Date.now()
       for (const [id, entry] of presetReviews) if (entry.expires <= now) presetReviews.delete(id)
       if (presetReviews.size >= 16) presetReviews.delete(presetReviews.keys().next().value!)
       const reviewId = randomUUID()
-      presetReviews.set(reviewId, { review, expires: now + 5 * 60_000 })
+      presetReviews.set(reviewId, { review, selection, expires: now + 5 * 60_000 })
       return { ...review, reviewId }
     },
     apply_skill_preset: async (params: { reviewId: string }) => {
       const entry = presetReviews.get(params?.reviewId)
       presetReviews.delete(params?.reviewId)
       if (!entry || entry.expires <= Date.now()) throw new Error('Review expired; review the skill set again')
-      const preset = listSkillPresets().find(item => item.id === entry.review.presetId)
+      const preset = entry.selection ?? listSkillPresets().find(item => item.id === entry.review.presetId)
       if (!preset) throw new Error('Skill set no longer exists')
       const agents = loadDetectedAgents()
       const fresh = reviewSkillPreset(preset, entry.review.target, scanAllSkills(agents), agents, listProjects())

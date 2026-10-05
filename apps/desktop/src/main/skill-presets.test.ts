@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { applySkillPreset, listSkillPresets, removeSkillPreset, reviewSkillPreset, saveSkillPreset } from './skill-presets'
+import { applySkillPreset, listSkillPresets, removeSkillPreset, reviewSkillPreset, saveSkillPreset, skillSelection } from './skill-presets'
 import { scanAllSkills } from './scanner'
 import { defaultAgentConfig } from './types'
 
@@ -22,9 +22,12 @@ test('sets retain source identity, review changes, and add only missing skills a
     const preset = saveSkillPreset({ name: 'Frontend', skillIds: ['react', 'testing', 'react'] }, inventory, dir)
     expect(preset.skills).toHaveLength(2)
     expect(listSkillPresets(dir)[0]).toEqual(preset)
+    const selection = skillSelection({ name: 'Selected skills', skillIds: ['react', 'testing'] }, inventory)
+    expect(selection.skills).toEqual(preset.skills)
+    expect(listSkillPresets(dir)).toHaveLength(1)
     const agent = defaultAgentConfig({ slug: 'test-agent', name: 'Test agent', detected: true, global_paths: [join(root, 'agent/skills')], project_skills_dir: '.test/skills' })
     const target = { agents: [agent.slug] }
-    const review = reviewSkillPreset(preset, target, inventory, [agent], [])
+    const review = reviewSkillPreset(selection, target, inventory, [agent], [])
     expect(review.rows.map(row => row.state)).toEqual(['add', 'add'])
     expect(applySkillPreset(review).added).toHaveLength(2)
     expect(readFileSync(join(agent.global_paths[0]!, 'react/SKILL.md'), 'utf8')).toContain('Hello')

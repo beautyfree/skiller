@@ -1010,7 +1010,7 @@ export type AppRPCSchema = {
       list_skill_presets: { params?: void; response: SkillPresetJson[] };
       save_skill_preset: { params: { id?: string; name: string; skillIds: string[] }; response: SkillPresetJson };
       remove_skill_preset: { params: { id: string }; response: void };
-      review_skill_preset: { params: { id: string; target: SkillPresetReviewJson['target'] }; response: SkillPresetReviewJson & { reviewId: string } };
+      review_skill_preset: { params: ({ id: string } | { skillIds: string[] }) & { target: SkillPresetReviewJson['target'] }; response: SkillPresetReviewJson & { reviewId: string } };
       apply_skill_preset: { params: { reviewId: string }; response: { added: string[]; failed: { destination: string; reason: string }[]; skipped: number } };
       list_agents: { params?: void; response: AgentConfigJson[] };
       detect_agents: { params?: void; response: AgentConfigJson[] };

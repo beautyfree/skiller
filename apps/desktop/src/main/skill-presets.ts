@@ -33,10 +33,8 @@ export function listSkillPresets(dir = presetsDir()): SkillPresetJson[] {
   }).sort((a, b) => a.name.localeCompare(b.name))
 }
 
-export function saveSkillPreset(input: unknown, inventory: Skill[], dir = presetsDir()): SkillPresetJson {
+export function skillSelection(input: unknown, inventory: Skill[], previous?: SkillPresetJson | null): SkillPresetJson {
   const value = parseInput(saveSchema, input)
-  const previous = value.id ? listSkillPresets(dir).find(preset => preset.id === value.id) : null
-  if (value.id && !previous) throw new Error('Skill set no longer exists')
   const skills = [...new Set(value.skillIds)].map(id => {
     const skill = inventory.find(item => item.id === id && !item.collection)
     if (!skill) throw new Error(`Skill is no longer available: ${id}`)
@@ -45,7 +43,14 @@ export function saveSkillPreset(input: unknown, inventory: Skill[], dir = preset
     if (existing && existing.sourcePath !== sourcePath) throw new Error(`Skill source changed: ${id}. Remove it from the set before selecting a replacement.`)
     return { id, name: skill.name, sourcePath }
   })
-  const preset = { id: value.id ?? randomUUID(), name: value.name, skills }
+  return { id: value.id ?? randomUUID(), name: value.name, skills }
+}
+
+export function saveSkillPreset(input: unknown, inventory: Skill[], dir = presetsDir()): SkillPresetJson {
+  const value = parseInput(saveSchema, input)
+  const previous = value.id ? listSkillPresets(dir).find(preset => preset.id === value.id) : null
+  if (value.id && !previous) throw new Error('Skill set no longer exists')
+  const preset = skillSelection(value, inventory, previous)
   const file = join(dir, `${preset.id}.json`)
   if (value.id && !existsSync(file)) throw new Error('Skill set no longer exists')
   mkdirSync(dir, { recursive: true })

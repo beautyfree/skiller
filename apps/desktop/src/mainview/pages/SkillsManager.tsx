@@ -1056,7 +1056,6 @@ export default function SkillsManager() {
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <SkillPresets selectedIds={[...batchSelectedIds]} disabled={batchRunning || busyAgents.size > 0} />
             {batchSelectionMode ? (
               <Button
                 variant="ghost"
@@ -1191,6 +1190,8 @@ export default function SkillsManager() {
         )}
         </div>
 
+        <SkillPresets selectedIds={[...batchSelectedIds]} skills={skills} agentSlug={agents?.some(agent => agent.slug === filter && agent.detected) ? filter : undefined} disabled={batchRunning || busyAgents.size > 0} />
+
         {/* Skill list (virtualized) */}
         <InsetScrollArea scroll={false} className="mt-3 flex-1">
         {isLoading ? (
@@ -1232,8 +1233,8 @@ export default function SkillsManager() {
         {batchSelectionMode && (
           <div className="mt-3 shrink-0 border-t border-border/50 pt-3">
             <Button
-              variant="destructive"
-              className="w-full gap-1.5"
+              variant="ghost"
+              className="w-full gap-1.5 text-muted-foreground"
               disabled={!batchSelectedSkills.some(skill => directInstallSlugs(skill).length > 0) || batchRunning}
               onClick={() => setBatchConfirmOpen(true)}
             >

@@ -330,6 +330,11 @@ export default function SkillsManager() {
   const [batchSelectedIds, setBatchSelectedIds] = useState<Set<string>>(new Set());
   const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
   const [batchRunning, setBatchRunning] = useState(false);
+  useEffect(() => {
+    setBatchSelectionMode(false);
+    setBatchSelectedIds(new Set());
+    setBatchConfirmOpen(false);
+  }, [filter]);
   const [isPending, startTransition] = useTransition();
   const [panelMode, setPanelMode] = useState<"detail" | "editor">("detail");
   const listPane = useResizable(SKILL_LIST_PANE);
@@ -1230,7 +1235,7 @@ export default function SkillsManager() {
         )}
         </InsetScrollArea>
 
-        {batchSelectionMode && (
+        {batchSelectionMode && filter === "all" && (
           <div className="mt-3 shrink-0 border-t border-border/50 pt-3">
             <Button
               variant="ghost"

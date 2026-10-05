@@ -1,4 +1,4 @@
-# Publishes the static landing in /docs to GitHub Pages.
+# Builds the public landing and blog into .site, then publishes to GitHub Pages.
 #
 # Last failure (2026-04-16): configure-pages returned 404 "Get Pages site failed"
 # because Pages was not enabled for the repo. Fix either:
@@ -12,36 +12,60 @@ on:
     branches: ["main"]
     paths:
       - "docs/**"
+      - "website/**"
+      - "scripts/build-site.py"
+      - "scripts/test-site.py"
+      - "scripts/test-download.mjs"
+      - ".github/workflows/pages.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "website/**"
+      - "scripts/build-site.py"
+      - "scripts/test-site.py"
+      - "scripts/test-download.mjs"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+
+      - name: Build and validate public site
+        run: |
+          node --test scripts/test-download.mjs
+          python3 scripts/test-site.py
+          python3 scripts/build-site.py
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: ./.site
+
   deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
-
       - name: Setup Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
         with:
           enablement: true
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
-        with:
-          path: ./docs
 
       - name: Deploy to GitHub Pages
         id: deployment

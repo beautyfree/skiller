@@ -1,0 +1,46 @@
+<main id="main" class="download-page">
+  <header class="download-intro"><h1>Download Skiller</h1><p>A little order for your agent skills.<br>Install, edit and sync them from one desktop app.</p></header>
+  <section class="download-picker" aria-label="Choose your download">
+    <div id="download-controls" hidden>
+      <div class="platform-tabs" role="group" aria-label="Operating system">
+        <button type="button" data-platform="mac" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.1 12.5c0-2 1.6-3 1.7-3.1-1-1.5-2.5-1.7-3.1-1.7-1.3-.1-2.5.8-3.2.8-.7 0-1.8-.8-2.9-.8-1.5 0-2.9.9-3.7 2.2-1.6 2.7-.4 6.7 1.2 8.9.8 1.1 1.7 2.2 2.9 2.1 1.1 0 1.6-.7 3-.7s1.8.7 3 .7 2-1.1 2.8-2.2c.9-1.3 1.3-2.6 1.3-2.7-.1 0-3-.9-3-3.5ZM15 6.2c.6-.8 1.1-1.9 1-3-.9 0-2.1.6-2.8 1.4-.6.7-1.2 1.8-1 2.9 1 .1 2.1-.5 2.8-1.3Z"/></svg>macOS</button>
+        <button type="button" data-platform="windows" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 5 8-1v7H3zm10-1 8-1v8h-8zM3 13h8v7l-8-1zm10 0h8v8l-8-1z"/></svg>Windows</button>
+        <button type="button" data-platform="linux" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m7 8 4 4-4 4 1.3 1.3 5.3-5.3-5.3-5.3ZM14 15h4v2h-4Z"/></svg>Linux</button>
+      </div>
+      <label for="download-os" hidden>Operating system</label><select id="download-os" hidden><option value="">Choose your system</option><option value="mac">macOS</option><option value="windows">Windows</option><option value="linux">Linux</option></select>
+      <div class="build-choice"><label class="visually-hidden" for="download-variant">Build</label><select id="download-variant" disabled></select><p id="download-single-build" hidden></p></div>
+      <a class="download-primary" id="download-action" hidden>Download Skiller</a>
+      <p id="download-status" role="status" aria-live="polite">Checking the latest release…</p>
+      <p id="download-detail" class="download-detail"></p>
+      <p id="download-guidance" hidden>Not sure which Mac? Check Apple menu → About This Mac.<br>“Chip” means Apple silicon; “Processor” means Intel.</p>
+      <button id="download-retry" type="button" hidden>Try again</button>
+    </div>
+    <p id="download-fallback">Choose the installer for your computer from the <a href="https://github.com/beautyfree/skiller/releases/latest">latest Skiller release on GitHub</a>. Installation steps are below.</p>
+  </section>
+  <section class="install-panel" data-install="mac" aria-labelledby="mac-install-title">
+    <h2 id="mac-install-title">Install on your Mac</h2>
+    <ol class="install-steps">
+      <li><h3>Open the disk image</h3><p>Open the downloaded <strong>.dmg</strong> file from your Downloads folder.</p></li>
+      <li><h3>Drag into Applications</h3><p>Drag <strong>Skiller</strong> onto the Applications folder in the window.</p></li>
+      <li><h3>Open Skiller</h3><p>Open Skiller from Applications. Confirm the macOS prompt to open the downloaded app.</p></li>
+    </ol>
+  </section>
+  <section class="install-panel" data-install="windows" aria-labelledby="windows-install-title">
+    <h2 id="windows-install-title">Install on Windows</h2>
+    <ol class="install-steps">
+      <li><h3>Open the installer</h3><p>Open the downloaded <strong>.exe</strong> file in Downloads. This build is for Intel / AMD 64-bit Windows.</p></li>
+      <li><h3>Follow the setup steps</h3><p>Follow the installer’s prompts. If Windows shows a security warning, check the publisher and file before continuing.</p></li>
+      <li><h3>Launch Skiller</h3><p>Open Skiller from the Start menu and explore your skill library.</p></li>
+    </ol>
+  </section>
+  <section class="install-panel" data-install="linux" aria-labelledby="linux-install-title">
+    <h2 id="linux-install-title">Install on Linux</h2>
+    <p class="install-description">Linux builds are for Intel / AMD 64-bit computers. Choose the format that fits your distribution.</p>
+    <div data-linux-format="linux-appimage"><ol class="install-steps"><li><h3>Download the AppImage</h3><p>Save the AppImage from the latest release.</p></li><li><h3>Allow it to run</h3><p>In your file manager, open the file’s properties and enable execution as a program.</p></li><li><h3>Open Skiller</h3><p>Double-click the AppImage. If it won’t launch, try the Debian package or tar archive for your distribution.</p></li></ol></div>
+    <div data-linux-format="linux-deb"><ol class="install-steps"><li><h3>Download the package</h3><p>Choose the Debian / Ubuntu build and save the <strong>.deb</strong> file.</p></li><li><h3>Install the package</h3><p>Open the file with your package installer and confirm installation. You may need your administrator password.</p></li><li><h3>Launch Skiller</h3><p>Open Skiller from your application menu.</p></li></ol></div>
+    <div data-linux-format="linux-tar"><ol class="install-steps"><li><h3>Extract the archive</h3><p>Extract the downloaded <strong>.tar.xz</strong> into a folder you’ll keep.</p></li><li><h3>Run the included installer</h3><p>Open a terminal in the extracted Skiller folder, then run <code>./install.sh</code>. It configures the sandbox and registers a menu entry.</p></li><li><h3>Open Skiller</h3><p>Launch Skiller from your application menu. Keep the extracted folder in place.</p></li></ol></div>
+  </section>
+  <section class="other-downloads" aria-label="Other download options"><h2>Other download options</h2><div id="download-alternatives" hidden><button type="button" data-build="mac-arm64">Apple silicon</button><button type="button" data-build="mac-x64">Intel Mac</button><button type="button" data-build="windows-x64">Windows</button><button type="button" data-build="linux-appimage">AppImage</button><button type="button" data-build="linux-deb">Debian / Ubuntu</button><button type="button" data-build="linux-tar">Linux archive</button></div><a id="release-link" href="https://github.com/beautyfree/skiller/releases/latest">All releases on GitHub</a></section>
+  <section class="download-help" aria-labelledby="download-help-title"><h2 id="download-help-title">Ready to explore?</h2><p>Start with <a href="/blog/what-are-agent-skills/">a guide to agent skills</a>, or visit <a href="https://github.com/beautyfree/skiller/issues">GitHub issues</a> if you need help installing.</p></section>
+</main>
+<script src="/assets/download.mjs?v=2" type="module"></script>

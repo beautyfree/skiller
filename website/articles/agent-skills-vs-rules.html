@@ -1,0 +1,32 @@
+<h2 id="skiller-role">What belongs in your Skiller library</h2>
+<p>Skiller manages installed agent skills: you can inspect their instructions, edit <code>SKILL.md</code> and synchronize copies across selected agents. Use that library for reusable procedures you want to discover and invoke. Keep repository-specific commands and conventions in the project's instruction files.</p>
+<p>For example, keep a general release-review procedure as a skill, then have it read the active repository's instructions for the test command and release-note location. When you inspect the skill in Skiller, check that it refers to project guidance instead of carrying an obsolete copy of it.</p>
+<p>This also makes updates easier to reason about. A change to one repository's build command belongs in that repository. A better method for checking release claims belongs in the shared skill, which you can review and sync to the clients that use it.</p>
+<h2 id="different-jobs">Separate project facts from procedures</h2>
+<p>When an agent ignores an instruction, adding another copy of it can feel like the fastest fix. Over time, the repository file, several skills and personal rules disagree. A better starting point is deciding where each instruction belongs and which source owns future updates.</p>
+<p>Repository instructions describe the project: its commands, architecture, conventions and boundaries. A skill describes a repeatable procedure: how to review a migration, investigate a bug or prepare release notes. The task prompt supplies the current request, inputs and scope. These can work together without repeating every instruction in every file.</p>
+<h2 id="mapping">Choose the appropriate location</h2>
+<div class="table-wrap"><table><caption>Match the instruction to its job</caption><thead><tr><th>Instruction</th><th>Suggested home</th></tr></thead><tbody><tr><td>Use the repository's package manager and test command</td><td>Repository instructions</td></tr><tr><td>Review database migrations for compatibility</td><td>A migration-review skill</td></tr><tr><td>Review this diff without publishing anything</td><td>The current task prompt</td></tr><tr><td>Apply a convention only to a specific file type</td><td>A supported scoped rule</td></tr></tbody></table></div>
+<p>Each client has its own mechanism for loading instructions. Codex documents <code>AGENTS.md</code>; Cursor provides rules and documents its support for project instructions and skills. Consult the target client's documentation for scope and precedence. A familiar filename does not guarantee identical behavior across clients.</p>
+<h2 id="example">Split a release workflow cleanly</h2>
+<p>Suppose your team prepares a release every Friday. The project instructions can state the real build and test commands, where release notes live and which generated files should not be edited. Those facts belong close to the code and should change when the project changes.</p>
+<p>A release-review skill can tell the agent to compare notes with the requested Git range, identify user-visible changes, inspect migrations and report unsupported claims. It should read the repository instructions to learn the project's actual commands rather than bundling an outdated copy of them.</p>
+<pre><code># Repository instruction
+Use the documented project commands for build and tests.
+Release notes are maintained in CHANGELOG.md.
+
+# Skill procedure
+1. Read repository instructions.
+2. Compare the supplied release notes with the requested diff.
+3. Verify claims and report missing migration guidance.
+
+# Task prompt
+Review these notes against main...release-candidate.
+Do not edit files or publish the release.</code></pre>
+<p>This division makes the workflow portable. Another repository can use the same procedure with different commands and a different release-note location. Read <a href="/blog/how-to-write-skill-md/">how to write SKILL.md</a> for a complete procedural example.</p>
+<h2 id="avoid-duplicates">Avoid duplicated authority</h2>
+<p>If a skill and a repository file both define the test command, choose one owner. Leave a reference in the other location where appropriate. Do not turn a portable skill into an inventory of every repository you use; have it locate and read the project's guidance.</p>
+<p>Keep personal style preferences separate from shared engineering requirements. A global preference suitable for a solo project may be wrong in a team repository. If the agent reports conflicting instructions, resolve the source conflict before expanding the skill. Do not assume a procedural file can override the client's higher-priority instructions.</p>
+<h2 id="check-loading">Check which instruction was loaded</h2>
+<p>Before changing content, verify the active project and the paths your client scans. A missing nested instruction file and an ambiguous skill trigger are different failures. Test a small task that reveals the relevant convention, then invoke the skill explicitly to check its procedure.</p>
+<p>When using several clients, maintain the shared content deliberately and test each supported environment. The <a href="/blog/sync-skills-across-agents/">cross-agent sharing guide</a> covers copy management. Shared text is useful, but client scope and selection behavior still need their own verification.</p>

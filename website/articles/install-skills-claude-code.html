@@ -1,0 +1,42 @@
+<h2 id="choose-scope">Choose project or personal scope</h2>
+<p>Claude Code discovers skills in different locations depending on how widely they should apply. Put a project workflow in the repository so its instructions can travel with the code. Put a personal workflow in your home directory when you want to use it across projects.</p>
+<div class="table-wrap" role="region" aria-label="Claude Code skill locations" tabindex="0"><table><caption>Common local Claude Code skill locations</caption><thead><tr><th scope="col">Scope</th><th scope="col">Location</th><th scope="col">Use it for</th></tr></thead><tbody><tr><td>Project</td><td><code>.claude/skills/&lt;name&gt;/SKILL.md</code></td><td>Workflows reviewed with the repository</td></tr><tr><td>Personal</td><td><code>~/.claude/skills/&lt;name&gt;/SKILL.md</code></td><td>Your own reusable procedures</td></tr></tbody></table></div>
+<p>Claude Code also supports skills delivered through plugins and other managed arrangements. This guide covers ordinary local directories. Consult <a href="https://code.claude.com/docs/en/skills">Claude Code's official skills documentation</a> for current discovery and precedence rules.</p>
+<p>Start with project scope if the skill depends on this repository's build commands or product terminology. Avoid making those assumptions global: a useful procedure for one project can be misleading in another.</p>
+<h2 id="create-skill">Create a small local skill</h2>
+<p>From the project root, create a directory for a skill named <code>review-change</code>. These commands use a Unix-like shell; on Windows, create the same directories and file with your editor or PowerShell.</p>
+<pre><code>mkdir -p .claude/skills/review-change
+# Create .claude/skills/review-change/SKILL.md in your editor.</code></pre>
+<p>Save this file before starting the test:</p>
+<pre><code>---
+name: review-change
+description: Review a local code diff for correctness and regressions. Use when asked to review uncommitted changes.
+---
+
+# Review a change
+
+Read the repository instructions and inspect the diff.
+Trace affected callers and check error paths.
+Report actionable findings with file locations.
+State what you verified and what you could not verify.
+Do not commit, push or deploy.</code></pre>
+<p>For personal scope, use <code>~/.claude/skills/review-change/SKILL.md</code> instead. Do not put both copies in place merely to make discovery more likely; overlapping names complicate understanding which instructions the client selects.</p>
+<h2 id="invoke">Confirm discovery and invoke it</h2>
+<p>Open Claude Code in the project. Enter <code>/review-change</code> to explicitly select the skill. Claude Code can also select a skill based on its description when a task matches it, unless invocation controls disable that behavior.</p>
+<p>Test against a small local change whose expected result you know. Check that the response follows the procedure, identifies the files it inspected and does not claim checks it never ran. Discovery is successful when the client recognizes the skill; workflow verification requires observing its result.</p>
+<p>If the skill is absent from the command list, confirm the location, file name and frontmatter, then reload or start a fresh session. Check the installed client's documentation before assuming hot reload works for every kind of skill or plugin.</p>
+<h2 id="community-skills">Install a community skill carefully</h2>
+<p>A community repository may contain several skill directories. Select the particular directory you need and review its complete content. Copy its supporting files along with <code>SKILL.md</code>; references and scripts may be required by the procedure.</p>
+<ul><li>Identify the repository and the version or commit you reviewed.</li><li>Read the frontmatter, instructions and any executable scripts.</li><li>Check dependencies such as CLIs, shell commands and MCP servers.</li><li>Inspect an existing target directory before replacing it.</li><li>Test the installed skill on a limited task.</li></ul>
+<p>Do not treat a skill's instructions as permission to publish, access credentials or transmit private files. The task's authorization still matters. For a fuller explanation of the format, see <a href="/blog/what-are-agent-skills/">what agent skills are</a>.</p>
+<h2 id="with-skiller">Use Skiller to inspect and manage installations</h2>
+<figure class="article-hero"><img src="/images/screenshots/skills-1600.webp" srcset="/images/screenshots/skills-800.webp 800w, /images/screenshots/skills-1600.webp 1600w" sizes="(max-width: 792px) calc(100vw - 32px), 760px" width="1600" height="1129" alt="Skiller Skills Manager with a skill list, agent targets and a Markdown editor" loading="lazy" decoding="async"><figcaption>The Skills Manager makes installed content and agent targets visible before you synchronize.</figcaption></figure>
+<p>Skiller provides a desktop view of skills and detected coding agents. Its Skills Manager lets you inspect a skill's content and agent targets, edit <code>SKILL.md</code> with a Markdown preview and synchronize selected installations. The Marketplace supports discovering skills from skills.sh and ClawHub; additional sources can come from a Git URL or local folder.</p>
+<p>Install Claude Code itself first, then open Skiller and confirm it is detected. A skills directory alone is not proof that the agent is installed. Inspect the destination before synchronizing, especially if it already contains your own version of the skill.</p>
+<p>After installation, return to Claude Code for the invocation test. A successful copy in a manager does not demonstrate that the client discovered or followed the skill.</p>
+<h2 id="troubleshooting">When the skill does not appear</h2>
+<p><strong>Check the exact file name.</strong> It must be <code>SKILL.md</code> inside the skill's directory. A file named <code>review-change.md</code> directly under the skills root is a different arrangement.</p>
+<p><strong>Check the working directory.</strong> A project skill needs to be in the project context Claude Code is using. Opening a different checkout can mean looking at a different copy of the skill.</p>
+<p><strong>Check frontmatter and invocation controls.</strong> Use valid YAML. If you copied a skill with client-specific fields, inspect whether those fields restrict user invocation or automatic selection.</p>
+<p><strong>Check references and dependencies.</strong> A skill may appear but fail because it references a file that was not copied, or a CLI that is missing. Report that as an execution problem rather than a discovery problem.</p>
+<p>If you also use Codex or Cursor, read <a href="/blog/sync-skills-across-agents/">how to share skills across agents</a> before creating extra copies. Shared formats do not eliminate differences in discovery paths.</p>

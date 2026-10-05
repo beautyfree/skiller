@@ -1,0 +1,36 @@
+<h2 id="format-paths">One format, several discovery paths</h2>
+<p>Claude Code, Codex and Cursor can work with skills built around <code>SKILL.md</code>. That shared format makes instructions portable. It does not mean that every client discovers the same directory, supports every optional field or provides the same tools.</p>
+<p>Before copying a skill, separate three questions: where is its source, where should each client discover it and what does the procedure require at runtime? This prevents a common failure: treating a successful file copy as a successful integration.</p>
+<div class="table-wrap" role="region" aria-label="Agent project skill directories" tabindex="0"><table><caption>Project directories documented by the clients</caption><thead><tr><th scope="col">Agent</th><th scope="col">Project location</th><th scope="col">What to check</th></tr></thead><tbody><tr><td>Claude Code</td><td><code>.claude/skills/</code></td><td>Command discovery and invocation controls</td></tr><tr><td>Codex</td><td><code>.agents/skills/</code></td><td>Working-directory discovery and selected skill path</td></tr><tr><td>Cursor</td><td><code>.agents/skills/</code> or <code>.cursor/skills/</code></td><td>Shared, native and compatibility-path discovery</td></tr></tbody></table></div>
+<p>Cursor also documents compatibility directories, including Claude and Codex paths. That can be useful, but it makes duplicate copies more likely. Check what your installed version already sees before creating another directory.</p>
+<h2 id="source-of-truth">Choose a source of truth</h2>
+<p>Pick one place where edits happen. A team might keep portable project skills in a repository. A personal library might come from a separate Git repository or a local directory. The target copies should have a clear relationship to that source.</p>
+<p>A small team can start with a simple review process: edit the source, inspect the diff, test the procedure and then update selected targets. Avoid editing several agent copies independently unless you intentionally want different behavior.</p>
+<pre><code>skill-library/
+└── review-change/
+    ├── SKILL.md
+    └── references/
+        └── review-checklist.md
+
+Targets depend on client and scope:
+  Claude Code → .claude/skills/review-change/
+  Codex       → .agents/skills/review-change/
+  Cursor      → a documented shared or native location</code></pre>
+<p>The arrows describe placement, not a requirement to create three physical copies. If two clients already consume the same shared directory, use that deliberately and verify it. A filesystem symlink is another possible arrangement, but support, permissions and platform behavior need to be checked before relying on it.</p>
+<h2 id="inspect-before-sync">Inspect before synchronizing</h2>
+<p>Read the target before replacing it. An existing directory can contain local edits, supporting files or a different skill with the same name. Compare the whole skill directory, rather than only the Markdown file, because a script or reference update can change behavior.</p>
+<ol><li>Confirm the source repository or local directory and the version you reviewed.</li><li>List the intended clients and choose project or personal scope.</li><li>Inspect existing target content and preserve changes you still need.</li><li>Copy or synchronize the complete directory.</li><li>Open each client and verify discovery and a representative task.</li></ol>
+<p>For a Git source, an immutable commit identifies exactly what you tested. A branch name alone can move between installations. Keep enough provenance to explain why two machines behave differently.</p>
+<h2 id="skiller-workflow">What Skiller adds to the workflow</h2>
+<figure class="article-hero"><img src="/images/screenshots/dashboard-1600.webp" srcset="/images/screenshots/dashboard-800.webp 800w, /images/screenshots/dashboard-1600.webp 1600w" sizes="(max-width: 792px) calc(100vw - 32px), 760px" width="1600" height="1129" alt="Skiller dashboard showing detected coding agents and their skill counts" loading="lazy" decoding="async"><figcaption>Start by inspecting the agents and installations you already have.</figcaption></figure>
+<p>Skiller provides a desktop inventory of detected agents and installed skills. Its Skills Manager shows skill content and the agents that consume it, offers a Markdown editor and supports synchronizing installations. Sources can be registered from a Git URL or local folder, while the Marketplace offers skills.sh and ClawHub discovery.</p>
+<p>The practical benefit is visibility: you can inspect the current content and destination paths before changing a set of agent installations. Start with a single reviewed skill and a small set of targets. Confirm the path and scope in the app rather than assuming a shared directory always applies.</p>
+<p>Agent detection and skill discovery are different. Skiller's detection guards do not treat an otherwise empty skills directory as proof of an installed agent. Install the client first, then confirm detection and test the skill inside that client.</p>
+<h2 id="portable-instructions">Keep the instructions portable</h2>
+<p>Use the shared frontmatter fields for the core procedure. Document required CLIs, operating-system assumptions and external services. Client-specific invocation controls belong in a consciously maintained variant when the same file cannot serve every target.</p>
+<p>A review skill that reads a diff is relatively portable. A skill that invokes a particular MCP tool name, assumes a macOS-only app or depends on a shell script has a larger compatibility surface. Test those dependencies in each environment; copying the directory does not provide them.</p>
+<p>If tool access is the uncertain part, read <a href="/blog/agent-skills-vs-mcp/">skills vs MCP</a>. A skill describes the procedure, while an MCP connection supplies separately configured capabilities.</p>
+<h2 id="verify-and-update">Verify updates and diagnose drift</h2>
+<p>After an update, confirm which file each client selected and run the same small test task. Record what changed and which targets were checked. If only one client behaves differently, inspect its selected path, optional metadata and available tools before rewriting the shared instructions.</p>
+<ul><li><strong>Content drift:</strong> compare source and target directories, including references and scripts.</li><li><strong>Discovery drift:</strong> check working directory, scope, duplicate names and client reload behavior.</li><li><strong>Environment drift:</strong> check CLI versions, permissions and MCP configuration.</li><li><strong>Procedure drift:</strong> retest assumptions when the product or repository changes.</li></ul>
+<p>A library stays maintainable when its ownership and verification are clear. Keep the source understandable, keep the target set intentional and make the client test part of installation rather than an optional last step.</p>

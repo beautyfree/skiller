@@ -141,7 +141,7 @@ export default function OnboardingWizard({
 								className="size-20 select-none drop-shadow-sm invert dark:invert-0"
 								draggable={false}
 							/>
-							<p className="text-3xl font-[590] tracking-tight">
+							<p className="brand-wordmark text-3xl">
 								Skiller
 							</p>
 							<h2 className="mt-1 text-xl font-[590] tracking-tight">

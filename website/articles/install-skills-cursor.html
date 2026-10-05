@@ -1,0 +1,38 @@
+<h2 id="manage-cursor-skills">Inspect your Cursor skills in Skiller</h2>
+<p>If you already use several coding agents, start by looking at your installed library in <a href="/">Skiller</a>. Open Skills Manager, find the skill you want to use and inspect its <code>SKILL.md</code> content and associated agents. This lets you compare an existing copy before adding another directory with the same name.</p>
+<p>For a community skill, open Marketplace, search for the workflow and preview its source repository and target agents before installation. Review the package first, then choose the intended target. For a skill you wrote yourself, the manual project layout below gives you a small reproducible starting point. After either route, verify selection and execution in Cursor.</p>
+<p>Keep project scope deliberate. A procedure for one repository should not become a personal skill applied across all your projects. Skiller provides project-scoped management; Cursor's documentation determines which directory the running client actually reads.</p>
+<h2 id="choose-scope">Choose project or personal scope</h2>
+<p>Cursor supports skills as directories containing a <code>SKILL.md</code> file. The first decision is where that directory belongs. A project skill travels with the repository and can describe a workflow shared by contributors. A personal skill belongs to your local environment and is useful across projects. Avoid putting private preferences or machine-specific paths into a shared repository.</p>
+<p>The current Cursor documentation lists <code>.agents/skills/</code> and <code>.cursor/skills/</code> for project skills, and <code>~/.agents/skills/</code> and <code>~/.cursor/skills/</code> for personal skills on the local machine. It also documents compatibility with Claude and Codex skill directories. Choose one source for your example instead of installing duplicate copies into every supported location.</p>
+<h2 id="create-directory">Create a complete skill directory</h2>
+<p>For a portable project example, create this structure at the repository root. The directory name and frontmatter name should match. Keep the exact capitalization of <code>SKILL.md</code>; a file called <code>skill.md</code> is a different filename on a case-sensitive filesystem.</p>
+<pre><code>.agents/
+└── skills/
+    └── review-release-notes/
+        └── SKILL.md</code></pre>
+<p>Use an editor to create the file with the following content. This example is intentionally limited to a review: installing it does not authorize publishing a release.</p>
+<pre><code>---
+name: review-release-notes
+description: Review release notes against a supplied Git diff. Use when checking a release announcement for missing or unsupported claims.
+---
+
+# Review release notes
+
+1. Read the repository instructions.
+2. Ask for the release notes and Git range if missing.
+3. Compare each user-visible claim with the diff.
+4. Flag missing changes and unsupported statements.
+5. Report findings with file locations and suggested wording.
+
+Do not publish, tag, push, or edit unrelated files.</code></pre>
+<p>If your skill references a template or script, copy those files into the same skill directory too. A discovered instruction that points to a missing resource is still an incomplete installation. See the <a href="/blog/how-to-write-skill-md/">SKILL.md authoring guide</a> for the shared format.</p>
+<h2 id="invoke-skill">Invoke it in Agent chat</h2>
+<p>Open the project in Cursor. Type <code>/</code> in Agent chat and search for the skill name. Cursor documents manual invocation as attaching the skill to a message. Select it and ask for a small review using a known diff and a short release note. Confirm that the response addresses the supplied material rather than merely describing the skill.</p>
+<p>Automatic discovery and successful execution are separate checks. Once explicit invocation works, start a fresh chat and ask naturally for the workflow. If the agent does not select it, improve the description so it names the real task and trigger. Adding broad keywords can make a skill fire on unrelated requests.</p>
+<h2 id="remote-environments">Check remote environments separately</h2>
+<p>A personal skill on your laptop is not automatically available wherever Cursor runs an agent. The documentation distinguishes local personal skills from Cloud Agents, remote SSH sessions and self-hosted workers. For team workflows, repository skills are easier to make available with the project. Use the documented synchronization or team publication path when you need personal skills in a supported remote environment.</p>
+<p>Check resources as well as instructions: a local absolute path, installed CLI or credential may be absent remotely. Document dependencies, then run the same bounded task in the actual target environment. A successful local invocation proves local behavior only.</p>
+<h2 id="verify-installation">Verify before adding more skills</h2>
+<ul><li>Confirm the intended project and discovery directory.</li><li>Check frontmatter, filename and supporting files.</li><li>Run an explicit invocation with recognizable inputs.</li><li>Test automatic selection in a fresh chat.</li><li>Check permissions and dependencies where the agent runs.</li></ul>
+<p>If the skill remains missing, follow the <a href="/blog/troubleshoot-agent-skills/">troubleshooting checklist</a> before reinstalling. Skiller can help inspect your library and copies, but the final check belongs in Cursor itself.</p>

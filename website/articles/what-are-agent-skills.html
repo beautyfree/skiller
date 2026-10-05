@@ -1,0 +1,41 @@
+<h2 id="what-is-a-skill">What is an agent skill?</h2>
+<p>An agent skill is a reusable procedure that an AI agent can discover and load when a task calls for it. It lives in a directory, with a <code>SKILL.md</code> file at its center. That file describes when to use the skill and gives the agent instructions for carrying out the work. Supporting files can include scripts, reference documents and templates.</p>
+<p>Think of a skill as a written playbook. A code-review skill might explain how to examine a change, which failure modes to check and how to report findings. A release skill might describe the order of checks, the artifacts to inspect and where approval is required. The skill provides the procedure; the agent still needs access to the relevant files and tools.</p>
+<p>The <a href="https://agentskills.io/specification">Agent Skills specification</a> defines the portable core of this format. Individual clients decide where they discover skills, how users invoke them and which extra metadata they support. A valid file is a starting point, not proof that every agent will run it identically.</p>
+<h2 id="inside-skill-md">Inside a SKILL.md file</h2>
+<p>The file has two parts: YAML frontmatter and a Markdown body. In the shared specification, <code>name</code> and <code>description</code> are required. The name identifies the skill; the description helps the agent decide when it is relevant.</p>
+<pre><code>---
+name: review-pull-request
+description: Review a code change for correctness and regressions. Use when asked to review a pull request or local diff.
+---
+
+# Review a pull request
+
+1. Read the repository instructions and the diff.
+2. Trace the changed behavior through its callers.
+3. Check failure paths and compatibility.
+4. Report actionable findings with file locations.
+5. State which checks you ran and what remains unverified.</code></pre>
+<p>This example describes a workflow without granting new permissions. It does not authorize a push, a merge or access to a private service. Those decisions remain governed by the user's instructions and the agent's environment.</p>
+<p>Put larger reference material next to the file rather than pasting everything into the main instructions:</p>
+<pre><code>review-pull-request/
+├── SKILL.md
+├── references/
+│   └── review-checklist.md
+└── scripts/
+    └── check-links.py</code></pre>
+<p>Reference supporting files from the skill using paths relative to its directory. A script is optional. If a few written steps are enough, the skill does not need an executable component.</p>
+<h2 id="skills-prompts-rules">Skills, prompts and repository rules</h2>
+<p>A prompt describes the work you want right now. A skill preserves a repeatable method. Repository instructions such as <code>AGENTS.md</code> or <code>CLAUDE.md</code> preserve project conventions. These overlap in subject matter, but have different jobs.</p>
+<div class="table-wrap" role="region" aria-label="Skills, prompts and rules compared" tabindex="0"><table><caption>Choose the right place for an instruction</caption><thead><tr><th scope="col">Format</th><th scope="col">Good use</th><th scope="col">Example</th></tr></thead><tbody><tr><td>Task prompt</td><td>A specific request and its boundaries</td><td>Review this change; do not deploy it.</td></tr><tr><td>Repository rules</td><td>Facts and conventions for this codebase</td><td>Use Bun; preserve the existing API contract.</td></tr><tr><td>Agent skill</td><td>A procedure reused across tasks</td><td>Trace a bug, reproduce it, fix it, then verify.</td></tr><tr><td>MCP server</td><td>Access to tools or external data</td><td>Read issue details from an authorized service.</td></tr></tbody></table></div>
+<p>Keep project facts in the repository and put a repeatable procedure into a skill when it becomes useful across tasks. If you want the deeper distinction between instructions and tool access, read <a href="/blog/agent-skills-vs-mcp/">agent skills vs MCP</a>.</p>
+<h2 id="how-skills-load">How agents discover and load skills</h2>
+<p>Skills are designed around progressive disclosure. An agent can start with a skill's name and description, then read the full instructions when it selects that skill. Supporting references can be read later as needed. This helps avoid putting every workflow into every conversation.</p>
+<p>Discovery depends on the client. Claude Code supports project and personal skill directories. Codex uses <code>.agents/skills/</code> for repository skills. Cursor supports the shared directory as well as its own directories and compatibility paths. Explicit invocation also differs: Claude Code exposes skills as slash commands, while Codex provides a skill selector and dollar-prefixed mentions.</p>
+<p>Installing a directory is therefore only half the check. Open the target agent, confirm that it recognizes the skill and ask it to perform a small representative task. Restart or reload the client if its documentation requires it.</p>
+<h2 id="when-to-use">When a skill is worth creating</h2>
+<p>A skill pays off when the same procedure recurs and the sequence matters. Good candidates include reviewing migrations, preparing release notes, checking a landing page or turning a document into a specific output format. A vague instruction such as “write good code” usually adds less than a concrete checklist with a clear end condition.</p>
+<ul><li><strong>Start with one task:</strong> choose a workflow you already perform, not an imagined library of future workflows.</li><li><strong>Define the trigger:</strong> say when to select the skill and when a simpler task does not need it.</li><li><strong>Define completion:</strong> describe the artifact or evidence the agent should produce.</li><li><strong>Try a failure case:</strong> make sure missing input or a failed command leads to an honest report.</li></ul>
+<h2 id="manage-library">Keep the library understandable</h2>
+<p>As the collection grows, the hard part becomes knowing which version is installed where. Similar names, stale copies and different agent paths make manual copying difficult to audit. Skiller provides a desktop view of installed skills, their agent targets and their content, with an editor and synchronization controls.</p>
+<p>Start with <a href="/blog/how-to-write-skill-md/">writing your first SKILL.md</a>, then install it in one agent before sharing it more widely. A small library with tested procedures is easier to maintain than a large collection whose behavior you have never checked.</p>

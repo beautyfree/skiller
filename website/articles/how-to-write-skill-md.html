@@ -1,0 +1,61 @@
+<h2 id="choose-workflow">Choose one repeatable workflow</h2>
+<p>The best starting point for a skill is an instruction you have already repeated. Perhaps you keep explaining how to review a database migration, prepare a changelog or check a web page for broken links. Write down what the agent needs to inspect, the decisions it should make and the evidence that tells you it has finished.</p>
+<p>Keep the scope narrow enough to test. “Improve our engineering” has no clear finish. “Review a migration for compatibility with the previous application version” does. If two tasks need different inputs and checks, they may deserve separate skills.</p>
+<p>Before creating a skill, check whether a repository instruction or a short task prompt already owns the requirement. A skill is useful when it packages a reusable procedure, rather than repeating facts that belong in the project.</p>
+<h2 id="write-frontmatter">Write frontmatter that helps discovery</h2>
+<p>A portable <code>SKILL.md</code> begins with YAML frontmatter. Use a lowercase name with hyphens, keep it consistent with the containing directory and describe both the task and the trigger. The Agent Skills specification limits a name to 64 characters and a description to 1,024 characters.</p>
+<pre><code>---
+name: check-release-notes
+description: Check release notes against a Git diff and flag missing user-visible changes. Use when preparing or reviewing a release announcement.
+---</code></pre>
+<p>“A helpful release skill” gives the agent little reason to select it. The example above says what it checks and when it should run. Avoid packing unrelated keywords into the description: discovery should match the actual procedure.</p>
+<p>Client-specific fields can be useful, but they reduce portability. For example, Claude Code supports invocation controls beyond the shared format. Add them deliberately and test the skill in every client you intend to use.</p>
+<h2 id="complete-example">A complete, small skill</h2>
+<p>Create <code>check-release-notes/SKILL.md</code> and give the agent an ordered workflow. This example reviews text and evidence; it does not publish a release.</p>
+<pre><code>---
+name: check-release-notes
+description: Check release notes against a Git diff and flag missing user-visible changes. Use when preparing or reviewing a release announcement.
+---
+
+# Check release notes
+
+## Inputs
+Ask for the release notes and the Git range if they are missing.
+Read repository instructions before inspecting code.
+
+## Procedure
+1. Read the notes and inspect the requested diff.
+2. Identify user-visible additions, fixes and breaking changes.
+3. Match each claim in the notes to evidence in the diff.
+4. Flag omissions, unsupported claims and migration steps.
+5. Suggest revised wording for each actionable issue.
+
+## Boundaries
+Do not publish, tag, push or edit unrelated files.
+Do not call a build released because a local test passed.
+
+## Output
+List actionable findings with supporting file locations.
+Then state what was checked and what remains unverified.
+If no findings are supported, say so.</code></pre>
+<p>The structure separates inputs, procedure, boundaries and output. That makes it easier to see whether a missing input should stop the workflow or whether the agent can continue with available evidence. Your own skill can be shorter when those details are already obvious.</p>
+<h2 id="supporting-files">Add supporting files only when needed</h2>
+<p>Keep the main instructions readable. Move long reference material into a <code>references/</code> directory and link to the exact file from the procedure. Put reusable output templates in <code>assets/</code>. Use <code>scripts/</code> for checks that need deterministic execution.</p>
+<pre><code>check-release-notes/
+├── SKILL.md
+├── references/
+│   └── product-terminology.md
+└── assets/
+    └── release-notes-template.md</code></pre>
+<p>A useful reference says when to read it: “Use <code>references/product-terminology.md</code> when checking feature names.” A directory full of unexplained files leaves the agent to guess which source matters.</p>
+<div class="note"><p><strong>Review executable content.</strong> A community skill can contain scripts and commands. Inspect what they read, modify and transmit before running them. A Markdown extension does not make the whole directory safe.</p></div>
+<h2 id="test-skill">Test the trigger and the result</h2>
+<p>Install the skill in one agent and test it with a real, bounded task. You are checking two different things: whether the agent finds the skill and whether following it produces the right result.</p>
+<ol><li><strong>Positive case:</strong> ask for the workflow described in the skill. Confirm the agent loads it and produces the requested evidence.</li><li><strong>Negative case:</strong> ask for a related but simpler task. Check that the skill is not unnecessarily selected.</li><li><strong>Missing-input case:</strong> omit a required input. The agent should ask for it or state the limitation.</li><li><strong>Failure case:</strong> use a failing check or unavailable reference. The agent should report that failure instead of claiming completion.</li></ol>
+<p>When a result is wrong, improve the step that owns the decision. Adding several copies of “be careful” is less useful than specifying which evidence is required. Keep an example of a good output nearby so later edits can be compared against it.</p>
+<h2 id="portability">Keep portability honest</h2>
+<p>The file format can travel across agents; the surrounding environment may not. A skill that assumes a particular shell, CLI, MCP server or operating system needs those dependencies documented. Paths, invocation controls and available tools can differ by client.</p>
+<p>Start with Markdown and the shared <code>name</code> and <code>description</code> fields. Add client-specific behavior only when it solves a real problem. Follow the <a href="/blog/install-skills-claude-code/">Claude Code installation guide</a> or the <a href="/blog/install-skills-codex/">Codex installation guide</a> to test discovery in your target client.</p>
+<h2 id="maintain">Make the skill easy to maintain</h2>
+<p>Keep one source of truth for the skill directory. Review changes in version control when sharing it with a team, and update the procedure when its tools or product assumptions change. Retest the behavior after a meaningful edit.</p>
+<p>Skiller can help you inspect installed copies, edit their instructions and synchronize them across selected agents. The important part is still the review: know which source you are changing, which targets will receive it and how you will confirm that the updated skill works.</p>

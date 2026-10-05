@@ -1,0 +1,40 @@
+<h2 id="where-codex-looks">Where Codex looks for skills</h2>
+<p>Codex uses the Agent Skills format and discovers repository skills under <code>.agents/skills/</code>. Its current documentation describes discovery from the working directory up to the repository root. This makes it possible to keep a skill near the part of the codebase it serves.</p>
+<p>User-level skills live under <code>~/.agents/skills/</code> in the current official documentation. Existing installations can also have legacy or client-managed locations. Skiller's Codex configuration includes <code>~/.codex/skills</code> as a global target and reads the shared user directory. Treat that as a manager compatibility detail; follow the documentation for your installed Codex when choosing a new location.</p>
+<div class="table-wrap" role="region" aria-label="Codex skill locations" tabindex="0"><table><caption>Choose scope before installation</caption><thead><tr><th scope="col">Scope</th><th scope="col">Location</th><th scope="col">Reason</th></tr></thead><tbody><tr><td>Repository</td><td><code>.agents/skills/&lt;name&gt;/SKILL.md</code></td><td>Keep the procedure with its project</td></tr><tr><td>User</td><td><code>~/.agents/skills/&lt;name&gt;/SKILL.md</code></td><td>Use it across local projects</td></tr><tr><td>Existing Skiller target</td><td><code>~/.codex/skills/</code></td><td>Inspect existing installations and verify client discovery</td></tr></tbody></table></div>
+<p>Do not install into every directory at once. If two skills share a name, the current Codex documentation says they are not merged. Duplicate installations can make the selector and troubleshooting less clear.</p>
+<h2 id="create-project-skill">Create a repository skill</h2>
+<p>From the repository root, create a skill directory. The command below uses a Unix-like shell; the same layout can be created in an editor on Windows.</p>
+<pre><code>mkdir -p .agents/skills/review-change
+# Create .agents/skills/review-change/SKILL.md in your editor.</code></pre>
+<p>Add a small procedure you can verify:</p>
+<pre><code>---
+name: review-change
+description: Review a local code diff for correctness and regressions. Use when asked to review uncommitted changes.
+---
+
+# Review a change
+
+1. Read repository instructions and the local diff.
+2. Trace changed behavior through relevant callers.
+3. Inspect error handling and compatibility.
+4. Report actionable findings with file locations.
+5. State the checks performed and any remaining uncertainty.
+
+Do not commit, push or deploy.</code></pre>
+<p>The shared format requires a name and description in YAML frontmatter. A useful description explains when to load the skill, rather than making broad claims about its quality. Read <a href="/blog/how-to-write-skill-md/">how to write SKILL.md</a> for a more complete authoring workflow.</p>
+<h2 id="select-and-test">Select the skill and test it</h2>
+<p>Open Codex in the repository. In supported Codex interfaces, use <code>/skills</code> to inspect available skills or type <code>$</code> to mention one. Invocation details can differ across the CLI and other clients, so check the current <a href="https://developers.openai.com/codex/skills/">Codex skills documentation</a> for your interface.</p>
+<p>Ask Codex to use the review skill against a small known change. Confirm that it loads the instructions and produces a result grounded in the diff. If it cannot run a check or read a required reference, that limitation should appear in the response.</p>
+<p>Automatic selection is a separate test. Ask for the same workflow without mentioning the skill and observe whether the description gives Codex enough information to choose it. If discovery works but automatic selection does not, improve the description before adding duplicate installations.</p>
+<h2 id="optional-metadata">Optional metadata and dependencies</h2>
+<p>Codex supports optional metadata in <code>agents/openai.yaml</code>, including interface details and invocation policy. It can also declare dependencies for a better client experience. A basic shared skill does not need this file.</p>
+<p>Keep the core instructions portable when you also use Claude Code or Cursor. A Codex metadata file does not turn a client-specific command into a universal command. A skill that requires an MCP server still needs that server configured and authorized in the target client.</p>
+<p>Before installing community content, inspect scripts and supporting files, identify the source version and make sure referenced tools are available. Copy the full skill directory so relative references continue to work.</p>
+<h2 id="manage-in-skiller">Manage the library with Skiller</h2>
+<p>Skiller helps make the filesystem side visible: installed skills, their contents and the agents that consume them. You can edit a skill with Markdown preview and inspect its target paths before synchronizing copies.</p>
+<p>For Codex, pay particular attention to the shared and existing global paths described above. Installing into a manager's configured location and observing the skill inside Codex are different checks. If your current Codex does not discover that target, use its documented shared directory and confirm the installation there.</p>
+<div class="note"><p><strong>Validate the client, not just the copy.</strong> Check the skill in Codex after every meaningful installation or path change. A file appearing on disk is useful evidence, but it does not establish discovery, selection or correct execution.</p></div>
+<h2 id="fix-discovery">Troubleshoot discovery</h2>
+<ul><li><strong>Wrong scope:</strong> make sure the repository skill is reachable from the working directory Codex uses.</li><li><strong>Wrong layout:</strong> keep <code>SKILL.md</code> inside a named directory under the skills root.</li><li><strong>Invalid frontmatter:</strong> check the YAML and the shared name and description fields.</li><li><strong>Disabled skill:</strong> inspect any relevant <code>[[skills.config]]</code> entry in your Codex configuration.</li><li><strong>Stale session:</strong> restart the client when required after installation or configuration changes.</li><li><strong>Duplicate names:</strong> identify the actual file selected before editing or removing a copy.</li></ul>
+<p>Once one installation works, extend it deliberately. The <a href="/blog/sync-skills-across-agents/">multi-agent synchronization guide</a> covers how to keep a source of truth while respecting different target paths.</p>

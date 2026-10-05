@@ -1,0 +1,28 @@
+<h2 id="inspect-installed-copy">Find the installed copy in Skiller</h2>
+<p>Open Skiller's Dashboard to see your agents and installed skill environment. Then use Skills Manager to locate the skill and inspect which agents consume it. This gives you a concrete starting point: the installed content and target, rather than a folder you remember copying last week.</p>
+<p>Read the instructions in the skill view and compare them with the version you expected. If the copy is outdated or customized, establish which version you want to keep before syncing. Do not replace a local edit just because an upstream directory has the same name.</p>
+<p>Next, open the target client and try its explicit skill invocation. A skill visible in Skiller may still fail discovery in a different project, remote environment or client version. Use the stages below to determine whether the fix belongs in the install target, description or procedure.</p>
+<h2 id="identify-failure">Identify which stage failed</h2>
+<p>“The skill does not work” can mean three different things. The agent may not discover the directory, it may discover the skill but not select it for your request, or it may load the instructions and fail while executing them. Each requires a different fix. Reinstalling copies into several folders makes the evidence harder to interpret.</p>
+<p>Start by recording the client, version, open project, expected skill name and exact symptom. A missing entry in the skill menu points toward discovery. An entry that works when selected manually points toward the trigger description. A loaded skill that cannot run a command points toward its environment or procedure.</p>
+<h2 id="check-path">Check the path and project scope</h2>
+<p>Confirm the discovery path in the documentation for your client. Current examples include <code>.claude/skills/</code> for Claude Code project skills and <code>.agents/skills/</code> for shared project skills supported by Codex and Cursor. Personal paths and compatibility directories differ. A folder accepted by one agent is not proof that another agent scans it.</p>
+<p>Inspect the full layout. It should be a named directory containing <code>SKILL.md</code>, rather than a loose Markdown file or an extra nested archive directory. Confirm that the client opened the repository you edited. Remote workers and containers have their own filesystems, so a local directory may not exist there.</p>
+<pre><code># Expected layout
+.agents/skills/check-links/SKILL.md
+
+# Accidental extra nesting
+.agents/skills/check-links/check-links/SKILL.md</code></pre>
+<p>Read the installation guide for <a href="/blog/install-skills-codex/">Codex</a>, <a href="/blog/install-skills-claude-code/">Claude Code</a> or <a href="/blog/install-skills-cursor/">Cursor</a> to narrow the path check to your client. After a change, follow its documented reload or restart behavior.</p>
+<h2 id="validate-file">Validate the file itself</h2>
+<p>The shared specification requires YAML frontmatter with a name and description. The name must follow the naming rules and match the containing directory. Check for missing delimiter lines, malformed YAML, empty descriptions and a file extension accidentally saved as <code>SKILL.md.txt</code>. Markdown that looks fine in a preview can still have invalid metadata.</p>
+<p>The Agent Skills reference tooling documents <code>skills-ref validate ./my-skill</code> for format validation. Use it if that tool is already installed in your environment. Validation checks the package format; it cannot prove that every instruction, dependency or agent-specific field works.</p>
+<h2 id="selection">Try explicit selection</h2>
+<p>Use the client's skill selector or documented invocation syntax with a small task. If that works, investigate automatic selection. A description such as “Helpful development tools” is too broad to explain when a skill is relevant. Describe the procedure and a concrete trigger: “Check release notes against a supplied diff when preparing a release announcement.”</p>
+<p>Test in a fresh conversation so earlier instructions do not mask the behavior. Include one matching request and one nearby request that should not need the skill. Avoid judging the change from a single lucky response.</p>
+<h2 id="execution">Check execution dependencies</h2>
+<p>Once you know the instructions loaded, inspect the first failing step. Is a referenced file missing? Is a CLI unavailable? Does the command assume Bash while the environment uses another shell? Is network access required? Does the account have the permission the workflow needs?</p>
+<p>Report the exact dependency failure rather than changing the trigger description. Do not disable permission checks to make a test pass. Update the skill to explain what it needs and how it should respond when that input or capability is unavailable.</p>
+<h2 id="duplicates">Remove ambiguity before retrying</h2>
+<p>Two copies with the same name can have different instructions. Compare the installed content with your reviewed source and identify the copy the client actually loaded. Keep a backup before replacing a customized directory. Then rerun the same test with the intended copy.</p>
+<p>Save the result: client version, installed source, prompt and observed output. This turns the next failure into a comparison instead of a fresh guess. The <a href="/blog/test-agent-skills/">testing guide</a> shows how to keep a small repeatable set of checks.</p>

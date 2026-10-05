@@ -1,9 +1,22 @@
-@import "@fontsource/bricolage-grotesque/latin-700.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+
+@font-face {
+  font-family: "Geist";
+  src: url("./assets/brand/geist-variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+.brand-wordmark {
+  font-family: "Geist", system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
 
 /* The Sync Center keeps Skiller's indigo identity even if the user changes the
    app accent for other surfaces. This is the same indigo as the dark preset. */

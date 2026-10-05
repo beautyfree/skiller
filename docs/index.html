@@ -5,32 +5,44 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Skiller — desktop app to install and sync skills (SKILL.md) across Claude Code, Cursor, and more. Download for macOS, Windows, or Linux from GitHub Releases."
+      content="Install, edit and sync agent skills with Skiller. Manage SKILL.md across Claude Code, Codex and Cursor on macOS, Windows and Linux."
     />
-    <meta property="og:title" content="Skiller" />
+    <meta property="og:title" content="Skiller — Agent skills manager for Claude Code, Codex &amp; Cursor" />
     <meta
       property="og:description"
-      content="Download Skiller from GitHub — one app to sync skills across your agents."
+      content="Install, edit and sync agent skills with Skiller. Manage SKILL.md across Claude Code, Codex and Cursor on macOS, Windows and Linux."
     />
     <meta property="og:type" content="website" />
     <link rel="canonical" href="https://skiller.download/" />
     <meta property="og:url" content="https://skiller.download/" />
+    <meta property="og:site_name" content="Skiller" />
+    <meta property="og:locale" content="en_US" />
+    <meta name="theme-color" content="#07060a" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
     <meta
       property="og:image"
       content="https://skiller.download/images/og-skiller.png"
     />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
+    <meta property="og:image:type" content="image/png" />
     <meta
       property="og:image:alt"
       content="Skiller — rabbit mark and wordmark on a dark background, tagline Your skills HQ"
     />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Skiller — Agent skills manager for Claude Code, Codex &amp; Cursor" />
+    <meta name="twitter:description" content="Install, edit and sync agent skills with Skiller. Manage SKILL.md across Claude Code, Codex and Cursor on macOS, Windows and Linux." />
     <meta
       name="twitter:image"
       content="https://skiller.download/images/og-skiller.png"
     />
-    <title>Skiller — Your skills HQ for every SKILL.md</title>
+    <meta name="twitter:image:alt" content="Skiller — rabbit mark and wordmark on a dark background, tagline Your skills HQ" />
+    <title>Skiller — Agent skills manager for Claude Code, Codex &amp; Cursor</title>
+    <link rel="alternate" type="application/rss+xml" title="Skiller Blog" href="/blog/feed.xml" />
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://skiller.download/#website","name":"Skiller","url":"https://skiller.download/","inLanguage":"en","publisher":{"@id":"https://skiller.download/#publisher"}},{"@type":"SoftwareApplication","@id":"https://skiller.download/#app","name":"Skiller","url":"https://skiller.download/","description":"Desktop app to install, edit and synchronize agent skills across coding agents.","applicationCategory":"DeveloperApplication","operatingSystem":"macOS, Windows, Linux","downloadUrl":"https://skiller.download/download/","image":"https://skiller.download/images/og-skiller.png","author":{"@type":"Person","name":"beautyfree","url":"https://github.com/beautyfree"},"sameAs":["https://github.com/beautyfree/skiller"],"publisher":{"@id":"https://skiller.download/#publisher"},"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}},{"@type":"Organization","@id":"https://skiller.download/#publisher","name":"Skiller","url":"https://skiller.download/","logo":{"@type":"ImageObject","url":"https://skiller.download/images/skiller-mark.png"}}]}
+    </script>
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
@@ -40,26 +52,9 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+    <link rel="preload" href="/assets/fonts/geist-variable.ttf" as="font" type="font/ttf" crossorigin />
+    <link rel="stylesheet" href="/assets/brand.css?v=4" />
     <style>
-      :root {
-        --bg0: #07060a;
-        --bg1: #0f0c14;
-        --bg2: #161222;
-        --text: #f4f0ff;
-        --muted: #9b92b8;
-        --dim: #5c5470;
-        --pink: #ff6eb4;
-        --pink-dim: #c94a8a;
-        --violet: #b794f6;
-        --cyan: #7ee8f7;
-        --border: rgba(255, 255, 255, 0.08);
-        --glow: rgba(255, 110, 180, 0.35);
-        --radius: 16px;
-        /* macOS-style window corners for screenshots (not UI cards) */
-        --window-radius: 10px;
-        --max: 1080px;
-      }
-
       *,
       *::before,
       *::after {
@@ -88,6 +83,10 @@
       a:hover {
         text-decoration: underline;
       }
+
+      a:focus-visible { outline: 2px solid var(--violet); outline-offset: 4px; }
+      .skip-link { position: fixed; top: 8px; left: 8px; z-index: 100; transform: translateY(-180%); background: var(--bg2); padding: 8px 16px; }
+      .skip-link:focus { transform: none; }
 
       .noise {
         pointer-events: none;
@@ -134,69 +133,40 @@
       }
 
       header {
-        display: flex;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
         align-items: center;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        gap: 16px;
+        gap: 28px;
         padding: 28px 0 48px;
       }
-
-      .brand {
-        display: inline-flex;
-        align-items: center;
-        gap: 12px;
-        text-decoration: none;
-        color: inherit;
+      .landing-nav { display: flex; align-items: center; gap: 32px; }
+      .landing-nav a { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; font-family: 'Geist', system-ui, sans-serif; font-size: 16px; font-weight: 600; line-height: 1; color: var(--text); text-decoration: none; transition: color .15s; white-space: nowrap; }
+      .landing-nav a:hover { color: var(--muted); text-decoration: none; }
+      .landing-download { justify-self: end; display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 0 16px; border-radius: 999px; background: #f4f0ff; color: #101014; font-family: 'Geist', system-ui, sans-serif; font-size: 15px; font-weight: 500; line-height: 1; text-decoration: none; transition: background .15s; }
+      .landing-download:hover { background: #ded8eb; color: #101014; text-decoration: none; }
+      header a:focus-visible { outline: 2px solid var(--violet); outline-offset: 5px; }
+      @media(max-width: 600px) {
+        header { grid-template-columns: 1fr auto; gap: 16px; padding-bottom: 28px; }
+        .landing-nav { grid-row: 2; grid-column: 1 / -1; justify-content: center; gap: 28px; }
+        .landing-nav a { font-size: 14px; }
+        .landing-download { grid-row: 1; grid-column: 2; }
       }
 
-      .brand:hover {
-        text-decoration: none;
-      }
-
-      .brand-logo {
-        width: 40px;
-        height: 40px;
-        object-fit: contain;
-        flex-shrink: 0;
-        display: block;
-      }
-
-      .logo {
-        font-family: 'Instrument Serif', Georgia, serif;
-        font-size: 1.75rem;
-        letter-spacing: -0.02em;
-        color: var(--text);
-        line-height: 1;
-      }
-
-      .logo span {
-        color: var(--pink);
-      }
-
-      .nav-cta {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 10px 18px;
-        border-radius: 999px;
-        border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.04);
-        color: var(--text);
-        font-size: 0.9rem;
-        font-weight: 500;
-        transition: border-color 0.2s, background 0.2s, transform 0.15s;
-      }
-
-      .nav-cta:hover {
-        border-color: rgba(255, 110, 180, 0.4);
-        background: rgba(255, 110, 180, 0.08);
-        text-decoration: none;
-        transform: translateY(-1px);
-      }
-
-      .hero {
-        padding-bottom: 72px;
+      .hero { padding: 28px 0 72px; text-align: center; }
+      .hero-eyebrow { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 24px; padding: 6px 12px; border: 1px solid rgba(183,148,246,.2); border-radius: 999px; color: #c9bddf; font-size: 12px; }
+      .hero-eyebrow::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #b794f6; }
+      .hero h1 { font-family: 'DM Sans',sans-serif; font-size: clamp(40px,6.2vw,72px); font-weight: 500; line-height: 1.05; letter-spacing: -.055em; max-width: none; margin: 0 auto 24px; }
+      .hero h1 span { color: #c0a4f0; }
+      .hero .lede { max-width: 570px; margin: 0 auto 28px; font-size: 18px; line-height: 1.65; color: #b6adc8; }
+      .hero .cta-row { justify-content: center; margin-bottom: 16px; gap: 20px; }
+      .hero-explore { color: #d0c7de; font-size: 14px; }
+      .hero .platforms { font-family: 'DM Sans',sans-serif; font-size: 12px; color: #9589a9; margin: 0; }
+      .hero .dashboard-stage { max-width: 960px; margin: 48px auto 0; }
+      @media(max-width:600px) {
+        .hero { padding-top: 18px; padding-bottom: 48px; }
+        .hero .lede { font-size: 16px; }
+        .hero .dashboard-stage { margin-top: 32px; }
+        .hero .cta-row { gap: 16px; }
       }
 
       .hero-grid-hint {
@@ -239,28 +209,6 @@
         gap: 12px;
         align-items: center;
         margin-bottom: 28px;
-      }
-
-      .btn-download {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        padding: 14px 26px;
-        border-radius: 12px;
-        border: none;
-        background: linear-gradient(135deg, var(--pink), var(--pink-dim));
-        color: #1a0512;
-        font-weight: 600;
-        font-size: 0.95rem;
-        font-family: inherit;
-        text-decoration: none;
-        transition: filter 0.2s, transform 0.15s;
-      }
-
-      .btn-download:hover {
-        filter: brightness(1.08);
-        transform: translateY(-1px);
-        text-decoration: none;
       }
 
       .hero-shot {
@@ -559,21 +507,27 @@
         margin: 0 auto 24px;
       }
 
-      footer {
-        padding-top: 48px;
-        border-top: 1px solid var(--border);
-        display: flex;
-        flex-wrap: wrap;
-        gap: 16px;
-        justify-content: space-between;
-        align-items: center;
-        font-size: 0.9rem;
-        color: var(--dim);
+      .footer-directory {
+        flex-basis: 100%;
+        padding-top: 8px;
       }
 
-      footer .links {
-        display: flex;
-        gap: 20px;
+      .footer-directory a {
+        display: inline-block;
+        border-radius: 9px;
+      }
+
+      .footer-directory a:focus-visible {
+        outline: 2px solid var(--violet);
+        outline-offset: 4px;
+      }
+
+      .footer-directory img {
+        display: block;
+        width: 195px;
+        max-width: 100%;
+        height: auto;
+        border: 0;
       }
 
       .footer-directory {
@@ -610,8 +564,12 @@
         }
       }
     </style>
+    <link rel="stylesheet" href="/assets/feature-tour.css?v=2">
+  <link rel="stylesheet" href="/assets/notebook.css">
+  <link rel="stylesheet" href="/assets/footer.css?v=1">
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to content</a>
     <div class="bg-gradient" aria-hidden="true"></div>
     <div class="noise" aria-hidden="true"></div>
 
@@ -619,8 +577,8 @@
       <header>
         <a
           class="brand"
-          href="https://github.com/beautyfree/skiller"
-          aria-label="Skiller on GitHub"
+          href="/"
+          aria-label="Skiller home"
         >
           <img
             class="brand-logo"
@@ -630,184 +588,91 @@
             alt=""
             decoding="async"
           />
-          <div class="logo">Skill<span>er</span></div>
+          <div class="logo">Skiller</div>
         </a>
-        <div
-          style="
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            justify-content: flex-end;
-          "
-        >
+        <nav class="landing-nav" aria-label="Main navigation">
+          <a href="#all-features">Features</a>
+          <a href="/blog/">Blog</a>
           <a
-            class="nav-cta"
-            href="https://github.com/beautyfree/skiller/releases/latest"
-            >Download →</a
-          >
-          <a
-            class="nav-cta"
             href="https://github.com/beautyfree/skiller"
-            >GitHub →</a
+            >GitHub <svg class="external-link-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M21 3l-9 9M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></svg></a
           >
-        </div>
+        </nav>
+        <a class="landing-download" href="/download/?start=1">Download</a>
       </header>
 
+      <main id="main">
       <div class="hero">
-        <h1>Your <em>skills HQ</em> for every <em>SKILL.md</em></h1>
-        <p class="lede">
-          One desktop app to <strong>install, sync, and edit</strong>
-          <code style="color: var(--cyan)">SKILL.md</code> across your agents.
-          Get a signed build below — everything else lives in the
-          <a href="https://github.com/beautyfree/skiller"
-            >GitHub repo</a
-          >.
-        </p>
+        <p class="hero-eyebrow">Free to download · Source available</p>
+        <h1>Your skills.<br><span>Finally in one place.</span></h1>
+        <p class="lede">Find useful agent skills, make them your own, and keep them organized across Claude Code, Codex, Cursor and more.</p>
         <div class="cta-row">
-          <a
-            class="btn-download"
-            href="https://github.com/beautyfree/skiller/releases/latest"
-            >Get the latest release</a
-          >
+          <a class="btn-download btn-download--primary" href="/download/?start=1"><span aria-hidden="true">↓</span> Download Skiller</a>
+          <a class="hero-explore" href="#build">Explore the app <span aria-hidden="true">↘</span></a>
         </div>
-        <p class="platforms">macOS (Apple Silicon &amp; Intel) · Windows x64 · Linux x64</p>
-        <figure
-          class="hero-shot gallery-item"
-          tabindex="0"
-          role="button"
-          aria-label="Open gallery: Dashboard"
-        >
-          <img
-            src="images/screenshots/dashboard.png"
-            alt="Skiller app: Dashboard with detected agents and installed skills"
-            loading="eager"
-            decoding="async"
-          />
-          <figcaption>Dashboard — click to enlarge</figcaption>
+        <p class="platforms">For macOS, Windows &amp; Linux</p>
+        <figure class="dashboard-stage gallery-item" tabindex="0" role="button" aria-label="Open gallery: Dashboard" data-gallery-label="Dashboard">
+          <img src="images/screenshots/dashboard-launch-v3-1600.webp" srcset="images/screenshots/dashboard-launch-v3-800.webp 800w, images/screenshots/dashboard-launch-v3-1600.webp 1600w" sizes="(max-width: 792px) calc(100vw - 32px), 960px" width="1600" height="1133" alt="Skiller Dashboard: detected coding agents and the skills available to each" loading="eager" decoding="async">
         </figure>
-        <p class="hero-grid-hint">
-          Skills Manager, Marketplace, Settings — click an image to open full
-          size (<kbd>←</kbd><kbd>→</kbd> · <kbd>Esc</kbd> to close).
-        </p>
-        <div class="screen-grid">
-          <figure
-            class="hero-shot gallery-item"
-            style="margin: 0"
-            tabindex="0"
-            role="button"
-            aria-label="Open gallery: Skills Manager"
-          >
-            <img
-              src="images/screenshots/skills.png"
-              alt="Skiller Skills Manager: skill list, agents, and markdown editor"
-              loading="lazy"
-              decoding="async"
-            />
-            <figcaption>Skills Manager</figcaption>
-          </figure>
-          <figure
-            class="hero-shot gallery-item"
-            style="margin: 0"
-            tabindex="0"
-            role="button"
-            aria-label="Open gallery: Marketplace"
-          >
-            <img
-              src="images/screenshots/marketplace.png"
-              alt="Skiller Marketplace: search and install from community sources"
-              loading="lazy"
-              decoding="async"
-            />
-            <figcaption>Marketplace</figcaption>
-          </figure>
-          <figure
-            class="hero-shot gallery-item"
-            style="margin: 0"
-            tabindex="0"
-            role="button"
-            aria-label="Open gallery: Settings"
-          >
-            <img
-              src="images/screenshots/settings.png"
-              alt="Skiller Settings: theme, updates, and preferences"
-              loading="lazy"
-              decoding="async"
-            />
-            <figcaption>Settings</figcaption>
-          </figure>
-        </div>
       </div>
 
-      <section id="build">
-        <h2 class="section-title">Product tour</h2>
-        <p class="section-sub">
-          Eight slices of the app: visibility, skills, marketplace, settings,
-          sources, sync, search, and paths.
-        </p>
-        <div class="grid">
-          <article class="card" style="--mx: 20%; --my: 10%">
-            <h3>Dashboard</h3>
-            <p>
-              System-wide view of detected agents, how many skills each one
-              uses, search and filters — no more guessing what lives where.
-            </p>
-          </article>
-          <article class="card" style="--mx: 80%; --my: 20%">
-            <h3>Skills Manager</h3>
-            <p>
-              Browse every install, see which agents consume a skill, edit
-              <code style="color: var(--cyan)">SKILL.md</code>
-              inline with markdown preview, sync or remove in one click.
-            </p>
-          </article>
-          <article class="card" style="--mx: 40%; --my: 0%">
-            <h3>Marketplace</h3>
-            <p>
-              Search skills.sh and ClawHub in-app, preview targets and repo
-              metadata, install without touching the filesystem by hand.
-            </p>
-          </article>
-          <article class="card" style="--mx: 60%; --my: 30%">
-            <h3>Settings</h3>
-            <p>
-              Theme, accent, window blur (macOS), language, close behavior,
-              cache — and <strong>App Updates</strong> with restart-and-install
-              when a new build is ready.
-            </p>
-          </article>
-          <article class="card" style="--mx: 50%; --my: 15%">
-            <h3>Skill sources</h3>
-            <p>
-              Import from a <strong>Git URL</strong> or a
-              <strong>local folder</strong> to register extra repos, browse
-              their skills, and keep them in sync alongside marketplace
-              installs.
-            </p>
-          </article>
-          <article class="card" style="--mx: 55%; --my: 22%">
-            <h3>Multi-agent sync</h3>
-            <p>
-              See which agents consume each skill, then push or remove updates
-              across those targets in one flow — no copy-paste between install
-              trees.
-            </p>
-          </article>
-          <article class="card" style="--mx: 35%; --my: 18%">
-            <h3>Global search</h3>
-            <p>
-              One field to filter skills, agents, and sources — jump to an
-              install or open the editor without digging through folders.
-            </p>
-          </article>
-          <article class="card" style="--mx: 65%; --my: 12%">
-            <h3>Paths at a glance</h3>
-            <p>
-              Inspect where each skill lands on disk for every detected agent
-              before you sync — fewer surprises when paths differ by tool.
-            </p>
-          </article>
+      <section class="feature-tour" id="build" aria-labelledby="feature-tour-title">
+        <h2 class="section-title" id="feature-tour-title">From discovery to your daily workflow.</h2>
+        <div class="feature-tour-layout">
+          <nav class="feature-tour-rail" aria-label="Product tour">
+            <a class="feature-tour-step" href="#tour-library" aria-current="true"><span class="feature-tour-title">Your skills. One library.</span><span class="feature-tour-copy">Build an Agent Library for your collection, or connect an existing one. Keep your skills together as you move between coding agents and computers.</span></a>
+            <a class="feature-tour-step" href="#tour-customize" aria-current="false"><span class="feature-tour-title">Make a skill your own.</span><span class="feature-tour-copy">Inspect a skill’s files and original source, see which agents can use it, and make an editable copy for your workflow. Review source updates before applying them.</span></a>
+            <a class="feature-tour-step" href="#tour-marketplace" aria-current="false"><span class="feature-tour-title">Find your next workflow.</span><span class="feature-tour-copy">Search skills.sh and ClawHub, preview a skill before installing, or add a Git repository or local folder as a source. Your library and community discoveries live in one place.</span></a>
+            <a class="feature-tour-step" href="#tour-settings" aria-current="false"><span class="feature-tour-title">Make Skiller feel like yours.</span><span class="feature-tour-copy">Choose your theme, accent and language. Adjust how the window behaves, manage the cache, and install app updates when a new build is ready.</span></a>
+          </nav>
+          <div class="feature-tour-panels">
+            <article class="feature-tour-panel" id="tour-library">
+              <div class="feature-tour-mobile-copy"><h3>Your skills. One library.</h3><p>Build an Agent Library for your collection, or connect an existing one. Keep your skills together as you move between coding agents and computers.</p></div>
+              <figure class="feature-tour-shot gallery-item" tabindex="0" role="button" aria-label="Open gallery: Agent Library" data-gallery-label="Agent Library">
+                <img src="images/screenshots/library-launch-v3-1600.webp" srcset="images/screenshots/library-launch-v3-800.webp 800w, images/screenshots/library-launch-v3-1600.webp 1600w" sizes="(max-width: 792px) calc(100vw - 32px), 960px" width="1600" height="1133" alt="Agent Library welcome screen with options to create a library or use an existing library" loading="lazy" decoding="async">
+              </figure>
+            </article>
+            <article class="feature-tour-panel" id="tour-customize">
+              <div class="feature-tour-mobile-copy"><h3>Make a skill your own.</h3><p>Inspect a skill’s files and original source, see which agents can use it, and make an editable copy for your workflow. Review source updates before applying them.</p></div>
+              <figure class="feature-tour-shot gallery-item" tabindex="0" role="button" aria-label="Open gallery: Customize a skill" data-gallery-label="Customize a skill">
+                <img src="images/screenshots/customize-launch-v3-1600.webp" srcset="images/screenshots/customize-launch-v3-800.webp 800w, images/screenshots/customize-launch-v3-1600.webp 1600w" sizes="(max-width: 792px) calc(100vw - 32px), 960px" width="1600" height="1133" alt="Skiller skill details with source information, agent paths, update review and Make editable copy" loading="lazy" decoding="async">
+              </figure>
+            </article>
+            <article class="feature-tour-panel" id="tour-marketplace">
+              <div class="feature-tour-mobile-copy"><h3>Find your next workflow.</h3><p>Search skills.sh and ClawHub, preview a skill before installing, or add a Git repository or local folder as a source. Your library and community discoveries live in one place.</p></div>
+              <figure class="feature-tour-shot gallery-item" tabindex="0" role="button" aria-label="Open gallery: Marketplace" data-gallery-label="Marketplace">
+                <img src="images/screenshots/marketplace-launch-v3-1600.webp" srcset="images/screenshots/marketplace-launch-v3-800.webp 800w, images/screenshots/marketplace-launch-v3-1600.webp 1600w" sizes="(max-width: 792px) calc(100vw - 32px), 960px" width="1600" height="1133" alt="Skiller Marketplace showing skills.sh, ClawHub and skill details" loading="lazy" decoding="async">
+              </figure>
+            </article>
+            <article class="feature-tour-panel" id="tour-settings">
+              <div class="feature-tour-mobile-copy"><h3>Make Skiller feel like yours.</h3><p>Choose your theme, accent and language. Adjust how the window behaves, manage the cache, and install app updates when a new build is ready.</p></div>
+              <figure class="feature-tour-shot gallery-item" tabindex="0" role="button" aria-label="Open gallery: Settings" data-gallery-label="Settings">
+                <img src="images/screenshots/settings-1600.webp" srcset="images/screenshots/settings-800.webp 800w, images/screenshots/settings-1600.webp 1600w" sizes="(max-width: 792px) calc(100vw - 32px), 960px" width="1600" height="1115" alt="Skiller Settings: appearance, preferences and app updates" loading="lazy" decoding="async">
+              </figure>
+            </article>
+          </div>
         </div>
       </section>
+
+      <section id="all-features" aria-labelledby="all-features-title">
+        <h2 class="section-title" id="all-features-title">Everything in your skills HQ.</h2>
+        <p class="section-sub">From finding your first skill to keeping your whole collection in order.</p>
+        <div class="grid">
+          <article class="card"><h3>Dashboard</h3><p>See detected agents, installed skill counts, search and filters in one system-wide view.</p></article>
+          <article class="card"><h3>Skills Manager</h3><p>Browse installed skills, inspect agent targets and files, and edit SKILL.md with a markdown preview.</p></article>
+          <article class="card"><h3>Marketplace</h3><p>Search skills.sh and ClawHub, preview skill details and install from community sources.</p></article>
+          <article class="card"><h3>Settings</h3><p>Choose your theme, accent and language, adjust window behavior, manage the cache and install app updates.</p></article>
+          <article class="card"><h3>Skill sources</h3><p>Import a Git repository or local folder, browse its skills and keep it alongside marketplace installs.</p></article>
+          <article class="card"><h3>Multi-agent sync</h3><p>See which agents use each skill, then sync or remove it across the selected targets.</p></article>
+          <article class="card"><h3>Global search</h3><p>Filter skills, agents and sources, then jump to an install or open its editor.</p></article>
+          <article class="card"><h3>Paths at a glance</h3><p>Inspect the install path for every detected agent before synchronizing your skills.</p></article>
+          <article class="card"><h3>Agent Library</h3><p>Create a home for your skill collection or connect an existing library.</p></article>
+          <article class="card"><h3>Editable copies</h3><p>Make an editable copy of a sourced skill and adapt it to your own workflow.</p></article>
+          <article class="card"><h3>Update review</h3><p>Review source updates and local changes before applying an update to your skills.</p></article>
+        </div>
+      </section>
+
+      <!-- BLOG_PREVIEW -->
 
       <section class="opensource" id="opensource">
         <h2 class="section-title">We love clarity.</h2>
@@ -836,8 +701,9 @@
         >
       </div>
 
-      <footer>
-        <span>
+      </main>
+      <footer class="site-footer">
+        <span class="footer-credit">
           © Skiller · <a href="https://github.com/beautyfree">beautyfree</a> ·
           <a
             href="https://x.com/netebe"
@@ -846,18 +712,25 @@
             >@netebe</a
           >
         </span>
-        <div class="links">
-          <a href="https://github.com/beautyfree/skiller"
-            >Repository</a
-          >
+        <!-- FOOTER_NAV -->
+        <div class="footer-directory">
+          <!-- Launchpadly — Skiller (listed-on) -->
           <a
-            href="https://github.com/beautyfree/skiller/releases/latest"
-            >Download</a
+            href="https://launchpadly.co/startup/skiller?ref=badge"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-launchpadly-badge="skiller"
+            data-launchpadly-badge-variant="listed-on"
           >
-          <a
-            href="https://github.com/beautyfree/skiller/blob/main/docs/DEVELOPMENT.md"
-            >Develop</a
-          >
+            <img
+              src="https://launchpadly.co/embed/badges/startup/skiller.svg?variant=listed-on"
+              alt="Skiller listed on Launchpadly Startup Directory"
+              width="260"
+              height="48"
+              loading="lazy"
+              decoding="async"
+            />
+          </a>
         </div>
         <div class="footer-directory">
           <!-- Launchpadly — Skiller (listed-on) -->
@@ -925,6 +798,7 @@
       </p>
     </dialog>
 
+    <script src="/assets/feature-tour.js" defer></script>
     <script>
       document.querySelectorAll('.card').forEach((card) => {
         card.addEventListener('pointermove', (e) => {
@@ -947,6 +821,7 @@
           const shot = fig.querySelector('img')
           if (!shot) return
           const cap =
+            fig.dataset.galleryLabel ||
             fig.querySelector('figcaption')?.textContent?.trim() ||
             shot.alt ||
             'Screenshot'

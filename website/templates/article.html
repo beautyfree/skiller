@@ -1,0 +1,32 @@
+<main id="main" class="article-page">
+  <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/blog/">Blog</a><span aria-hidden="true">/</span><span>$category</span></nav>
+  <div class="article-layout">
+  <article class="article-document">
+    <header class="article-header">
+      <p class="eyebrow">$category</p>
+      <h1>$headline</h1>
+      <p class="article-deck">$description</p>
+      <div class="article-meta"><time datetime="$date">$date_label</time><span aria-hidden="true">·</span><span>$reading_time min read</span>$comparison_meta</div>
+      $hero
+    </header>
+      <div class="article-body">
+        <section class="quick-answer" aria-labelledby="quick-answer-title"><h2 id="quick-answer-title">The short answer</h2><p>$answer</p></section>
+        $body
+        $faq
+        <section class="article-cta" aria-labelledby="cta-title">
+          <div><h2 id="cta-title">Your skills. One place.</h2><p>Inspect, edit and sync your skill library across coding agents.</p><a class="btn-download btn-download--primary" href="/download/?start=1"><span aria-hidden="true">↓</span> Download Skiller</a></div>
+          <img src="/images/skiller-mark.png" width="96" height="96" alt="">
+        </section>
+        <section class="sources" aria-labelledby="sources"><h2 id="sources">Sources</h2><ul>$sources</ul></section>
+      </div>
+  <section class="related" aria-labelledby="related-title"><div class="section-heading"><h2 id="related-title">Keep reading</h2><a href="/blog/">All guides <span aria-hidden="true">→</span></a></div><div class="article-grid">$related</div></section>
+  </article>
+  <aside class="toc">
+    <div class="toc-sticky">
+    <nav class="toc-panel" aria-labelledby="toc-title"><p class="toc-title" id="toc-title">On this page</p><ol><li><a href="#quick-answer-title">Quick answer</a></li>$toc<li><a href="#faq">FAQ</a></li></ol></nav>
+    <div class="sidebar-product"><img src="/images/skiller-mark.png" width="48" height="48" alt=""><h2>Your skills HQ</h2><p>Install, edit and sync skills across your coding agents.</p><a class="btn-download btn-download--primary" href="/download/?start=1"><span aria-hidden="true">↓</span> Download Skiller</a></div>
+    </div>
+  </aside>
+  </div>
+
+</main>

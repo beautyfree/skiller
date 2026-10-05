@@ -1,0 +1,38 @@
+.feature-tour { padding: 72px 0 32px; }
+.feature-tour > h2 { text-align: left; margin-bottom: 44px; }
+.feature-tour-layout { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(0, 1.8fr); gap: 48px; align-items: start; }
+.feature-tour-rail { position: sticky; top: 40px; display: grid; gap: 18px; }
+.feature-tour-step { display: block; border-left: 2px solid transparent; padding: 10px 0 10px 22px; color: var(--dim); text-decoration: none; transition: color .2s, border-color .2s; }
+.feature-tour-step:hover { color: var(--text); text-decoration: none; }
+.feature-tour-step:focus-visible { outline: 2px solid var(--pink); outline-offset: 5px; }
+.feature-tour-title { display: block; font-size: 22px; font-weight: 500; line-height: 1.25; letter-spacing: -.025em; }
+.feature-tour-copy { display: block; max-height: 260px; margin-top: 14px; overflow: hidden; opacity: 1; font-size: 15px; line-height: 1.65; color: var(--muted); transition: opacity .2s, max-height .2s, margin .2s; }
+.feature-tour-enhanced .feature-tour-copy { max-height: 0; margin-top: 0; opacity: 0; }
+.feature-tour-step[aria-current="true"] { border-left-color: var(--pink); color: var(--text); }
+.feature-tour-step[aria-current="true"] .feature-tour-copy { max-height: 260px; opacity: 1; margin-top: 14px; }
+.feature-tour-panels { display: grid; gap: 72px; }
+.feature-tour-panel { scroll-margin-top: 40px; min-width: 0; }
+.dashboard-stage, .feature-tour-shot { margin: 0; padding: clamp(18px,3vw,36px); border: 0; border-radius: 22px; background-color: #21182d; background-image: linear-gradient(135deg,#17101e30,#17101e65),var(--shot-art); background-size: cover; background-position: center; box-shadow: none; }
+.dashboard-stage { --shot-art: url('/images/blog/sync-skills-across-agents-street-v1.webp'); }
+#tour-library .feature-tour-shot { --shot-art: url('/images/blog/share-skills-with-team-street-v1-800.webp'); }
+#tour-customize .feature-tour-shot { --shot-art: url('/images/blog/how-to-write-skill-md-street-v1-800.webp'); }
+#tour-marketplace .feature-tour-shot { --shot-art: url('/images/blog/review-community-skills-street-v1-800.webp'); }
+#tour-settings .feature-tour-shot { --shot-art: url('/images/blog/agent-skills-vs-rules-street-v1-800.webp'); }
+.dashboard-stage { margin-top: 48px; }
+.dashboard-stage img { display: block; width: 100%; height: auto; border-radius: 8px; }
+.dashboard-stage.gallery-item:hover { border-color: transparent; box-shadow: none; }
+.feature-tour-shot img { display: block; width: 100%; height: auto; border-radius: 8px; }
+.feature-tour-shot.gallery-item:hover { border-color: transparent; box-shadow: none; }
+.feature-tour-mobile-copy { display: none; }
+@media(max-width:760px) {
+  .dashboard-stage, .feature-tour-shot { padding: 14px; border-radius: 16px; }
+  .feature-tour { padding: 44px 0 20px; }
+  .feature-tour > h2 { margin-bottom: 32px; }
+  .feature-tour-layout { display: block; }
+  .feature-tour-rail { display: none; }
+  .feature-tour-panels { gap: 44px; }
+  .feature-tour-mobile-copy { display: block; margin-bottom: 22px; }
+  .feature-tour-mobile-copy h3 { font-size: 26px; font-weight: 500; letter-spacing: -.03em; line-height: 1.2; margin: 0 0 12px; }
+  .feature-tour-mobile-copy p { color: var(--muted); font-size: 15px; line-height: 1.65; margin: 0; }
+}
+@media(prefers-reduced-motion:reduce) { .feature-tour-step, .feature-tour-copy { transition: none; } }

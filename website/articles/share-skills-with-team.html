@@ -1,0 +1,33 @@
+<h2 id="local-library">Use Git for review and Skiller for local copies</h2>
+<p>Maintain the reviewed team library in a repository, then use Skiller to inspect and manage the copies installed on your machine. Skills Manager shows installed skills, their instructions and the agents that consume them. That helps each teammate check their local setup against the version the team agreed to use.</p>
+<p>Review changes in Git before applying them locally. In Skiller, inspect the existing skill content, preserve any customization you need, and synchronize the reviewed copy to the intended agents. Test the workflow in each target client after the update.</p>
+<p>This workflow does not assume that Skiller hosts a team cloud library or manages repository approvals. Git supplies the reviewed source and history; Skiller supplies local inspection, editing and synchronization. Keep both responsibilities explicit so a successful sync is not mistaken for a reviewed release.</p>
+<figure class="article-hero"><img src="/images/screenshots/library-launch-v3-1600.webp" srcset="/images/screenshots/library-launch-v3-800.webp 800w, /images/screenshots/library-launch-v3-1600.webp 1600w" sizes="(max-width: 792px) calc(100vw - 32px), 760px" width="1600" height="1133" alt="Skiller Agent Library showing skill library management" loading="lazy" decoding="async"><figcaption>Inspect the library and its agent targets before distributing a reviewed change.</figcaption></figure>
+<h2 id="source-of-truth">Choose a source of truth</h2>
+<p>A shared skill library starts with ownership. Decide which repository contains the reviewed source and who maintains each workflow. Project-specific skills can live with the application repository. Reusable team procedures can live in a separate library, with a documented way to install them into supported clients.</p>
+<p>Do not treat whichever copy someone edited most recently as authoritative. Record the source revision and distinguish shared instructions from personal adaptations. A skill name alone is not a version identifier: two directories with the same name can behave differently.</p>
+<h2 id="package">Distribute the complete package</h2>
+<p>A skill may include scripts, references and templates. Copying only <code>SKILL.md</code> can leave the procedure discoverable but unusable. Review the package as a unit and list required tools, operating systems or account access where those requirements matter.</p>
+<pre><code>team-skills/
+├── review-release-notes/
+│   ├── SKILL.md
+│   └── references/
+│       └── terminology.md
+└── check-migration/
+    ├── SKILL.md
+    └── assets/
+        └── review-template.md</code></pre>
+<p>This is an example source repository layout. Install the named skill directories into the discovery paths documented by each client. The source repository's top-level folder does not become a valid discovery path merely because it contains skills.</p>
+<h2 id="review-change">Review changes before distributing them</h2>
+<p>Use version control to make changes visible. A useful change description explains what behavior changes, which dependencies are affected and what was tested. For a script update, review file access and network behavior as well as the Markdown instructions. Follow the <a href="/blog/review-community-skills/">package review checklist</a> when importing external material.</p>
+<p>Check the license before adding third-party content to a distributable library. Keep attribution where required and preserve a reference to the original source. Reformatting a skill does not remove its licensing obligations.</p>
+<h2 id="test-matrix">Test supported environments</h2>
+<p>Define the clients you actually support. For each, record the installation path, invocation check, relevant dependencies and one representative output check. Run the candidate in a clean session with the same fixture inputs so a previous conversation cannot supply missing instructions.</p>
+<div class="table-wrap"><table><caption>Record support with evidence</caption><thead><tr><th>Check</th><th>Record</th></tr></thead><tbody><tr><td>Discovery</td><td>Client version, path and selected skill</td></tr><tr><td>Execution</td><td>Fixture input and saved output</td></tr><tr><td>Dependencies</td><td>Required tools and available capabilities</td></tr><tr><td>Failure handling</td><td>Result when an input or tool is missing</td></tr></tbody></table></div>
+<p>A client recognizing the file is not equivalent to completing the workflow correctly. Local and remote agents also have different environments. Avoid claiming broad portability after testing one client on one laptop.</p>
+<h2 id="local-customization">Protect local customizations</h2>
+<p>Before synchronization, compare the installed directory with the reviewed source. If a teammate has edited their copy, decide whether those edits belong upstream or should remain a named local variant. Back up the existing directory before replacement. Do not silently overwrite a customization to make every folder look identical.</p>
+<p>Keep client-specific wrappers small when the shared procedure is otherwise identical. Document why the wrapper exists and verify it separately. The <a href="/blog/sync-skills-across-agents/">cross-agent sharing guide</a> explains source and target selection in more detail.</p>
+<h2 id="rollback">Keep rollback practical</h2>
+<p>Retain the previous reviewed revision and its test results. If a new version fails, restore the full previous directory, reload the client as documented and rerun the same bounded check. Reverting only the main instruction file may leave a changed script or reference behind.</p>
+<p>Skiller can help inspect, edit and synchronize skill copies. Treat that as library management: your team still owns review, permissions and verification in the target agent. A useful library grows from tested workflows that people maintain, rather than from the number of directories collected.</p>

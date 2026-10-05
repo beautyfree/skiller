@@ -312,7 +312,7 @@ function LayoutInner({
                 className="size-[16px] object-contain invert dark:invert-0"
               />
             </span>
-            <span className="relative top-px inline-block text-[14px] font-bold leading-none tracking-[-0.055em] text-foreground/90 [font-family:'Bricolage_Grotesque',sans-serif]">Skiller</span>
+            <span className="brand-wordmark relative top-px inline-block text-[14px] leading-none text-foreground/90">Skiller</span>
           </div>
         </div>
       </div>

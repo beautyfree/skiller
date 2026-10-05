@@ -1,0 +1,980 @@
+[
+  {
+    "slug": "best-ai-agent-skill-managers",
+    "title": "Best AI agent skill managers in 2026",
+    "description": "Compare Skiller, Skills Manager, Skills Hub, SkillHub Desktop, Skills CLI and OpenSkills by editing, installation, sync, backup and project scope.",
+    "category": "Comparisons",
+    "date": "2026-10-04",
+    "image": "/images/blog/best-ai-agent-skill-managers-street-v1.webp",
+    "imageAlt": "Angular rabbit beside a wall of skill manager tiles in violet and black stencil art",
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "comparisonCount": 7,
+    "answer": "Skiller is our top pick for visual skill management: inspect installed instructions, edit SKILL.md and sync skills across Claude Code, Codex and Cursor from one desktop app. Choose Skills CLI for scriptable installation, or compare Skills Manager and Skills Hub when presets, Git-backed device sync or scheduled updates are your priority.",
+    "related": [
+      "review-community-skills",
+      "sync-skills-across-agents"
+    ],
+    "sources": [
+      [
+        "Skiller documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ],
+      [
+        "Skiller license",
+        "https://github.com/beautyfree/skiller/blob/main/LICENSE"
+      ],
+      [
+        "Skills Manager by xingkongliang",
+        "https://github.com/xingkongliang/skills-manager#readme"
+      ],
+      [
+        "Skills Manager by jiweiyeah",
+        "https://github.com/jiweiyeah/Skills-Manager#readme"
+      ],
+      [
+        "Skills Hub by qufei1993",
+        "https://github.com/qufei1993/skills-hub#readme"
+      ],
+      [
+        "SkillHub Desktop",
+        "https://github.com/skillhub-club/skillhub-desktop#readme"
+      ],
+      [
+        "Skills CLI by Vercel Labs",
+        "https://github.com/vercel-labs/skills#readme"
+      ],
+      [
+        "OpenSkills",
+        "https://github.com/numman-ali/openskills#readme"
+      ],
+      [
+        "Agent Skills specification",
+        "https://agentskills.io/specification"
+      ]
+    ],
+    "modified": "2026-10-05",
+    "faq": [
+      {
+        "question": "What is the best AI agent skill manager in 2026?",
+        "answer": "Skiller is our top pick for visual skill management: inspect installed content, edit SKILL.md and sync skills across coding agents in a desktop app. Choose Skills CLI for scriptable installation, or compare Skills Manager and Skills Hub when presets, Git-backed device sync or scheduled updates matter more."
+      },
+      {
+        "question": "How is Skiller different from skills.sh?",
+        "answer": "skills.sh is a discovery site; Vercel Labs’ Skills CLI installs packages from its ecosystem. Skiller uses skills.sh as a Marketplace source and adds a desktop view of installed skills, editing and agent targets."
+      },
+      {
+        "question": "Can I manage Claude Code, Codex and Cursor skills together?",
+        "answer": "Yes. Skiller supports a cross-agent library workflow for these clients. Keep a reviewed source copy, choose the intended targets and verify discovery in each agent; project and personal scopes still matter."
+      },
+      {
+        "question": "Is Skiller free?",
+        "answer": "Skiller offers a free download for macOS, Windows and Linux. Its source repository uses the Sustainable Use License, with use and redistribution conditions. Optional services in other tools may have separate costs."
+      },
+      {
+        "question": "Does cross-agent synchronization include cloud sync?",
+        "answer": "No. Deploying skills to several agents on one computer is different from keeping a library aligned across computers. Git-backed device backup and conflict handling are separate features documented by several alternatives."
+      },
+      {
+        "question": "Do I need a desktop manager if I already use Skills CLI?",
+        "answer": "A CLI can handle installation well. A desktop manager becomes useful when you want to inspect installed content, edit instructions and see agent targets without navigating directories. Confirm the authoritative copy before mixing tools."
+      },
+      {
+        "question": "Does a skill manager prove a community skill is safe?",
+        "answer": "No. Inspect the source, instructions, scripts and dependencies before using a package. A manager helps organize and review the library; it does not establish that every instruction or script is trustworthy."
+      }
+    ],
+    "imageSmall": "/images/blog/best-ai-agent-skill-managers-street-v1-800.webp"
+  },
+  {
+    "slug": "what-are-agent-skills",
+    "title": "What are agent skills? A practical guide to SKILL.md",
+    "description": "Learn what agent skills are, how SKILL.md works, and how reusable workflows differ from prompts, repository rules and MCP tools.",
+    "category": "Fundamentals",
+    "date": "2026-10-04",
+    "image": "/images/blog/what-are-agent-skills-street-v1.webp",
+    "imageAlt": "Angular rabbit emerging from an instruction dossier in black, cream and violet stencil art",
+    "answer": "An agent skill is a reusable workflow packaged in a directory with a SKILL.md file. Its metadata tells an agent when to use it; its Markdown body explains how to do the work. Skills can include scripts and references, but they do not grant permissions or make every client behave identically.",
+    "related": [
+      "how-to-write-skill-md",
+      "agent-skills-vs-mcp"
+    ],
+    "sources": [
+      [
+        "Agent Skills specification",
+        "https://agentskills.io/specification"
+      ],
+      [
+        "Claude Code: skills",
+        "https://code.claude.com/docs/en/skills"
+      ],
+      [
+        "Codex: agent skills",
+        "https://developers.openai.com/codex/skills/"
+      ],
+      [
+        "Cursor: agent skills",
+        "https://cursor.com/docs/context/skills"
+      ]
+    ],
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "faq": [
+      {
+        "question": "What is an AI agent skill?",
+        "answer": "An agent skill is a reusable procedure stored in a directory with a SKILL.md file. The agent discovers its name and description, then loads the instructions when the task calls for them."
+      },
+      {
+        "question": "Are agent skills the same as prompts or MCP tools?",
+        "answer": "No. A prompt describes the current task; a skill preserves a reusable procedure. MCP provides tool or data access. A workflow can combine them, but installing a skill does not configure its MCP dependencies."
+      },
+      {
+        "question": "How can I manage skills across several coding agents?",
+        "answer": "Skiller lets you inspect installed skills, edit their instructions and manage agent targets from a desktop library. Verify that each target agent discovers the synchronized copy."
+      }
+    ],
+    "modified": "2026-10-05",
+    "imageSmall": "/images/blog/what-are-agent-skills-street-v1-800.webp"
+  },
+  {
+    "slug": "how-to-write-skill-md",
+    "title": "How to write a SKILL.md file that agents can use",
+    "description": "Write your first agent skill with valid frontmatter, a complete SKILL.md example, supporting files and a practical testing checklist.",
+    "category": "Authoring",
+    "date": "2026-10-04",
+    "image": "/images/blog/how-to-write-skill-md-street-v1.webp",
+    "imageAlt": "Rabbit author drafting a skill checklist in a violet and black street-art collage",
+    "answer": "Start with one repeatable task. Create a named directory containing SKILL.md, add YAML frontmatter with name and description, and write the inputs, steps, boundaries and expected output. Test discovery, a real task and a failure case before sharing the skill.",
+    "related": [
+      "test-agent-skills",
+      "agent-skills-vs-rules"
+    ],
+    "sources": [
+      [
+        "Agent Skills specification and validation",
+        "https://agentskills.io/specification"
+      ],
+      [
+        "Codex: creating and configuring skills",
+        "https://developers.openai.com/codex/skills/"
+      ],
+      [
+        "Claude Code: skills and frontmatter",
+        "https://code.claude.com/docs/en/skills"
+      ]
+    ],
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "faq": [
+      {
+        "question": "What must a SKILL.md file contain?",
+        "answer": "The shared format requires YAML frontmatter with name and description, followed by Markdown instructions. Give the procedure a clear trigger, concrete steps and a way to verify completion."
+      },
+      {
+        "question": "Do I need a script for every agent skill?",
+        "answer": "No. Written steps may be enough. Add scripts or supporting references only when they serve the workflow, and reference files relative to the skill directory."
+      },
+      {
+        "question": "Can I edit a SKILL.md file in Skiller?",
+        "answer": "Yes. Open the skill in Skills Manager, inspect the content and edit its instructions. Test the changed procedure before synchronizing it to more agents."
+      }
+    ],
+    "modified": "2026-10-05",
+    "imageSmall": "/images/blog/how-to-write-skill-md-street-v1-800.webp"
+  },
+  {
+    "slug": "install-skills-claude-code",
+    "title": "How to install skills in Claude Code",
+    "description": "Install Claude Code skills at project or personal scope, create a working SKILL.md example, test invocation and troubleshoot discovery.",
+    "category": "Setup guides",
+    "date": "2026-10-04",
+    "image": "/images/blog/install-skills-claude-code-street-v1.webp",
+    "imageAlt": "Rabbit delivering an instruction package into a terminal portal",
+    "answer": "For a project skill, create .claude/skills/<name>/SKILL.md in the repository. For a personal skill, use ~/.claude/skills/<name>/SKILL.md. Add valid frontmatter and instructions, then open Claude Code and invoke /<name>. Copy supporting files and test the result, not just the file placement.",
+    "related": [
+      "how-to-write-skill-md",
+      "sync-skills-across-agents"
+    ],
+    "sources": [
+      [
+        "Claude Code: official skills documentation",
+        "https://code.claude.com/docs/en/skills"
+      ],
+      [
+        "Agent Skills specification",
+        "https://agentskills.io/specification"
+      ],
+      [
+        "Skiller product documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ],
+      [
+        "Skiller: Claude Code agent configuration",
+        "https://github.com/beautyfree/skiller/blob/main/apps/desktop/agents/claude-code.toml"
+      ]
+    ],
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "faq": [
+      {
+        "question": "Where do I install Claude Code skills?",
+        "answer": "For project skills, use .claude/skills/<name>/SKILL.md. For personal skills across projects, use ~/.claude/skills/<name>/SKILL.md. Keep supporting scripts and references inside the named skill directory."
+      },
+      {
+        "question": "Why does Claude Code not recognize my skill?",
+        "answer": "Check the directory, filename, frontmatter and description, then reload the client if needed. A discovered skill may still not be selected automatically if its trigger does not fit the task."
+      },
+      {
+        "question": "Can Skiller manage my Claude Code skill library?",
+        "answer": "Yes. Skiller provides a visual view of installed instructions and agent targets. After syncing to Claude Code, verify discovery and run a small representative task in the client."
+      }
+    ],
+    "modified": "2026-10-05",
+    "imageSmall": "/images/blog/install-skills-claude-code-street-v1-800.webp"
+  },
+  {
+    "slug": "install-skills-codex",
+    "title": "How to install agent skills in Codex",
+    "description": "Set up Codex skills in .agents/skills, understand project and user scope, verify selection and troubleshoot common discovery problems.",
+    "category": "Setup guides",
+    "date": "2026-10-04",
+    "image": "/images/blog/install-skills-codex-street-v1.webp",
+    "imageAlt": "Rabbit assembling a skill module into a geometric console",
+    "answer": "For repository skills, create .agents/skills/<name>/SKILL.md. Current Codex documentation uses ~/.agents/skills for user skills. Add name and description frontmatter, then verify the skill in the client's selector and run a small task. Check existing manager targets separately: older paths may differ from the current shared convention.",
+    "related": [
+      "how-to-write-skill-md",
+      "sync-skills-across-agents"
+    ],
+    "sources": [
+      [
+        "Codex: official agent skills documentation",
+        "https://developers.openai.com/codex/skills/"
+      ],
+      [
+        "Agent Skills specification",
+        "https://agentskills.io/specification"
+      ],
+      [
+        "Skiller: Codex agent configuration",
+        "https://github.com/beautyfree/skiller/blob/main/apps/desktop/agents/codex.toml"
+      ],
+      [
+        "Skiller product documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ]
+    ],
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "faq": [
+      {
+        "question": "Where should Codex project skills live?",
+        "answer": "Codex project skills use .agents/skills/. Put each skill in its own directory with SKILL.md and confirm the discovery rules for your installed Codex version."
+      },
+      {
+        "question": "Does installing a skill make Codex use it automatically?",
+        "answer": "No. Discovery, selection and execution are separate checks. A clear description helps selection; explicitly invoke the skill for a small test before relying on automatic use."
+      },
+      {
+        "question": "Can I inspect and edit Codex skills in Skiller?",
+        "answer": "Yes. Use Skills Manager to inspect installed content, edit instructions and choose agent targets. Verify the result in Codex after synchronization."
+      }
+    ],
+    "modified": "2026-10-05",
+    "imageSmall": "/images/blog/install-skills-codex-street-v1-800.webp"
+  },
+  {
+    "slug": "sync-skills-across-agents",
+    "title": "How to sync skills across coding agents",
+    "description": "Keep a skill source of truth, choose the right agent paths, inspect changes before synchronization and verify every client after an update.",
+    "category": "Workflows",
+    "date": "2026-10-04",
+    "image": "/images/blog/sync-skills-across-agents-street-v1.webp",
+    "imageAlt": "Three rabbit terminal nodes linked to a shared skill dossier by violet synchronization arrows",
+    "answer": "Keep one reviewed source for each skill, choose the discovery path and scope for each agent, inspect existing targets and synchronize the complete directory. Then verify discovery and execution in each client. Shared SKILL.md content does not guarantee shared paths, dependencies or behavior.",
+    "related": [
+      "share-skills-with-team",
+      "install-skills-cursor"
+    ],
+    "sources": [
+      [
+        "Claude Code: skills",
+        "https://code.claude.com/docs/en/skills"
+      ],
+      [
+        "Codex: agent skills",
+        "https://developers.openai.com/codex/skills/"
+      ],
+      [
+        "Cursor: agent skills and compatibility paths",
+        "https://cursor.com/docs/context/skills"
+      ],
+      [
+        "Skiller product documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ]
+    ],
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "faq": [
+      {
+        "question": "Can one skill be used in Claude Code, Codex and Cursor?",
+        "answer": "The shared SKILL.md format makes reuse possible, but discovery paths, invocation and supported metadata vary. Verify each client rather than assuming identical behavior."
+      },
+      {
+        "question": "How do I avoid overwriting custom skill instructions?",
+        "answer": "Keep a reviewed source of truth and compare local edits before updating or synchronizing. Test the resulting content in the intended targets."
+      },
+      {
+        "question": "Does Skiller sync skills between computers?",
+        "answer": "This guide covers synchronization across agents on one computer. Device synchronization requires a separate mechanism; do not assume cross-agent sync includes cloud backup."
+      }
+    ],
+    "modified": "2026-10-05",
+    "imageSmall": "/images/blog/sync-skills-across-agents-street-v1-800.webp"
+  },
+  {
+    "slug": "agent-skills-vs-mcp",
+    "title": "Agent skills vs MCP: when to use each",
+    "description": "Compare agent skills and MCP: reusable instructions versus tool access, when to combine them, and what to verify before relying on a workflow.",
+    "category": "Fundamentals",
+    "date": "2026-10-04",
+    "image": "/images/blog/agent-skills-vs-mcp-street-v1.webp",
+    "imageAlt": "Rabbit overseeing an instruction playbook and a connected tool cable",
+    "answer": "A skill teaches an agent a repeatable procedure. An MCP connection exposes tools and data from a server. Use a skill when the method is missing, configure a capability when access is missing, and combine them when the procedure needs that capability. Each still needs its own verification and authorization.",
+    "related": [
+      "what-are-agent-skills",
+      "sync-skills-across-agents"
+    ],
+    "sources": [
+      [
+        "Model Context Protocol introduction",
+        "https://modelcontextprotocol.io/docs/getting-started/intro"
+      ],
+      [
+        "Agent Skills specification",
+        "https://agentskills.io/specification"
+      ],
+      [
+        "Codex: skills and dependencies",
+        "https://developers.openai.com/codex/skills/"
+      ],
+      [
+        "Skiller product documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ]
+    ],
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "faq": [
+      {
+        "question": "What is the difference between agent skills and MCP?",
+        "answer": "Skills describe procedures. MCP connects an agent to tools or data. A skill can explain how to use an MCP tool, but it cannot supply permissions or configure the server by itself."
+      },
+      {
+        "question": "Can I use an agent skill without MCP?",
+        "answer": "Yes. A skill can work with files and tools already available to the agent. MCP is needed only when the workflow depends on a connected tool or data source."
+      },
+      {
+        "question": "Does installing a skill in Skiller install its MCP dependencies?",
+        "answer": "No. Skiller manages the skill package and agent targets. Check and configure any required MCP servers separately in the coding client."
+      }
+    ],
+    "modified": "2026-10-05",
+    "imageSmall": "/images/blog/agent-skills-vs-mcp-street-v1-800.webp"
+  },
+  {
+    "slug": "install-skills-cursor",
+    "title": "How to install and manage Cursor skills",
+    "description": "Install Cursor agent skills, inspect their instructions in Skiller, and verify project scope, synchronization and invocation in Cursor.",
+    "category": "Setup guides",
+    "date": "2026-10-04",
+    "image": "/images/blog/install-skills-cursor-street-v1.webp",
+    "imageAlt": "Rabbit riding a violet cursor toward an open skill folder",
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "answer": "Create .agents/skills/<name>/SKILL.md in your project or use a supported personal skill directory. Add valid name and description frontmatter, reopen the project if needed, and invoke the skill from the slash menu in Agent chat. Test a small task before relying on automatic selection.",
+    "related": [
+      "how-to-write-skill-md",
+      "troubleshoot-agent-skills"
+    ],
+    "sources": [
+      [
+        "Cursor: Agent Skills",
+        "https://cursor.com/docs/skills"
+      ],
+      [
+        "Agent Skills specification",
+        "https://agentskills.io/specification"
+      ],
+      [
+        "Skiller product documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ]
+    ],
+    "faq": [
+      {
+        "question": "Can Cursor use the shared SKILL.md format?",
+        "answer": "Yes. Cursor supports agent skills, with shared and client-specific discovery conventions. Check the official documentation for your installed version before choosing a directory."
+      },
+      {
+        "question": "Are Cursor rules the same as skills?",
+        "answer": "No. Rules preserve project guidance; skills preserve reusable procedures that are selected for a task. Avoid maintaining duplicate instructions in both places."
+      },
+      {
+        "question": "How do I verify a Cursor skill after syncing from Skiller?",
+        "answer": "Inspect the content and target in Skills Manager, open Cursor in the intended project and test the skill on a small task. Confirm which discovery path the client uses."
+      }
+    ],
+    "modified": "2026-10-05",
+    "imageSmall": "/images/blog/install-skills-cursor-street-v1-800.webp"
+  },
+  {
+    "slug": "troubleshoot-agent-skills",
+    "title": "How to troubleshoot missing agent skills",
+    "description": "Use Skiller to inspect installed skill content and agent targets, then diagnose discovery, selection and execution problems in your coding agent.",
+    "category": "Setup guides",
+    "date": "2026-10-04",
+    "image": "/images/blog/troubleshoot-agent-skills-street-v1.webp",
+    "imageAlt": "Rabbit detective finding a broken violet circuit through a magnifying glass",
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "answer": "Separate discovery, selection and execution. First confirm the agent is looking in the correct project and skill directory, then validate SKILL.md and supporting files. Try explicit invocation before changing the description, and test dependencies only after the skill is actually loaded.",
+    "related": [
+      "install-skills-cursor",
+      "test-agent-skills"
+    ],
+    "sources": [
+      [
+        "Agent Skills specification",
+        "https://agentskills.io/specification"
+      ],
+      [
+        "Claude Code: skills",
+        "https://code.claude.com/docs/en/skills"
+      ],
+      [
+        "Codex: skills",
+        "https://developers.openai.com/codex/skills/"
+      ],
+      [
+        "Cursor: Agent Skills",
+        "https://cursor.com/docs/skills"
+      ],
+      [
+        "Skiller product documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ]
+    ],
+    "faq": [
+      {
+        "question": "Why is my installed agent skill missing?",
+        "answer": "Check discovery first: the target directory, SKILL.md filename and valid frontmatter. Then check client reload requirements. Skiller can help inspect the installed copy and agent target."
+      },
+      {
+        "question": "Why is a visible skill not selected?",
+        "answer": "The name or description may not match the task, or the client may require explicit invocation. Test an explicit request before changing installation paths."
+      },
+      {
+        "question": "Can synchronization fix a broken skill procedure?",
+        "answer": "Synchronization can fix a missing or stale copy. It cannot repair incorrect instructions, unavailable tools or missing inputs; test execution separately."
+      }
+    ],
+    "modified": "2026-10-05",
+    "imageSmall": "/images/blog/troubleshoot-agent-skills-street-v1-800.webp"
+  },
+  {
+    "slug": "test-agent-skills",
+    "title": "How to test agent skills: examples and a checklist",
+    "description": "Test agent skills with fixed inputs, positive and negative cases, and a baseline. Edit SKILL.md in Skiller and verify results before syncing.",
+    "category": "Authoring",
+    "date": "2026-10-04",
+    "image": "/images/blog/test-agent-skills-street-v1.webp",
+    "imageAlt": "Rabbit technician inspecting skill test tracks and a violet approval stamp",
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "answer": "Test selection and output separately. Use realistic prompts, fixed input files, fresh sessions and observable assertions. Compare the skill with a no-skill baseline or its previous version, inspect actual artifacts, and repeat cases where the result is inconsistent.",
+    "related": [
+      "how-to-write-skill-md",
+      "share-skills-with-team"
+    ],
+    "sources": [
+      [
+        "Agent Skills specification",
+        "https://agentskills.io/specification"
+      ],
+      [
+        "Agent Skills: evaluating output quality",
+        "https://agentskills.io/skill-creation/evaluating-skills"
+      ],
+      [
+        "Skiller product documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ]
+    ],
+    "faq": [
+      {
+        "question": "How should I test an agent skill?",
+        "answer": "Use a representative task, fixed inputs and a clear success criterion. Include a missing-input or failed-command case, and record which client and skill copy you tested."
+      },
+      {
+        "question": "How do I compare changes to SKILL.md?",
+        "answer": "Change one part of the instructions, rerun the same test inputs and compare results. Skiller lets you inspect and edit the content before synchronizing the tested version."
+      },
+      {
+        "question": "Does valid frontmatter prove a skill works?",
+        "answer": "No. Valid frontmatter helps discovery. You must also verify selection, procedure execution and the resulting artifact."
+      }
+    ],
+    "modified": "2026-10-05",
+    "imageSmall": "/images/blog/test-agent-skills-street-v1-800.webp"
+  },
+  {
+    "slug": "review-community-skills",
+    "title": "How to find and review AI agent skills",
+    "description": "Find AI agent skills in Skiller Marketplace, browse skills.sh and ClawHub, and review instructions, scripts and sources before installation.",
+    "category": "Workflows",
+    "date": "2026-10-04",
+    "image": "/images/blog/review-community-skills-street-v1.webp",
+    "imageAlt": "Rabbit scout reviewing community skill packages behind an eye-shaped shield motif",
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "answer": "Open Marketplace in Skiller, search skills.sh or ClawHub for your workflow, and preview the source repository and target agents. Review SKILL.md and all supporting scripts before installing. Inspect the installed copy in Skills Manager and test it with harmless inputs in the target coding agent.",
+    "related": [
+      "best-ai-agent-skill-managers",
+      "test-agent-skills"
+    ],
+    "sources": [
+      [
+        "Agent Skills specification",
+        "https://agentskills.io/specification"
+      ],
+      [
+        "Claude Code: skills",
+        "https://code.claude.com/docs/en/skills"
+      ],
+      [
+        "Cursor: Agent Skills",
+        "https://cursor.com/docs/skills"
+      ],
+      [
+        "Skiller product documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ]
+    ],
+    "faq": [
+      {
+        "question": "Where can I discover skills in Skiller?",
+        "answer": "Skiller Marketplace includes skills.sh and ClawHub discovery. Inspect the original repository and package content before deciding to install a skill."
+      },
+      {
+        "question": "What should I check before installing a community skill?",
+        "answer": "Read the instructions, supporting files, scripts and dependencies. Confirm the source, required access and intended target; test with a small task before broader use."
+      },
+      {
+        "question": "Does a Marketplace listing guarantee a skill is safe?",
+        "answer": "No. A listing is a discovery aid, not a security guarantee. Review the package and follow the permissions of your agent environment."
+      }
+    ],
+    "modified": "2026-10-05",
+    "imageSmall": "/images/blog/review-community-skills-street-v1-800.webp"
+  },
+  {
+    "slug": "agent-skills-vs-rules",
+    "title": "Agent skills vs AGENTS.md and Cursor rules",
+    "description": "Choose where project instructions belong, and use Skiller to manage reusable skills without duplicating AGENTS.md or Cursor rules.",
+    "category": "Fundamentals",
+    "date": "2026-10-04",
+    "image": "/images/blog/agent-skills-vs-rules-street-v1.webp",
+    "imageAlt": "Anchored project foundation and a portable violet instruction playbook with rabbit stencil",
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "answer": "Put stable project conventions in repository instructions or the client’s rule mechanism. Use a skill for a reusable procedure selected when a matching task arises, and use the task prompt for today’s inputs and scope. Avoid copying the same policy into all three places.",
+    "related": [
+      "what-are-agent-skills",
+      "how-to-write-skill-md"
+    ],
+    "sources": [
+      [
+        "Agent Skills specification",
+        "https://agentskills.io/specification"
+      ],
+      [
+        "Cursor: Agent Skills",
+        "https://cursor.com/docs/skills"
+      ],
+      [
+        "Cursor: rules",
+        "https://cursor.com/docs/rules"
+      ],
+      [
+        "Codex: AGENTS.md",
+        "https://developers.openai.com/codex/guides/agents-md"
+      ],
+      [
+        "Skiller product documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ]
+    ],
+    "faq": [
+      {
+        "question": "Should an instruction go in AGENTS.md or a skill?",
+        "answer": "Put repository conventions in AGENTS.md or the client’s project rules. Put a reusable task procedure in a skill when it should be selected only for relevant work."
+      },
+      {
+        "question": "Can skills replace all Cursor rules?",
+        "answer": "Usually not. Persistent project guidance and task-specific procedures have different jobs. Keep each instruction in the place that owns it."
+      },
+      {
+        "question": "What does Skiller manage in this workflow?",
+        "answer": "Skiller manages reusable skill content and agent targets. Keep repository instruction files and project rules in their appropriate locations."
+      }
+    ],
+    "modified": "2026-10-05",
+    "imageSmall": "/images/blog/agent-skills-vs-rules-street-v1-800.webp"
+  },
+  {
+    "slug": "share-skills-with-team",
+    "title": "How to share agent skills with your team",
+    "description": "Share team agent skills through Git, manage local copies with Skiller, and test updates across Claude Code, Codex and Cursor before rollout.",
+    "category": "Workflows",
+    "date": "2026-10-04",
+    "image": "/images/blog/share-skills-with-team-street-v1.webp",
+    "imageAlt": "Three rabbits collaborating around a shared skill dossier and a violet branching path",
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "answer": "Keep reviewed team skills in Git. Use Skiller to inspect installed copies and agent targets, preserve local customizations, and sync an approved version to selected agents. Verify the workflow in each client and retain the previous full directory for rollback.",
+    "related": [
+      "sync-skills-across-agents",
+      "review-community-skills"
+    ],
+    "sources": [
+      [
+        "Agent Skills specification",
+        "https://agentskills.io/specification"
+      ],
+      [
+        "Cursor: Agent Skills",
+        "https://cursor.com/docs/skills"
+      ],
+      [
+        "Claude Code: skills",
+        "https://code.claude.com/docs/en/skills"
+      ],
+      [
+        "Codex: skills",
+        "https://developers.openai.com/codex/skills/"
+      ],
+      [
+        "Skiller product documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ]
+    ],
+    "faq": [
+      {
+        "question": "How should a team share agent skills?",
+        "answer": "Keep the reviewed source library in Git, make changes through a reviewable workflow and let each teammate deploy to their own intended agents and projects."
+      },
+      {
+        "question": "Does Skiller provide the whole team sharing workflow?",
+        "answer": "Skiller helps inspect, edit and sync local skill copies. Git supplies shared history and review in this guide; do not confuse local deployment with a hosted team service."
+      },
+      {
+        "question": "How do I protect personal skill customizations during team updates?",
+        "answer": "Compare the reviewed upstream change with the local copy, preserve deliberate customizations and test the merged procedure before syncing it further."
+      }
+    ],
+    "modified": "2026-10-05",
+    "imageSmall": "/images/blog/share-skills-with-team-street-v1-800.webp"
+  },
+  {
+    "image": "/images/blog/review-community-skills-street-v1.webp",
+    "imageSmall": "/images/blog/review-community-skills-street-v1-800.webp",
+    "imageAlt": "Rabbit scout reviewing community skill packages behind an eye-shaped shield motif",
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "slug": "skiller-vs-skills-cli",
+    "title": "Skiller vs Skills CLI: visual management or terminal installation?",
+    "description": "Compare Skiller with Vercel Labs’ Skills CLI: desktop editing, skills.sh discovery, agent targets, project scope and repeatable installation.",
+    "category": "Comparisons",
+    "date": "2026-10-05",
+    "modified": "2026-10-05",
+    "answer": "Choose Skiller to inspect installed skills, edit SKILL.md and manage coding-agent targets in a desktop app. Choose Vercel Labs’ Skills CLI for scriptable installation, command-line updates and remote environments. Both work with the skills.sh ecosystem.",
+    "related": [
+      "best-ai-agent-skill-managers",
+      "skiller-vs-openskills",
+      "skiller-vs-skills-manager"
+    ],
+    "sources": [
+      [
+        "Skiller product documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ],
+      [
+        "Skills CLI official documentation",
+        "https://github.com/vercel-labs/skills#readme"
+      ],
+      [
+        "Skiller license",
+        "https://github.com/beautyfree/skiller/blob/main/LICENSE"
+      ],
+      [
+        "Skills CLI license",
+        "https://github.com/vercel-labs/skills/blob/main/LICENSE"
+      ]
+    ],
+    "faq": [
+      {
+        "question": "Is Skiller an alternative to skills.sh?",
+        "answer": "Skiller is a desktop manager; skills.sh is a discovery site. Skiller includes skills.sh as a Marketplace source. The direct terminal comparison is with Vercel Labs’ Skills CLI."
+      },
+      {
+        "question": "Can Skills CLI edit SKILL.md?",
+        "answer": "Skills CLI documents skills init for creating a template. Editing the instructions is normally done in a separate editor; Skiller provides editing within its desktop library."
+      },
+      {
+        "question": "Which should I use for automated installation?",
+        "answer": "Choose Skills CLI for explicit command-line installation and documented non-interactive flags. Choose Skiller for visual inspection, editing and everyday management of agent targets."
+      }
+    ]
+  },
+  {
+    "image": "/images/blog/sync-skills-across-agents-street-v1.webp",
+    "imageSmall": "/images/blog/sync-skills-across-agents-street-v1-800.webp",
+    "imageAlt": "Three rabbit terminal nodes linked to a shared skill dossier by violet synchronization arrows",
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "slug": "skiller-vs-openskills",
+    "title": "Skiller vs OpenSkills: desktop library or AGENTS.md loader?",
+    "description": "Compare Skiller and OpenSkills by skill editing, agent discovery, AGENTS.md indexing, installation paths and day-to-day management.",
+    "category": "Comparisons",
+    "date": "2026-10-05",
+    "modified": "2026-10-05",
+    "answer": "Choose Skiller for visual skill inspection, editing and synchronization to coding-agent targets. Choose OpenSkills when your integration depends on a generated skill index in AGENTS.md and command-line loading through openskills read. Their sync commands solve different problems.",
+    "related": [
+      "best-ai-agent-skill-managers",
+      "skiller-vs-skills-cli",
+      "skiller-vs-skills-manager"
+    ],
+    "sources": [
+      [
+        "Skiller product documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ],
+      [
+        "OpenSkills official documentation",
+        "https://github.com/numman-ali/openskills#readme"
+      ],
+      [
+        "Skiller license",
+        "https://github.com/beautyfree/skiller/blob/main/LICENSE"
+      ],
+      [
+        "OpenSkills license",
+        "https://github.com/numman-ali/openskills/blob/main/LICENSE"
+      ]
+    ],
+    "faq": [
+      {
+        "question": "Does OpenSkills sync skills across agent folders?",
+        "answer": "Its documented sync command generates an available-skills index in AGENTS.md or a custom output file. That differs from Skiller’s management of skill content and agent targets."
+      },
+      {
+        "question": "Is .agent/skills the same as .agents/skills?",
+        "answer": "No. OpenSkills universal mode uses .agent/skills, singular. Several coding agents use .agents/skills for native project discovery. Check the client’s path and loading mechanism."
+      },
+      {
+        "question": "Can Skiller replace an OpenSkills AGENTS.md index?",
+        "answer": "Skiller is a better fit for visual library management and target synchronization. If your agent depends on the generated OpenSkills index and read command, preserve that integration or explicitly migrate and test it."
+      }
+    ]
+  },
+  {
+    "image": "/images/blog/best-ai-agent-skill-managers-street-v1.webp",
+    "imageSmall": "/images/blog/best-ai-agent-skill-managers-street-v1-800.webp",
+    "imageAlt": "Angular rabbit beside a wall of skill manager tiles in violet and black stencil art",
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "slug": "skiller-vs-skills-manager",
+    "title": "Skiller vs Skills Manager: editing, presets and device backup",
+    "description": "Compare Skiller with xingkongliang’s Skills Manager: visual editing, agent workspaces, Marketplace, presets, CLI and Git-backed device backup.",
+    "category": "Comparisons",
+    "date": "2026-10-05",
+    "modified": "2026-10-05",
+    "answer": "Choose Skiller for a desktop workflow centered on inspecting installed instructions, editing SKILL.md and managing agent targets. Compare xingkongliang’s Skills Manager when named presets, Git-backed device backup or a companion CLI are priorities. Both offer desktop libraries and project workspaces.",
+    "related": [
+      "best-ai-agent-skill-managers",
+      "skiller-vs-skills-cli",
+      "skiller-vs-openskills"
+    ],
+    "sources": [
+      [
+        "Skiller product documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ],
+      [
+        "Skills Manager official documentation",
+        "https://github.com/xingkongliang/skills-manager#readme"
+      ],
+      [
+        "Skiller license",
+        "https://github.com/beautyfree/skiller/blob/main/LICENSE"
+      ],
+      [
+        "Skills Manager license",
+        "https://github.com/xingkongliang/skills-manager/blob/main/LICENSE"
+      ]
+    ],
+    "faq": [
+      {
+        "question": "Which Skills Manager does this comparison cover?",
+        "answer": "It covers xingkongliang/skills-manager. Skills Manager by jiweiyeah, whose README links to skillsmanager.freeourdays.com, is a separate project."
+      },
+      {
+        "question": "Does Skiller provide automatic Git-backed device backup?",
+        "answer": "This comparison does not claim that feature for Skiller. Its cross-agent sync manages local skill targets. Skills Manager documents automatic Git-backed backup and multi-device synchronization."
+      },
+      {
+        "question": "Is Skills Manager better than Skiller?",
+        "answer": "Skills Manager is a stronger fit when presets, Git-backed device backup or its CLI are required. Skiller fits visual inspection, inline skill editing and day-to-day agent target management. Test your actual agents and project scope before migrating."
+      }
+    ]
+  },
+  {
+    "image": "/images/blog/agent-skills-vs-rules-street-v1.webp",
+    "imageSmall": "/images/blog/agent-skills-vs-rules-street-v1-800.webp",
+    "imageAlt": "Anchored project foundation and a portable violet instruction playbook with rabbit stencil",
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "slug": "skiller-vs-jiwei-skills-manager",
+    "title": "Skiller vs Skills Manager by jiweiyeah: editing, links and CLI",
+    "description": "Compare Skiller with jiweiyeah’s Skills Manager: visual editing, per-tool activation, symlink behavior, AI translation and the skm CLI.",
+    "category": "Comparisons",
+    "date": "2026-10-05",
+    "modified": "2026-10-05",
+    "answer": "Choose Skiller for visual inspection, inline SKILL.md editing and project-scoped agent targets. Choose jiweiyeah’s Skills Manager when its linked central hub, per-tool activation, AI translation or skm CLI match your workflow. It is a different product from xingkongliang’s Skills Manager.",
+    "related": [
+      "best-ai-agent-skill-managers",
+      "skiller-vs-skills-cli"
+    ],
+    "sources": [
+      [
+        "Skiller documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ],
+      [
+        "Skills Manager (jiweiyeah) official documentation",
+        "https://github.com/jiweiyeah/Skills-Manager#readme"
+      ],
+      [
+        "Skiller license",
+        "https://github.com/beautyfree/skiller/blob/main/LICENSE"
+      ]
+    ],
+    "faq": [
+      {
+        "question": "Is this the Skills Manager on skillsmanager.freeourdays.com?",
+        "answer": "Yes. The jiweiyeah/Skills-Manager README links to that website. The xingkongliang project is a separate Skills Manager."
+      },
+      {
+        "question": "Does Skills Manager need Administrator rights on Windows?",
+        "answer": "Its README says a standard account is sufficient: the app tries symlinks, then junctions, then tracked copies. Verify the behavior on your filesystem and target paths."
+      },
+      {
+        "question": "Which app should I use for editing agent skills?",
+        "answer": "Skiller is a good fit for inline SKILL.md editing with visual agent target management. Consider jiweiyeah’s Skills Manager when linked-hub activation, AI translation or skm automation are your priorities."
+      }
+    ]
+  },
+  {
+    "image": "/images/blog/share-skills-with-team-street-v1.webp",
+    "imageSmall": "/images/blog/share-skills-with-team-street-v1-800.webp",
+    "imageAlt": "Three rabbits collaborating around a shared skill dossier and a violet branching path",
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "slug": "skiller-vs-skills-hub",
+    "title": "Skiller vs Skills Hub: daily editing or scheduled maintenance?",
+    "description": "Compare Skiller and Skills Hub by local editing, project scope, scheduled updates, Git-backed device sync, recovery and CLI setup.",
+    "category": "Comparisons",
+    "date": "2026-10-05",
+    "modified": "2026-10-05",
+    "answer": "Choose Skiller for visual inspection, inline skill editing and managing coding-agent targets. Choose Skills Hub when scheduled package updates, Git-backed device synchronization or a 30-day local recycle bin are central requirements. Both provide desktop libraries and project-scope workflows.",
+    "related": [
+      "best-ai-agent-skill-managers",
+      "skiller-vs-skills-cli"
+    ],
+    "sources": [
+      [
+        "Skiller documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ],
+      [
+        "Skills Hub official documentation",
+        "https://github.com/qufei1993/skills-hub#readme"
+      ],
+      [
+        "Skiller license",
+        "https://github.com/beautyfree/skiller/blob/main/LICENSE"
+      ]
+    ],
+    "faq": [
+      {
+        "question": "Does Skills Hub sync a library across computers?",
+        "answer": "Its documentation describes portable content, descriptions and tags synchronized through GitHub, GitLab or Gitee, with device-local paths, targets and credentials kept separate."
+      },
+      {
+        "question": "Are Skills Hub and SkillHub Desktop the same app?",
+        "answer": "No. Skills Hub is qufei1993/skills-hub. SkillHub Desktop is skillhub-club/skillhub-desktop, with a different catalog and AI-authoring workflow."
+      },
+      {
+        "question": "Which should I choose for local skill editing?",
+        "answer": "Choose Skiller when inline editing and visual agent-target management are your main tasks. Compare Skills Hub when scheduled updates, device synchronization or recoverable deletion are required."
+      }
+    ]
+  },
+  {
+    "image": "/images/blog/how-to-write-skill-md-street-v1.webp",
+    "imageSmall": "/images/blog/how-to-write-skill-md-street-v1-800.webp",
+    "imageAlt": "Rabbit author drafting a skill checklist in a violet and black street-art collage",
+    "imageWidth": 1200,
+    "imageHeight": 751,
+    "slug": "skiller-vs-skillhub-desktop",
+    "title": "Skiller vs SkillHub Desktop: skill management or AI authoring?",
+    "description": "Compare Skiller and SkillHub Desktop: catalog discovery, inline editing, AI generation, collections, coding-agent support and installation.",
+    "category": "Comparisons",
+    "date": "2026-10-05",
+    "modified": "2026-10-05",
+    "answer": "Choose Skiller for inspecting installed instructions, editing SKILL.md and managing project-scoped agent targets. Choose SkillHub Desktop when SkillHub catalog discovery, collections and AI-assisted generation or rewriting are your priority. Confirm your target agent and connected service requirements before choosing.",
+    "related": [
+      "best-ai-agent-skill-managers",
+      "skiller-vs-skills-cli"
+    ],
+    "sources": [
+      [
+        "Skiller documentation",
+        "https://github.com/beautyfree/skiller#readme"
+      ],
+      [
+        "SkillHub Desktop official documentation",
+        "https://github.com/skillhub-club/skillhub-desktop#readme"
+      ],
+      [
+        "Skiller license",
+        "https://github.com/beautyfree/skiller/blob/main/LICENSE"
+      ]
+    ],
+    "faq": [
+      {
+        "question": "Does SkillHub Desktop support Codex?",
+        "answer": "The README checked for this comparison does not list Codex in its supported-tool section. Verify the current implementation and release before relying on Codex support. Skiller documents Codex support."
+      },
+      {
+        "question": "Does SkillHub Desktop generate skills with AI?",
+        "answer": "Its README documents custom skill generation and selected-text expansion, simplification, rewriting and translation. Confirm connected model or service requirements and review generated instructions."
+      },
+      {
+        "question": "Is Skiller a good alternative to SkillHub Desktop?",
+        "answer": "Yes, when your main goal is inspecting installed content, editing SKILL.md and managing project-scoped coding-agent targets. Choose SkillHub Desktop when its catalog, collections and AI-assisted writing fit your workflow."
+      }
+    ]
+  }
+]

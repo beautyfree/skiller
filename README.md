@@ -1,6 +1,6 @@
 # Skiller
 
-![Skiller Hero Banner](docs/images/screenshots/hero.png)
+![Skiller — Your skills. One place.](docs/images/readme/banner-street-v1.webp)
 
 Install, sync, and manage skills with Skiller across your coding agents from one desktop app.
 
@@ -85,23 +85,35 @@ Skiller also reads the Skills CLI v3 global `.skill-lock.json` (`$XDG_STATE_HOME
 - **Marketplace** — search and install community skills quickly
 - **Settings** — configure behavior, sources, and runtime preferences
 
+### Dashboard
+
+See detected agents and the skills available to each in one view.
+
+![Skiller Dashboard with detected coding agents](docs/images/readme/dashboard-street-v1.webp)
+
+### Agent Library
+
+Create a library for your collection or connect an existing one.
+
+![Skiller Agent Library setup](docs/images/readme/library-street-v1.webp)
+
 ### Skills Manager
 
 Browse every installed skill, see which agents consume it, edit `SKILL.md` inline, and sync with one click.
 
-![Skills Manager](docs/images/screenshots/skills.png)
+![Skiller skill details, agent targets and editable copies](docs/images/readme/customize-street-v1.webp)
 
 ### Marketplace
 
 Search `skills.sh` and `ClawHub` in-app, preview a skill's target agents and repository, and install without touching the filesystem.
 
-![Marketplace](docs/images/screenshots/marketplace.png)
+![Skiller Marketplace with skills.sh and ClawHub](docs/images/readme/marketplace-street-v1.webp)
 
 ### Settings
 
 Theme, accent color, window blur, language, close behavior, and cache controls — all in one place.
 
-![Settings](docs/images/screenshots/settings.png)
+![Skiller appearance, preferences and update settings](docs/images/readme/settings-street-v1.webp)
 
 ## Installation
 

@@ -1,0 +1,33 @@
+<h2 id="edit-reviewed-copy">Edit a reviewed copy in Skiller</h2>
+<p>Use Skiller's Skills Manager to inspect the skill you want to improve, its instructions and the agents that consume it. Read the current <code>SKILL.md</code> before editing. Save the current directory or source revision so you can compare the candidate with the previous behavior.</p>
+<p>Skiller supports inline editing of <code>SKILL.md</code>. Change the step responsible for the failure: the trigger description for selection problems, the procedure for missing checks, or the output instructions for incomplete reports. Keep the edit small enough that the evaluation can explain whether it helped.</p>
+<p>Run the candidate in the coding agent with the fixture inputs below. Skiller manages the instructions and copies; the coding agent executes the task. Synchronize the reviewed change to the intended agents after checking its result, then verify those clients separately.</p>
+<h2 id="define-success">Define success before tuning instructions</h2>
+<p>A valid <code>SKILL.md</code> can still produce poor results. Format validation checks structure, while a behavioral evaluation checks what the agent does with the instructions. Begin with one real workflow and write down the artifact you expect. For a release-note review, that might be supported findings tied to a supplied diff, without editing the source or publishing anything.</p>
+<p>Choose checks a reviewer can observe. “The review is useful” is too vague. “The review catches the breaking API change in this fixture and cites the changed file” can be verified. Do not require an exact sentence if several phrasings would express the correct result.</p>
+<h2 id="test-cases">Create a small test set</h2>
+<p>Use realistic inputs rather than prompts that repeat the entire skill. Start with a normal case, a nearby task that should not trigger the skill, a missing-input case and a failure case. For the release-note example, make the failure case an unavailable Git range and check that the agent reports the limitation.</p>
+<div class="table-wrap"><table><caption>A starter evaluation set</caption><thead><tr><th>Case</th><th>What to check</th></tr></thead><tbody><tr><td>Matching request</td><td>The skill is selected and checks the supplied evidence.</td></tr><tr><td>Unrelated small task</td><td>The agent avoids an unnecessary review workflow.</td></tr><tr><td>Missing release notes</td><td>The agent requests the missing input.</td></tr><tr><td>Unavailable diff</td><td>The agent does not claim the review is complete.</td></tr></tbody></table></div>
+<p>Keep fixture data harmless and independent of production. Save the prompts and input files so later changes can be checked against the same cases. A small set with meaningful assertions is more useful than many variations that all test the same happy path.</p>
+<h2 id="compare-baseline">Compare with a baseline</h2>
+<p>The official evaluation guide recommends comparing outputs with and without a skill, or comparing an updated skill with a snapshot of the previous version. Use the same task and inputs for both. Start each run in a fresh session so previous answers and authoring discussion do not supply missing instructions.</p>
+<p>Record the client and model configuration as well as the skill version. If you change the model, prompt and skill together, you cannot tell which change caused the difference. Where your client exposes timing or token use, record it alongside quality rather than assuming a longer workflow is better.</p>
+<pre><code>evals/
+├── prompts.md
+├── fixtures/
+│   ├── release-notes.md
+│   └── change.diff
+└── results/
+    ├── baseline/
+    └── candidate/</code></pre>
+<p>This layout is an example for your records, not a required Agent Skills directory convention. Store generated results outside the distributable skill when they contain private project material.</p>
+<h2 id="grade-evidence">Grade the evidence</h2>
+<p>Inspect the saved output, not just the agent's summary. If the workflow creates a file, open it. If it claims a command passed, check the command result. Use deterministic checks for mechanical requirements such as valid JSON, required keys or unchanged input files. Use human review for clarity, relevance and unsupported advice.</p>
+<p>Record pass or fail with a reason. A finding that merely repeats a comment in the fixture is weaker than one connected to the changed behavior. Review your assertions too: a check that passes identically with and without the skill may not measure any value added by the skill.</p>
+<h2 id="worked-example">A worked example: evaluate a release-review skill</h2>
+<p>Create a fixture diff that removes <code>GET /v1/export</code> and release notes that only say “Export performance improved.” Ask the agent: “Review these release notes against the supplied diff. Report missing breaking changes; do not edit files.” Run it once without the skill and again with the candidate skill in a fresh session.</p>
+<div class="table-wrap"><table><caption>Observable checks for the fixture</caption><thead><tr><th scope="col">Check</th><th scope="col">Pass condition</th></tr></thead><tbody><tr><td>Missing breaking change</td><td>The output identifies the removed endpoint and cites the supplied diff.</td></tr><tr><td>Unsupported claim</td><td>The output flags the performance claim when the fixture has no measurement.</td></tr><tr><td>Task boundary</td><td>The input files remain unchanged; nothing is published.</td></tr><tr><td>Missing evidence</td><td>With the diff omitted, the agent asks for it or reports that it cannot verify the notes.</td></tr></tbody></table></div>
+<p>These are expected outcomes for an example fixture, not measured results for a particular model. Save both outputs and grade each condition. If both versions pass, try a harder representative case before claiming that the skill improved the workflow. Use the same cases after <a href="/blog/how-to-write-skill-md/">editing SKILL.md</a> in Skiller.</p>
+<h2 id="fix-owner">Fix the step that owns the failure</h2>
+<p>If selection fails, work on the description. If the agent loads the skill but misses a required comparison, clarify that procedural step or provide an example. If a command is unavailable, document the dependency and fallback. Repeating “always be careful” throughout the file does not identify what evidence is missing.</p>
+<p>Rerun the full small set after a meaningful change. Repeat inconsistent cases before calling an improvement reliable. Keep the previous result so regressions remain visible. Once the skill behaves acceptably, <a href="/blog/share-skills-with-team/">share the reviewed version</a> with the clients and environments you actually checked.</p>

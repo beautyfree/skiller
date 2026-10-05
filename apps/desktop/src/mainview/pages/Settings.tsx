@@ -19,6 +19,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/mainview/components/ui/button'
 import { Tooltip } from '@/mainview/components/ui/tooltip'
 import { useToast } from '@/mainview/components/ToastProvider'
+import { CustomAgentsSettings } from '@/mainview/components/CustomAgentsSettings'
 import { useRepos, useRemoveRepo, useSyncRepo } from '@/mainview/hooks/useRepos'
 
 interface AppSettings {
@@ -48,6 +49,7 @@ const LANGUAGES = [
 const SETTINGS_SECTIONS = [
   ['general', 'General'],
   ['appearance', 'Appearance'],
+  ['agents', 'Agents'],
   ['library', 'Library sources'],
   ['updates', 'Updates'],
   ['about', 'About'],
@@ -289,6 +291,7 @@ export default function SettingsPage() {
           </nav>
         </aside>
         <main className="min-w-0 space-y-5">
+        {activeSettingsSection === 'agents' && <CustomAgentsSettings />}
         {/* Theme */}
         {activeSettingsSection === 'appearance' && <><section id="appearance" className="rounded-2xl p-5 glass-panel settings-panel space-y-3">
           <div className="flex items-start justify-between gap-4">

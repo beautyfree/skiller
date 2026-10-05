@@ -69,6 +69,7 @@ export function agentConfigToJson(
 		name: a.name,
 		enabled: a.enabled,
 		global_paths: a.global_paths,
+		project_skills_dir: a.project_skills_dir,
 		skill_format: a.skill_format,
 		extra_config: a.extra_config,
 		hooks: a.hooks,

@@ -1,3 +1,4 @@
+import { loadRegisteredAgents } from './custom-agents'
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -20,8 +21,7 @@ import { skillToJson } from "./skill-json";
 import type { Skill } from "./skill-types";
 import type { AgentConfig } from "./types";
 import { discoverSkillDirs } from "./scanner";
-import { detectAgents, loadAgentConfigs } from "./registry";
-import { getAgentsDir } from "./paths";
+import { detectAgents } from "./registry";
 import { appDataRootPath } from "./settings";
 import type { SourceSecurityPolicyInput } from "dotagents/source-policy";
 import {
@@ -36,7 +36,7 @@ type SkillsManifest = {
 };
 
 function loadDetectedAgents(): AgentConfig[] {
-  return detectAgents(loadAgentConfigs(getAgentsDir()));
+  return detectAgents(loadRegisteredAgents());
 }
 
 export function repoNameFromUrl(url: string): string {

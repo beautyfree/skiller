@@ -80,7 +80,8 @@ const platform = createElectronPlatform(() => {
 const appRouter = createAppRouter({
 	platform,
 	rpc: bunSideRpc,
-	ensureSkillWatcherStarted: () => {
+	ensureSkillWatcherStarted: (reason) => {
+		if (reason === 'custom_agents_changed') { stopWatcher?.(); stopWatcher = null; }
 		if (stopWatcher) return;
 		stopWatcher = startSkillWatcher(() => {
 			bunSideRpc.send("skills_changed");

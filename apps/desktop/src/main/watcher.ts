@@ -1,8 +1,8 @@
+import { loadRegisteredAgents } from './custom-agents'
 import { existsSync, mkdirSync } from "node:fs";
 import chokidar from "chokidar";
 import type { FSWatcher } from "chokidar";
-import { detectAgents, loadAgentConfigs } from "./registry";
-import { getAgentsDir } from "./paths";
+import { detectAgents } from "./registry";
 import { join, sep } from "node:path";
 import type { AgentConfig } from "./types";
 import { sharedSkillsDir } from "./shared-skills";
@@ -44,7 +44,7 @@ function buildWatchGlobs(roots: string[]): string[] {
 export function startSkillWatcher(onChange: () => void): () => void {
 	let configs: AgentConfig[];
 	try {
-		configs = detectAgents(loadAgentConfigs(getAgentsDir()));
+		configs = detectAgents(loadRegisteredAgents());
 	} catch {
 		return () => {};
 	}

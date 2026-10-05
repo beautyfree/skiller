@@ -1,3 +1,4 @@
+import { loadRegisteredAgents, saveCustomAgent, removeCustomAgent } from './custom-agents'
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
@@ -53,7 +54,7 @@ import type {
   GlobalSkillUpdateProgressJson,
   LinkedSkillPackageUpdateJson,
 } from '../shared/rpc-schema'
-import { detectAgents, loadAgentConfigs } from './registry'
+import { detectAgents } from './registry'
 import { detectRuntimeAgent } from './runtime-agent'
 import { scanDotagentsMachine } from './dotagents-catalog'
 import { dotagentsDescriptorsFromSkiller } from './dotagents-catalog'
@@ -282,7 +283,7 @@ export type BunSideRpc = {
 function loadDetectedAgents(
   caller = 'unknown',
 ): AgentConfig[] {
-  const configs = loadAgentConfigs(getAgentsDir())
+  const configs = loadRegisteredAgents()
   const detected = detectAgents(configs)
   void caller
   return detected
@@ -1858,15 +1859,26 @@ export function createRequestHandlers(ctx: {
       const out = loadDetectedAgents('detect_agents').map(agentConfigToJson)
       return out
     },
+    save_custom_agent: async (params: unknown) => {
+      const slug = saveCustomAgent(params)
+      ensureSkillWatcherStarted?.('custom_agents_changed')
+      rpc.send('skills_changed')
+      return slug
+    },
+    remove_custom_agent: async (params: { slug: string }) => {
+      removeCustomAgent(params?.slug)
+      ensureSkillWatcherStarted?.('custom_agents_changed')
+      rpc.send('skills_changed')
+    },
     // Runtime context is informational only. It must never influence the
     // installable-agent list, which remains guarded by registry detection.
     detect_runtime_agent: async () => detectRuntimeAgent(),
     dotagents_machine_inventory: async (): Promise<DotagentsMachineInventoryJson> => {
-      const inventory = await scanDotagentsMachine(loadAgentConfigs(getAgentsDir()))
+      const inventory = await scanDotagentsMachine(loadRegisteredAgents())
       return dotagentsMachineToJson(inventory)
     },
     dotagents_doctor: async (params: { libraryRoot: string }): Promise<DotagentsDoctorJson> => {
-      const configs = loadAgentConfigs(getAgentsDir())
+      const configs = loadRegisteredAgents()
       return dotagentsDoctorToJson(await doctorLibrary({
         root: params.libraryRoot,
         descriptors: dotagentsDescriptorsFromSkiller(configs),

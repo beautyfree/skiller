@@ -1,3 +1,4 @@
+import { loadRegisteredAgents } from './custom-agents'
 import {
   existsSync,
   lstatSync,
@@ -15,8 +16,7 @@ import { readSettings, writeSettings } from "./settings";
 import type { MarketplaceSkill } from "./marketplace-types";
 import { resolveRepoPath } from "./repos";
 import { discoverSkillDirs } from "./scanner";
-import { detectAgents, loadAgentConfigs } from "./registry";
-import { getAgentsDir } from "./paths";
+import { detectAgents } from "./registry";
 import type { AgentConfig } from "./types";
 import type { SourceSecurityPolicyInput } from "dotagents/source-policy";
 import { checkoutReviewedGitSource } from "./git-transport";
@@ -53,7 +53,7 @@ function nowIso(): string {
 }
 
 function loadDetectedAgents(): AgentConfig[] {
-  return detectAgents(loadAgentConfigs(getAgentsDir()));
+  return detectAgents(loadRegisteredAgents());
 }
 
 // ─── Projects settings ──────────────────────────────────────────────────────

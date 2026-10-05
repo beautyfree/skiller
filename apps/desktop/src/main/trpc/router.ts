@@ -31,6 +31,8 @@ export function createAppRouter(ctx: {
   return t.router({
     list_agents: proc.query(() => h.list_agents()),
     detect_agents: proc.query(() => h.detect_agents()),
+    save_custom_agent: proc.input(anyIn).mutation(({ input }) => h.save_custom_agent(input)),
+    remove_custom_agent: proc.input(anyIn).mutation(({ input }) => h.remove_custom_agent(input)),
     detect_runtime_agent: proc.query(() => h.detect_runtime_agent()),
     dotagents_machine_inventory: proc.query(() => h.dotagents_machine_inventory()),
     dotagents_doctor: proc.input(anyIn).query(({ input }) => h.dotagents_doctor(input)),

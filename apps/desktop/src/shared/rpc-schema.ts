@@ -63,6 +63,7 @@ export type AgentConfigJson = {
   name: string;
   enabled: boolean;
   global_paths: string[];
+  project_skills_dir?: string;
   skill_format?: string;
   extra_config?: unknown;
   hooks?: unknown;
@@ -998,6 +999,8 @@ export type AppRPCSchema = {
     requests: {
       list_agents: { params?: void; response: AgentConfigJson[] };
       detect_agents: { params?: void; response: AgentConfigJson[] };
+      save_custom_agent: { params: { slug?: string; name: string; globalPath: string; projectPath: string; command: string; marker: string }; response: string };
+      remove_custom_agent: { params: { slug: string }; response: void };
       detect_runtime_agent: { params?: void; response: RuntimeAgentJson };
       dotagents_machine_inventory: { params?: void; response: DotagentsMachineInventoryJson };
       dotagents_doctor: { params: { libraryRoot: string }; response: DotagentsDoctorJson };

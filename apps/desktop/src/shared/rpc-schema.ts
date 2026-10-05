@@ -58,6 +58,16 @@ export type SkillJson = {
   library_state?: SkillLibraryStateJson | null;
 };
 
+export type SkillPresetJson = {
+  id: string; name: string;
+  skills: { id: string; name: string; sourcePath: string }[];
+};
+export type SkillPresetReviewJson = {
+  presetId: string; presetName: string;
+  target: { agents: string[]; projectPath?: string };
+  rows: { skillId: string; name: string; sourcePath: string; destination: string; hash: string | null; state: 'add' | 'installed' | 'conflict' | 'unavailable' }[];
+};
+
 export type AgentConfigJson = {
   slug: string;
   name: string;
@@ -997,6 +1007,11 @@ export type SkillSourceParam =
 export type AppRPCSchema = {
   bun: {
     requests: {
+      list_skill_presets: { params?: void; response: SkillPresetJson[] };
+      save_skill_preset: { params: { id?: string; name: string; skillIds: string[] }; response: SkillPresetJson };
+      remove_skill_preset: { params: { id: string }; response: void };
+      review_skill_preset: { params: { id: string; target: SkillPresetReviewJson['target'] }; response: SkillPresetReviewJson & { reviewId: string } };
+      apply_skill_preset: { params: { reviewId: string }; response: { added: string[]; failed: { destination: string; reason: string }[]; skipped: number } };
       list_agents: { params?: void; response: AgentConfigJson[] };
       detect_agents: { params?: void; response: AgentConfigJson[] };
       save_custom_agent: { params: { slug?: string; name: string; globalPath: string; projectPath: string; command: string; marker: string }; response: string };

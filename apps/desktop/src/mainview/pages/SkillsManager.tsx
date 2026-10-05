@@ -1,3 +1,4 @@
+import { SkillPresets } from '@/mainview/components/SkillPresets';
 import {
   useState,
   useEffect,
@@ -618,12 +619,12 @@ export default function SkillsManager() {
     return parents;
   }, [mergedSkills]);
 
-  // A collection child is removed with its top-level collection. Inherited-only
-  // skills have no direct installation for the batch uninstall operation to remove.
+  // Select installed top-level packages, including shared/inherited skills.
+  // Deletion independently filters this selection to direct installations.
   const batchSelectableSkills = useMemo(
     () =>
       (filtered ?? []).filter(
-        (skill) => !skill.collection && directInstallSlugs(skill).length > 0,
+        (skill) => !skill.collection && (skill.installations.length > 0 || skill.scope.type === "SharedLibrary"),
       ),
     [filtered],
   );
@@ -640,7 +641,7 @@ export default function SkillsManager() {
   useEffect(() => {
     const validIds = new Set(
       (mergedSkills ?? [])
-        .filter((skill) => !skill.collection && directInstallSlugs(skill).length > 0)
+        .filter((skill) => !skill.collection && (skill.installations.length > 0 || skill.scope.type === "SharedLibrary"))
         .map((skill) => skill.id),
     );
     setBatchSelectedIds((previous) => {
@@ -1055,6 +1056,7 @@ export default function SkillsManager() {
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            <SkillPresets selectedIds={[...batchSelectedIds]} disabled={batchRunning || busyAgents.size > 0} />
             {batchSelectionMode ? (
               <Button
                 variant="ghost"
@@ -1232,7 +1234,7 @@ export default function SkillsManager() {
             <Button
               variant="destructive"
               className="w-full gap-1.5"
-              disabled={batchSelectedIds.size === 0 || batchRunning}
+              disabled={!batchSelectedSkills.some(skill => directInstallSlugs(skill).length > 0) || batchRunning}
               onClick={() => setBatchConfirmOpen(true)}
             >
               {batchRunning ? (
@@ -1315,7 +1317,7 @@ export default function SkillsManager() {
       />
       <BatchUninstallConfirmDialog
         open={batchConfirmOpen}
-        skills={batchSelectedSkills}
+        skills={batchSelectedSkills.filter(skill => directInstallSlugs(skill).length > 0)}
         pending={batchRunning}
         onCancel={() => {
           if (!batchRunning) setBatchConfirmOpen(false);
@@ -1743,7 +1745,7 @@ const CollectionItem = memo(function CollectionItem({
 }) {
   const { t } = useTranslation();
   const directSlugs = installedAgents(parent);
-  const hasDirectInstall = directSlugs.length > 0;
+  const canBatchSelect = parent.installations.length > 0 || parent.scope.type === "SharedLibrary";
   const inheritedSlugs = parent.installations
     .filter((i) => i.is_inherited)
     .map((i) => i.agent_slug)
@@ -1770,7 +1772,7 @@ const CollectionItem = memo(function CollectionItem({
           {batchSelectionMode && (
             <BatchSelectionCheckbox
               checked={batchSelected}
-              disabled={!hasDirectInstall}
+              disabled={!canBatchSelect}
               label={t("skills.selectSkill", { name: parent.name })}
               unavailableLabel={t("skills.batchUnavailableNoDirect")}
               onChange={() => onToggleBatch(parent.id)}
@@ -1782,7 +1784,7 @@ const CollectionItem = memo(function CollectionItem({
             className="flex-1 min-w-0 text-left"
             onClick={() => {
               if (batchSelectionMode) {
-                if (hasDirectInstall) onToggleBatch(parent.id);
+                if (canBatchSelect) onToggleBatch(parent.id);
                 return;
               }
               onSelect(parent);
@@ -1865,7 +1867,7 @@ const SkillListItem = memo(function SkillListItem({
     .filter((s) => !directSlugs.includes(s));
   const hasDirectInstall = directSlugs.length > 0;
   const inheritedOnly = !hasDirectInstall && inheritedSlugs.length > 0;
-  const canBatchSelect = batchSelectable ?? hasDirectInstall;
+  const canBatchSelect = batchSelectable ?? (!skill.collection && (skill.installations.length > 0 || skill.scope.type === "SharedLibrary"));
 
   return (
     <div className="relative overflow-hidden rounded-xl">

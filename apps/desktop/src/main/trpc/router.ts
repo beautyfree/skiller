@@ -29,6 +29,11 @@ export function createAppRouter(ctx: {
   const proc = t.procedure
 
   return t.router({
+    list_skill_presets: proc.query(() => h.list_skill_presets()),
+    save_skill_preset: proc.input(anyIn).mutation(({ input }) => h.save_skill_preset(input)),
+    remove_skill_preset: proc.input(anyIn).mutation(({ input }) => h.remove_skill_preset(input)),
+    review_skill_preset: proc.input(anyIn).mutation(({ input }) => h.review_skill_preset(input)),
+    apply_skill_preset: proc.input(anyIn).mutation(({ input }) => h.apply_skill_preset(input)),
     list_agents: proc.query(() => h.list_agents()),
     detect_agents: proc.query(() => h.detect_agents()),
     save_custom_agent: proc.input(anyIn).mutation(({ input }) => h.save_custom_agent(input)),

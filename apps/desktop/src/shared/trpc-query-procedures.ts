@@ -1,4 +1,5 @@
 const QUERY_NAMES = new Set<string>([
+  'list_skill_presets',
   'list_agents',
   'detect_agents',
   'dotagents_machine_inventory',

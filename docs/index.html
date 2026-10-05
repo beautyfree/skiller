@@ -46,14 +46,10 @@
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="preload" href="/assets/fonts/geist-variable.ttf" as="font" type="font/ttf" crossorigin />
+    <link rel="preload" href="/assets/fonts/dm-sans-normal-latin.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/assets/brand.css?v=4" />
+    <link rel="stylesheet" href="/assets/landing-fonts.css" />
+    <link rel="preload" href="/images/landing/sync-skills-across-agents-800.webp" as="image" fetchpriority="high" />
     <style>
       *,
       *::before,
@@ -494,6 +490,8 @@
         padding: 80px 0 40px;
       }
 
+      .chat p a { text-decoration: underline; text-underline-offset: 3px; }
+
       .chat h2 {
         font-family: 'Instrument Serif', Georgia, serif;
         font-size: clamp(2rem, 4vw, 2.75rem);
@@ -582,7 +580,7 @@
         >
           <img
             class="brand-logo"
-            src="images/skiller-mark.png?v=5"
+            src="images/skiller-mark-80.webp"
             width="80"
             height="80"
             alt=""
@@ -612,7 +610,7 @@
         </div>
         <p class="platforms">For macOS, Windows &amp; Linux</p>
         <figure class="dashboard-stage gallery-item" tabindex="0" role="button" aria-label="Open gallery: Dashboard" data-gallery-label="Dashboard">
-          <img src="images/screenshots/dashboard-launch-v3-1600.webp" srcset="images/screenshots/dashboard-launch-v3-800.webp 800w, images/screenshots/dashboard-launch-v3-1600.webp 1600w" sizes="(max-width: 792px) calc(100vw - 32px), 960px" width="1600" height="1133" alt="Skiller Dashboard: detected coding agents and the skills available to each" loading="eager" decoding="async">
+          <img src="images/screenshots/dashboard-launch-v3-1600.webp" srcset="images/screenshots/dashboard-launch-v3-400.webp 400w, images/screenshots/dashboard-launch-v3-800.webp 800w, images/screenshots/dashboard-launch-v3-1600.webp 1600w" sizes="(max-width: 760px) calc(100vw - 92px), (max-width: 1032px) calc(100vw - 120px), 888px" width="1600" height="1133" alt="Skiller Dashboard: detected coding agents and the skills available to each" loading="eager" fetchpriority="high" decoding="async">
         </figure>
       </div>
 
@@ -629,25 +627,25 @@
             <article class="feature-tour-panel" id="tour-library">
               <div class="feature-tour-mobile-copy"><h3>Your skills. One library.</h3><p>Build an Agent Library for your collection, or connect an existing one. Keep your skills together as you move between coding agents and computers.</p></div>
               <figure class="feature-tour-shot gallery-item" tabindex="0" role="button" aria-label="Open gallery: Agent Library" data-gallery-label="Agent Library">
-                <img src="images/screenshots/library-launch-v3-1600.webp" srcset="images/screenshots/library-launch-v3-800.webp 800w, images/screenshots/library-launch-v3-1600.webp 1600w" sizes="(max-width: 792px) calc(100vw - 32px), 960px" width="1600" height="1133" alt="Agent Library welcome screen with options to create a library or use an existing library" loading="lazy" decoding="async">
+                <img src="images/screenshots/library-launch-v3-1600.webp" srcset="images/screenshots/library-launch-v3-400.webp 400w, images/screenshots/library-launch-v3-800.webp 800w, images/screenshots/library-launch-v3-1600.webp 1600w" sizes="(max-width: 760px) calc(100vw - 92px), (max-width: 1128px) 60vw, 628px" width="1600" height="1133" alt="Agent Library welcome screen with options to create a library or use an existing library" loading="lazy" decoding="async">
               </figure>
             </article>
             <article class="feature-tour-panel" id="tour-customize">
               <div class="feature-tour-mobile-copy"><h3>Make a skill your own.</h3><p>Inspect a skill’s files and original source, see which agents can use it, and make an editable copy for your workflow. Review source updates before applying them.</p></div>
               <figure class="feature-tour-shot gallery-item" tabindex="0" role="button" aria-label="Open gallery: Customize a skill" data-gallery-label="Customize a skill">
-                <img src="images/screenshots/customize-launch-v3-1600.webp" srcset="images/screenshots/customize-launch-v3-800.webp 800w, images/screenshots/customize-launch-v3-1600.webp 1600w" sizes="(max-width: 792px) calc(100vw - 32px), 960px" width="1600" height="1133" alt="Skiller skill details with source information, agent paths, update review and Make editable copy" loading="lazy" decoding="async">
+                <img src="images/screenshots/customize-launch-v3-1600.webp" srcset="images/screenshots/customize-launch-v3-400.webp 400w, images/screenshots/customize-launch-v3-800.webp 800w, images/screenshots/customize-launch-v3-1600.webp 1600w" sizes="(max-width: 760px) calc(100vw - 92px), (max-width: 1128px) 60vw, 628px" width="1600" height="1133" alt="Skiller skill details with source information, agent paths, update review and Make editable copy" loading="lazy" decoding="async">
               </figure>
             </article>
             <article class="feature-tour-panel" id="tour-marketplace">
               <div class="feature-tour-mobile-copy"><h3>Find your next workflow.</h3><p>Search skills.sh and ClawHub, preview a skill before installing, or add a Git repository or local folder as a source. Your library and community discoveries live in one place.</p></div>
               <figure class="feature-tour-shot gallery-item" tabindex="0" role="button" aria-label="Open gallery: Marketplace" data-gallery-label="Marketplace">
-                <img src="images/screenshots/marketplace-launch-v3-1600.webp" srcset="images/screenshots/marketplace-launch-v3-800.webp 800w, images/screenshots/marketplace-launch-v3-1600.webp 1600w" sizes="(max-width: 792px) calc(100vw - 32px), 960px" width="1600" height="1133" alt="Skiller Marketplace showing skills.sh, ClawHub and skill details" loading="lazy" decoding="async">
+                <img src="images/screenshots/marketplace-launch-v3-1600.webp" srcset="images/screenshots/marketplace-launch-v3-400.webp 400w, images/screenshots/marketplace-launch-v3-800.webp 800w, images/screenshots/marketplace-launch-v3-1600.webp 1600w" sizes="(max-width: 760px) calc(100vw - 92px), (max-width: 1128px) 60vw, 628px" width="1600" height="1133" alt="Skiller Marketplace showing skills.sh, ClawHub and skill details" loading="lazy" decoding="async">
               </figure>
             </article>
             <article class="feature-tour-panel" id="tour-settings">
               <div class="feature-tour-mobile-copy"><h3>Make Skiller feel like yours.</h3><p>Choose your theme, accent and language. Adjust how the window behaves, manage the cache, and install app updates when a new build is ready.</p></div>
               <figure class="feature-tour-shot gallery-item" tabindex="0" role="button" aria-label="Open gallery: Settings" data-gallery-label="Settings">
-                <img src="images/screenshots/settings-1600.webp" srcset="images/screenshots/settings-800.webp 800w, images/screenshots/settings-1600.webp 1600w" sizes="(max-width: 792px) calc(100vw - 32px), 960px" width="1600" height="1115" alt="Skiller Settings: appearance, preferences and app updates" loading="lazy" decoding="async">
+                <img src="images/screenshots/settings-1600.webp" srcset="images/screenshots/settings-400.webp 400w, images/screenshots/settings-800.webp 800w, images/screenshots/settings-1600.webp 1600w" sizes="(max-width: 760px) calc(100vw - 92px), (max-width: 1128px) 60vw, 628px" width="1600" height="1115" alt="Skiller Settings: appearance, preferences and app updates" loading="lazy" decoding="async">
               </figure>
             </article>
           </div>
@@ -809,7 +807,7 @@
           const shortLabel =
             cap.replace(/\s*—\s*click to enlarge\s*/i, '').trim() || cap
           items.push({
-            src: shot.currentSrc || shot.src,
+            src: shot.src,
             alt: shot.alt || shortLabel,
             label: shortLabel,
           })

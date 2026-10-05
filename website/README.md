@@ -87,8 +87,25 @@ previews use the existing 1200×630 Skiller image.
 indexing requirement or an established ranking signal. Robots allows all
 crawlers; crawler-specific copies of that allow rule are unnecessary.
 
-Blog typography uses self-hosted Geist and Manrope variable fonts from Google Fonts, with their OFL license files in docs/assets/fonts. The homepage retains its original fonts.
+Blog typography uses self-hosted Geist and Manrope variable fonts from Google Fonts, with their OFL license files in docs/assets/fonts. The homepage retains its original font families, served locally as WOFF2 through landing-fonts.css.
 
 Editorial covers: six original AI-generated illustrations, optimized as WebP (1200px wide); image dimensions and alt text live in articles.json. The earlier SVG covers are retained as source history.
 
 Download flow: /download/ resolves GitHub’s latest stable release at runtime, selects only exact installer assets and includes platform-specific installation steps. Site Download links use ?start=1 to request auto-start only after reliable platform detection. Mac chip detection is manual when the browser provides no architecture hints. Mobile users choose their target desktop. Without JavaScript or GitHub API access, the page offers the latest release on GitHub. Check logic with node --test scripts/test-download.mjs.
+
+## Landing performance
+
+The site builder inlines the five small landing stylesheets, eliminating their
+render-blocking requests. Edit the original CSS files, not the generated HTML.
+Homepage fonts are self-hosted WOFF2; the blog retains its separate font setup.
+The hero background is preloaded at high priority. Screenshot srcsets include
+400px versions for narrow screens; the gallery uses the full 1600px source.
+Graffiti backgrounds under screenshots use separate 800px WebP assets in
+`docs/images/landing/`, leaving article covers unchanged. These were exported
+from their corresponding `docs/images/blog/*-street-v1.webp` originals with
+`cwebp -resize 800 0 -q 60`; screenshots use `-resize 400 0 -q 85`.
+
+The Oct 5 mobile PageSpeed report before these local changes scored 76,
+with FCP 3.0s, LCP 4.4s, TBT 0ms and CLS 0. There was no CrUX field data.
+A passing build and local preview do not establish a new Lighthouse score;
+repeat the public mobile test only after an authorized publication.

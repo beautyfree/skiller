@@ -203,6 +203,12 @@ def build(output):
     for filename in ("favicon-16x16.png", "favicon-32x32.png", "apple-touch-icon.png", "CNAME", "404.html"):
         shutil.copy2(ROOT / "docs" / filename, output / filename)
     home = (ROOT / "docs/index.html").read_text()
+    # Inline the small landing styles at build time; retain their source ownership.
+    # Absolute asset URLs in these files keep the same resolution after inlining.
+    def inline_landing_style(match):
+        asset = match.group(1).split("?", 1)[0]
+        return "<style>\n" + (ROOT / "docs" / asset.lstrip("/")).read_text() + "\n</style>"
+    home = re.sub(r'<link rel="stylesheet" href="(/assets/[^"\s]+)"\s*/?>', inline_landing_style, home)
     preview = '<section class="blog-preview" aria-labelledby="guides-title"><h2 class="section-title" id="guides-title">From the notebook</h2><p class="section-sub">Practical guides for a more useful agent skill library.</p><div class="notebook-grid">' + "".join(card(a, level="h3") for a in articles) + '</div><p class="notebook-more"><a class="nav-cta" href="/blog/">Explore the notebook →</a></p></section>'
     if home.count("<!-- BLOG_PREVIEW -->") != 1:
         raise ValueError("Homepage needs exactly one BLOG_PREVIEW marker")

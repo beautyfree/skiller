@@ -39,6 +39,18 @@ class PublicSiteTests(unittest.TestCase):
             self.assertTrue((self.output / "blog" / slug / "index.html").is_file())
             self.assertIn(builder.SITE + f"/blog/{slug}/", (self.output / "sitemap.xml").read_text())
 
+    def test_landing_critical_resources(self):
+        home = (self.output / "index.html").read_text()
+        self.assertNotIn('rel="stylesheet"', home)
+        self.assertNotIn('fonts.googleapis.com', home)
+        self.assertNotIn('href="/assets/fonts/geist-variable.ttf"', home)
+        self.assertIn('as="image" fetchpriority="high"', home)
+        for image in builder.Document(home).images:
+            if '/screenshots/' in image.get('src', ''):
+                self.assertIn('400w', image['srcset'])
+                if image.get('loading') == 'eager':
+                    self.assertEqual(image['fetchpriority'], 'high')
+
     def test_broken_editorial_anchor_blocks_publication(self):
         target = self.output / "blog/what-are-agent-skills/index.html"
         original = target.read_text()

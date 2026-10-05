@@ -6,7 +6,7 @@
 .blog-preview .eyebrow { color: var(--violet); font-size: 13px; font-weight: 500; margin: 0 0 12px; }
 .blog-preview .article-card h3 { font-family: 'DM Sans',sans-serif; font-size: 20px; font-weight: 500; line-height: 1.35; letter-spacing: -.02em; margin: 0 0 12px; }
 .blog-preview .card-description { color: var(--muted); font-size: 14px; line-height: 1.65; margin: 0 0 20px; }
-.blog-preview .card-meta { margin-top: auto; color: var(--dim); font-size: 12px; }
+.blog-preview .card-meta { margin-top: auto; color: var(--muted); font-size: 12px; }
 .notebook-more { margin-top: 32px; }
 @media(max-width:900px) { .notebook-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media(max-width:600px) { .notebook-grid { grid-template-columns: 1fr; gap: 36px; } }

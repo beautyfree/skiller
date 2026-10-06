@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.3.6](https://github.com/beautyfree/skiller/compare/v0.3.5...v0.3.6) (2026-10-06)
+
+
+### Features
+
+* manage custom skill agents from settings ([a605db2](https://github.com/beautyfree/skiller/commit/a605db2345eed82c30ddc81e227ded7e047237a1))
+* publish Skiller blog, comparisons and refreshed product website ([7c89501](https://github.com/beautyfree/skiller/commit/7c895014ec8ed309260498941c1cdc556d858194))
+* refine skill library, marketplace and portable packs ([e90ebd4](https://github.com/beautyfree/skiller/commit/e90ebd42de6996cc002c618ed653ee1eb97d5f3e))
+* save skill sets and review additive batch installs ([38cbc67](https://github.com/beautyfree/skiller/commit/38cbc6709923c6e834724c5b1084c2e95734db3d))
+* streamline skill sets and direct batch installation ([ecab183](https://github.com/beautyfree/skiller/commit/ecab1836a9526824bb41f51bb90545cef3f57276))
+
+
+### Bug Fixes
+
+* align skill set actions with user journey and agent scope ([83302d5](https://github.com/beautyfree/skiller/commit/83302d52ff321a56f50f4d5d769bbde742d36db6))
+* remove duplicate Launchpadly footer badge ([ca5b7f3](https://github.com/beautyfree/skiller/commit/ca5b7f32eacfe4da785e43ad2ed60cbb005ec6fe))
+
+
+### Performance
+
+* optimize landing fonts and mobile images ([ceb1663](https://github.com/beautyfree/skiller/commit/ceb16635507e7f39c153651350a587d65533fb57))
+
+
+### Documentation
+
+* emphasize AI agent skills manager positioning ([9230242](https://github.com/beautyfree/skiller/commit/9230242399c3c20b11fd02ab884a3fb0149e9605))
+
 ## [0.3.5](https://github.com/beautyfree/skiller/compare/v0.3.4...v0.3.5) (2026-10-02)
 
 

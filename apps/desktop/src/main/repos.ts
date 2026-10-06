@@ -8,12 +8,12 @@ import {
   rmSync,
   statSync,
 } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, relative } from "node:path";
 import { parse as parseToml } from "@iarna/toml";
 import type { SkillJson } from "../shared/rpc-schema";
 import type { RepoEntryJson } from "../shared/rpc-schema";
 import { computeSkillFootprint } from "../shared/skill-footprint";
-import { installSkillFromPath } from "./install";
+import { installSkillFromPath, assertSkillDestinationsAvailable, resolveInstallTargets, sharedSkillsDir, sanitizeSkillDirName } from "./install";
 import { parseSkillMdFile } from "./parser";
 import { saveLocalSkillSource } from "dotagents/source-registry";
 import { readSettings, writeSettings } from "./settings";
@@ -262,16 +262,23 @@ function installRepoSkillSync(
   }
 
   const candidates = discoverSkillDirs(localPath);
-  const skillPath = candidates.find((c) => basename(c.dir) === skillId)?.dir;
+  const matches = candidates.filter(c => basename(c.dir) === skillId);
+  if (matches.length > 1) throw new Error(`Several skill folders use '${skillId}'. Import them individually with distinct names.`);
+  const skillPath = matches[0]?.dir;
   if (!skillPath) {
     throw new Error(`Skill '${skillId}' not found in repository`);
   }
 
   const agents = loadDetectedAgents();
+  const installName = sanitizeSkillDirName(skillId);
+  assertSkillDestinationsAvailable([
+    join(sharedSkillsDir(), installName),
+    ...resolveInstallTargets(targetAgents, agents).flatMap(agent => agent.global_paths.map(root => join(root, installName))),
+  ]);
   const canonical = installSkillFromPath(skillPath, targetAgents, agents);
   const installedId = basename(canonical);
   const repoUrl = resolveRepoUrl(repoIdParam);
-  saveLocalSkillSource(installedId, { source: repoUrl ? "git" : "local", repository: repoUrl ?? null, skill_path: skillId, ref: null, content_sha256: null, ownership: repoUrl ? "external" : "unknown" });
+  saveLocalSkillSource(installedId, { source: repoUrl ? "git" : "local", repository: repoUrl ?? skillPath, skill_path: repoUrl ? relative(localPath, skillPath).split('\\').join('/') : null, ref: null, content_sha256: null, ownership: repoUrl ? "external" : "unknown" });
 }
 
 export type RepoProgress = { stage: string; detail?: string | null };
@@ -280,7 +287,7 @@ export async function addSkillRepo(
   repoUrl: string,
   emit: (p: RepoProgress) => void,
   sourcePolicy: SourceSecurityPolicyInput = {},
-): Promise<{ repo: SkillRepoInternal; skills: SkillJson[] }> {
+): Promise<{ repo: SkillRepoInternal; skills: SkillJson[]; created: boolean }> {
   const normalizedRepoUrl = normalizeSkillRepoUrl(repoUrl);
   const id = repoIdFromUrl(normalizedRepoUrl);
   const localPath = join(reposDir(), id);
@@ -300,6 +307,7 @@ export async function addSkillRepo(
           ?.last_synced ?? null;
       emit({ stage: "done", detail: null });
       return {
+        created: false,
         repo: {
           ...repo,
           last_synced: repo.last_synced ?? null,
@@ -350,7 +358,7 @@ export async function addSkillRepo(
   writeSettings({ ...settings, repos });
 
   emit({ stage: "done", detail: null });
-  return { repo, skills };
+  return { repo, skills, created: true };
 }
 
 export function removeSkillRepo(repoIdParam: string): void {

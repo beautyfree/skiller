@@ -1,10 +1,11 @@
+import { AppLink } from "@/mainview/components/AppLink";
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMemo, useState, useCallback, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { pickFolder, invoke, openUrl } from '@/mainview/lib/native'
+import { pickFolder, invoke } from '@/mainview/lib/native'
 import {
   LayoutDashboard,
   Puzzle,
@@ -16,7 +17,9 @@ import {
   Trash2,
   ChevronRight,
   MessageCircle,
-  LibraryBig,
+  Cloud,
+  Layers,
+  Plus,
   X,
 } from 'lucide-react'
 import { AgentIcon } from '@/mainview/components/AgentIcon'
@@ -31,6 +34,7 @@ import { useResizable } from '@/mainview/hooks/useResizable'
 import ResizeHandle from '@/mainview/components/ResizeHandle'
 import { useAgents } from '@/mainview/hooks/useAgents'
 import { useSkills, allAgents } from '@/mainview/hooks/useSkills'
+import { useSkillSets } from '@/mainview/hooks/useSkillSets'
 import type { DotagentsLibraryLocalChangesJson, GlobalSkillUpdateCheckJson, SyncProfileStatusJson } from '@/shared/rpc-schema'
 import skillerMark from '@/mainview/assets/brand/skiller-mark.png'
 
@@ -45,6 +49,7 @@ const NAV_LINK_BASE =
 /** Linear-like active row: muted pill, not indigo fill */
 const NAV_LINK_ACTIVE = `${NAV_LINK_BASE} bg-black/[0.05] text-foreground dark:bg-white/[0.09] dark:text-foreground`
 const NAV_LINK_INACTIVE = `${NAV_LINK_BASE} text-sidebar-foreground/80 hover:text-foreground hover:bg-black/[0.04] dark:hover:bg-white/[0.05]`
+const NAV_COUNT = 'ml-auto grid w-6 shrink-0 place-items-center text-[10px] tabular-nums text-muted-foreground/60'
 
 function navLinkClass({ isActive }: { isActive: boolean }) {
   return isActive ? NAV_LINK_ACTIVE : NAV_LINK_INACTIVE
@@ -140,6 +145,7 @@ function LayoutInner({
   const agentSidebarScrollRef = useRef<HTMLDivElement>(null)
   const location = useLocation()
   const { data: agents, isLoading: agentsLoading } = useAgents()
+  const skillSets = useSkillSets()
   // Do not start the heavyweight global All Skills scan while the user is in
   // Agent Library. Its own inventory is independent and should be the first
   // thing the main process is free to answer.
@@ -380,9 +386,9 @@ function LayoutInner({
                     >
                       <Puzzle className="size-4" aria-hidden="true" />
                       {t('sidebar.skills')}
-                      <span className="ml-auto flex shrink-0 items-center gap-2">
-                        {skills && <span className="text-[10px] tabular-nums text-muted-foreground/60">{skills.length}</span>}
-                        {skillUpdatesNeedReview && <Tooltip content="Skill updates need review" side="right"><span className="size-1.5 rounded-full bg-primary" /></Tooltip>}
+                      <span className={`${NAV_COUNT} relative`}>
+                        {skills && <span>{skills.length}</span>}
+                        {skillUpdatesNeedReview && <span className="absolute -right-1 top-1/2 -translate-y-1/2"><Tooltip content="Skill updates need review" side="right"><span className="block size-1.5 rounded-full bg-primary" /></Tooltip></span>}
                       </span>
                     </NavLink>
 
@@ -398,13 +404,35 @@ function LayoutInner({
                       onFocus={warmAgentLibrary}
                       onClick={() => window.dispatchEvent(new Event('skiller:open-agent-library'))}
                     >
-                      <LibraryBig className="size-4" aria-hidden="true" />
-                      Agent Library
-                      {syncNeedsReview && <span className="ml-auto flex shrink-0 items-center"><Tooltip content={syncAttentionTooltip} side="right"><span className="size-1.5 rounded-full bg-primary" /></Tooltip></span>}
+                      <Cloud className="size-4" aria-hidden="true" />
+                      Backup &amp; sync
+                      {syncNeedsReview && <span className={NAV_COUNT}><Tooltip content={syncAttentionTooltip} side="right"><span className="block size-1.5 rounded-full bg-primary" /></Tooltip></span>}
+                    </NavLink>
+
+                    <NavLink to="/projects" className={navLinkClass}>
+                      <FolderOpen className="size-4" aria-hidden="true" />
+                      {t('sidebar.projects')}
                     </NavLink>
 
                   </div>
                 </div>
+
+                <section aria-label="Skill packs navigation" className="mt-4 shrink-0">
+                  <div className={navLinkClass({ isActive: location.pathname === '/skill-sets' })}>
+                    <NavLink to="/skill-sets" end className="flex min-w-0 flex-1 items-center gap-2 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+                      <Layers className="size-4 shrink-0" aria-hidden="true" />Skill packs
+                    </NavLink>
+                    <button type="button" className="-my-[3px] ml-auto grid size-6 shrink-0 place-items-center rounded text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 outline-none" aria-label="New skill pack" onClick={() => navigate('/skill-sets/new')}><Plus className="size-3.5" aria-hidden="true" /></button>
+                  </div>
+                  <div className="mt-1 max-h-[22vh] overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
+                    {skillSets.data?.map(set => <NavLink key={set.id} to={`/skill-sets/${set.id}`} className={state => `${navLinkClass(state)} pl-9`}>
+                      <span className="min-w-0 flex-1 truncate">{set.name}</span><span className={NAV_COUNT}>{set.skills.length}</span>
+                    </NavLink>)}
+                    {skillSets.isPending && <p className="px-3 py-1 text-xs text-muted-foreground">Loading packs…</p>}
+                    {skillSets.data?.length === 0 && <p className="px-3 py-1 text-xs text-muted-foreground">No packs yet</p>}
+                    {skillSets.isError && <button className="px-3 py-1 text-xs text-destructive" onClick={() => skillSets.refetch()}>Reload sets</button>}
+                  </div>
+                </section>
 
                 {detectedAgents.length > 0 && (
                   <div className="mt-4 flex min-h-0 flex-1 flex-col">
@@ -412,7 +440,7 @@ function LayoutInner({
                       {t('sidebar.agents')}
                     </h2>
                     <div className="relative min-h-0 flex-1">
-                      <div ref={agentSidebarScrollRef} className="sidebar-scrollbar h-full min-h-0 overflow-y-auto pr-1">
+                      <div ref={agentSidebarScrollRef} className="h-full min-h-0 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
                         <div className="flex flex-col gap-0.5">
                         {detectedAgents.map((agent) => {
                           const count = skillCountByAgent.get(agent.slug) ?? 0
@@ -517,21 +545,19 @@ function LayoutInner({
                 </button>
               </div>
             )}
-            <button
-              type="button"
+            <AppLink
               className="inline-flex items-center gap-1 transition-colors hover:text-muted-foreground/85"
-              onClick={() => openUrl(FEEDBACK_URL)}
+              href={FEEDBACK_URL}
             >
               <MessageCircle className="size-3" aria-hidden="true" />
               {t('layout.footerFeedback')}
-            </button>
-            <button
-              type="button"
+            </AppLink>
+            <AppLink
               className="transition-colors hover:text-muted-foreground/85"
-              onClick={() => openUrl(GITHUB_REPO_URL)}
+              href={GITHUB_REPO_URL}
             >
               {t('layout.footerRepo')}
-            </button>
+            </AppLink>
           </footer>
         </div>
       </div>
@@ -768,7 +794,7 @@ function AgentSidebarRow({
       >
         <AgentIcon slug={agent.slug} />
         <span className="truncate">{agent.name}</span>
-        <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/60">
+        <span className={NAV_COUNT}>
           {busy ? '…' : totalCount}
         </span>
       </NavLink>

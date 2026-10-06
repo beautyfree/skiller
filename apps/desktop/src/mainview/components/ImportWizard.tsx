@@ -10,11 +10,12 @@ import { type Skill } from "@/mainview/hooks/useSkills";
 import { getAgentIcon } from "@/mainview/lib/agentIcons";
 import { useAddProject, useProjects } from "@/mainview/hooks/useProjects";
 
-type WizardStep = "source" | "indexing" | "skills" | "scope" | "agents" | "installing";
+type WizardStep = "source" | "indexing" | "skills" | "scope" | "agents" | "installing" | "result";
 type InstallScope = "user" | "project";
 
 interface ImportWizardProps {
   mode: "git" | "local";
+  initialRepoUrl?: string | null;
   initialLocalPath?: string | null;
   initialProjectPath?: string | null;
   onClose: () => void;
@@ -30,7 +31,7 @@ const INDEX_STAGE_KEYS: Record<string, string> = {
   saving: "repos.savingConfig",
 };
 
-export default function ImportWizard({ mode, initialLocalPath, initialProjectPath, onClose }: ImportWizardProps) {
+export default function ImportWizard({ mode, initialRepoUrl, initialLocalPath, initialProjectPath, onClose }: ImportWizardProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -40,14 +41,16 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
   const busy = step === "indexing" || step === "installing";
 
   // Source step
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState(initialRepoUrl ?? "");
   const [localPath, setLocalPath] = useState<string | null>(initialLocalPath ?? null);
 
   // Indexing step
   const addRepo = useAddRepo();
   const addLocalDir = useAddLocalDir();
   const removeRepo = useRemoveRepo();
-  const installedRef = useRef(false);
+  const installationStarted = useRef(false);
+  const createdRepo = useRef(false);
+  const autoStarted = useRef(false);
   const [indexStage, setIndexStage] = useState<string | null>(null);
   const [repo, setRepo] = useState<SkillRepo | null>(null);
 
@@ -71,10 +74,11 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
   const [installTotal, setInstallTotal] = useState(0);
   const [currentSkill, setCurrentSkill] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [installFailures, setInstallFailures] = useState<{ id: string; name: string; message: string }[]>([]);
 
   // Clean up the repo if the wizard is closed without installing any skills
   const handleClose = useCallback(() => {
-    if (repo && !installedRef.current) {
+    if (repo && createdRepo.current && !installationStarted.current) {
       removeRepo.mutate(repo.id);
     }
     onClose();
@@ -107,8 +111,9 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
 
   // Auto-start indexing when opened with a pre-selected local path
   useEffect(() => {
-    if (mode === "local" && initialLocalPath && step === "source") {
-      startIndexing();
+    if (!autoStarted.current && step === "source" && ((mode === "local" && initialLocalPath) || (mode === "git" && initialRepoUrl))) {
+      autoStarted.current = true;
+      void startIndexing();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -136,6 +141,7 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
       } else {
         result = await addLocalDir.mutateAsync(localPath!);
       }
+      createdRepo.current = mode === "local" || result.created === true;
       setRepo(result.repo);
       setSkills(result.skills);
       setSelectedSkillIds(new Set(result.skills.map((s) => s.id)));
@@ -159,6 +165,9 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
     const agentSlugs = Array.from(selectedAgentSlugs);
     const total = skillIds.length;
 
+    installationStarted.current = true;
+    const failures: { id: string; name: string; message: string }[] = [];
+    setInstallFailures([]);
     setStep("installing");
     setInstallDone(0);
     setInstallTotal(total);
@@ -183,13 +192,13 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
           });
         }
       } catch (e) {
-        console.error(`Failed to install ${skillId}:`, e);
+        failures.push({ id: skillId!, name: skill?.name ?? skillId!, message: e instanceof Error ? e.message : String(e) });
       }
     }
 
     setInstallDone(total);
     setCurrentSkill(null);
-    installedRef.current = true;
+    setInstallFailures(failures);
 
     // Invalidate caches
     await queryClient.invalidateQueries({ queryKey: ["skills"] });
@@ -199,7 +208,10 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
       await queryClient.invalidateQueries({ queryKey: ["project-skills", projectPath] });
     }
 
-    onClose();
+    if (failures.length) {
+      setSelectedSkillIds(new Set(failures.map(item => item.id)));
+      setStep('result');
+    } else onClose();
   }
 
   async function pickProjectFolder() {
@@ -243,7 +255,7 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
   // Step indicators
   const stepKeys: WizardStep[] = ["source", "indexing", "skills", "scope"];
   const stepIdx = stepKeys.indexOf(
-    step === "installing" ? "scope" : step === "agents" ? "scope" : step
+    step === "installing" || step === "result" ? "scope" : step === "agents" ? "scope" : step
   );
 
   return (
@@ -583,6 +595,12 @@ export default function ImportWizard({ mode, initialLocalPath, initialProjectPat
             </div>
           </div>
         )}
+
+        {step === 'result' && <div className="space-y-3">
+          <p className="text-sm">{installTotal - installFailures.length} installed · {installFailures.length} could not be installed</p>
+          <ul className="max-h-60 space-y-2 overflow-y-auto text-xs">{installFailures.map(item => <li key={item.id}><strong>{item.name}</strong><p role="alert" className="text-destructive">{item.message}</p></li>)}</ul>
+          <div className="flex justify-end gap-2"><Button variant="outline" size="sm" onClick={handleClose}>Close</Button><Button size="sm" onClick={runBatchInstall}>Retry failed</Button></div>
+        </div>}
 
         {/* Step: Installing */}
         {step === "installing" && (

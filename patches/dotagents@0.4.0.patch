@@ -1,0 +1,85 @@
+diff --git a/dist/global-skill-updates.js b/dist/global-skill-updates.js
+index b19d8ce372974cb822fe8d366dffb6d43a627305..cc2e3b098e9c32aa8dbdd63a97e351cd6c984629 100644
+--- a/dist/global-skill-updates.js
++++ b/dist/global-skill-updates.js
+@@ -73,7 +73,7 @@ function isManagedCopy(skill, record, managedRoots) {
+         !isInsideRoot(skill.sourcePath, managedRoots))
+         return false;
+     return managedRoots.some((root) => {
+-        const candidate = path.join(root, skill.name);
++        const candidate = path.join(root, path.basename(skill.sourcePath));
+         try {
+             return lstatSync(candidate).isDirectory() && realpathSync.native(candidate) === skill.sourcePath;
+         }
+@@ -104,7 +104,7 @@ function sourceFor(skill, sources, skillsCliLock) {
+     // name is still `autoplan`. Prefer the filesystem-stable candidate key: the
+     // display name can collide with an older, independently installed folder
+     // named `autoplan` and must never borrow that folder's provenance.
+-    const record = gitRecord ?? sources[skill.candidateKey] ?? sources[skill.name];
++    const record = gitRecord ?? sources[path.basename(skill.sourcePath)] ?? sources[skill.candidateKey] ?? sources[skill.name];
+     if (record?.repository)
+         return { record, repository: record.repository, skillPath: record.skill_path, source: record.source };
+     const lock = skillsCliLock?.skills.find((entry) => entry.name === skill.name || entry.name === skill.candidateKey);
+@@ -174,7 +174,7 @@ export async function checkGlobalSkillUpdates(options) {
+         details.set(skill.candidateKey, detail);
+         if (!detail.repository) {
+             items.push({
+-                skill: skill.name,
++                skill: path.basename(skill.sourcePath),
+                 description: skill.description,
+                 localPath: skill.sourcePath,
+                 state: "not-trackable",
+@@ -210,7 +210,7 @@ export async function checkGlobalSkillUpdates(options) {
+                 const managed = isManagedCopy(skill, detail.record, managedRoots);
+                 if (!remote) {
+                     items.push({
+-                        skill: skill.name,
++                        skill: path.basename(skill.sourcePath),
+                         description: skill.description,
+                         localPath: skill.sourcePath,
+                         state: "source-unavailable",
+@@ -235,7 +235,7 @@ export async function checkGlobalSkillUpdates(options) {
+                             ? "update-available"
+                             : "review-required";
+                 items.push({
+-                    skill: skill.name,
++                    skill: path.basename(skill.sourcePath),
+                     description: skill.description,
+                     localPath: skill.sourcePath,
+                     state,
+@@ -265,7 +265,7 @@ export async function checkGlobalSkillUpdates(options) {
+             for (const skill of skills) {
+                 const detail = details.get(skill.candidateKey);
+                 items.push({
+-                    skill: skill.name,
++                    skill: path.basename(skill.sourcePath),
+                     description: skill.description,
+                     localPath: skill.sourcePath,
+                     state: "source-unavailable",
+@@ -322,7 +322,7 @@ export async function applyReviewedManagedSkillUpdates(options) {
+     const report = (done, currentSkill, phase) => options.onProgress?.({ done, total: options.updates.length, currentSkill, phase });
+     report(0, "", "preparing");
+     const local = await discoverSkills([{ path: root, kind: "shared" }]);
+-    const localByName = new Map(local.skills.map((skill) => [skill.name, skill]));
++    const localByName = new Map(local.skills.map((skill) => [path.basename(skill.sourcePath), skill]));
+     const grouped = new Map();
+     let prepared = 0;
+     for (const update of options.updates) {
+@@ -400,7 +400,7 @@ export async function applyReviewedManagedSkillUpdates(options) {
+             historyRetention: GLOBAL_UPDATE_HISTORY_RETENTION,
+         });
+         const refreshed = await discoverSkills([{ path: root, kind: "shared" }]);
+-        const refreshedByName = new Map(refreshed.skills.map((skill) => [skill.name, skill]));
++        const refreshedByName = new Map(refreshed.skills.map((skill) => [path.basename(skill.sourcePath), skill]));
+         const result = {
+             updated: options.updates.map((update) => {
+                 const skill = refreshedByName.get(update.skill);
+@@ -421,7 +421,7 @@ export async function applyReviewedManagedSkillUpdates(options) {
+ export async function reviewGlobalSkillUpdate(options) {
+     const root = path.resolve(options.root);
+     const local = await discoverSkills([{ path: root, kind: "shared" }]);
+-    const current = local.skills.find((skill) => skill.name === options.update.skill);
++    const current = local.skills.find((skill) => path.basename(skill.sourcePath) === options.update.skill);
+     if (!current || current.integrity !== options.update.expectedLocalIntegrity) {
+         throw new Error(`Local skill changed after review: ${options.update.skill}`);
+     }

@@ -1,4 +1,7 @@
 const QUERY_NAMES = new Set<string>([
+  'compare_project_skill',
+  'compare_agent_skill',
+  'list_skill_tags',
   'list_skill_presets',
   'list_agents',
   'detect_agents',

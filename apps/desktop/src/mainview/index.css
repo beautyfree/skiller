@@ -1213,3 +1213,38 @@ html.skiller-macos-vibrancy.dark .glass-surface-tint.glass-stat {
       rgba(255, 255, 255, 0.06) 40%,
       transparent 70%);
 }
+
+/* Skills Manager reference: src/index.css surface palette and MySkills.tsx card. */
+.skills-grid-surface {
+  --skill-card-bg: #ffffff;
+  --skill-card-border: #e4e4e7;
+  --skill-card-hover-border: #d4d4d8;
+  --skill-card-shadow: 0 1px 2px rgb(24 24 27 / 4%);
+  --skill-card-hover-shadow: 0 4px 12px rgb(24 24 27 / 7%);
+  background: #fafafa;
+}
+.dark .skills-grid-surface {
+  --skill-card-bg: #131317;
+  --skill-card-border: #1c1c22;
+  --skill-card-hover-border: #222229;
+  --skill-card-shadow: 0 1px 2px rgb(0 0 0 / 30%);
+  --skill-card-hover-shadow: 0 4px 14px rgb(0 0 0 / 45%);
+  background: #0c0c0f;
+}
+.skill-grid-card {
+  background: var(--skill-card-bg);
+  border: 1px solid var(--skill-card-border);
+  box-shadow: var(--skill-card-shadow);
+}
+.skill-grid-card:hover {
+  border-color: var(--skill-card-hover-border);
+  box-shadow: var(--skill-card-hover-shadow);
+}
+.skill-grid-card[data-selected="true"] {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .skill-grid-card { transition: none; }
+  .skill-grid-card:hover { transform: none; }
+}

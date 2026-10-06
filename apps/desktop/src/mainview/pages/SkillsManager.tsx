@@ -1,10 +1,16 @@
+import { AppLink } from "@/mainview/components/AppLink";
+import { visibleSkillSelection } from '@/mainview/lib/selection';
+import { packSkillRows } from '@/mainview/lib/skill-grid';
+import { AgentSkillComparisonDialog } from '@/mainview/components/AgentSkillComparisonDialog';
+import { SkillTagEditor, SkillTagFilter, SkillTagBadges, InlineSkillTags } from '@/mainview/components/SkillTags';
+import { SkillCardSurface, SkillDetailFrame, SkillViewToggle, useSkillViewMode, useSkillGridColumns } from '@/mainview/components/SkillBrowser';
 import { SkillPresets } from '@/mainview/components/SkillPresets';
+import { ContextMenu } from '@base-ui/react/context-menu';
 import {
   useState,
   useEffect,
   useMemo,
   useCallback,
-  useTransition,
   useDeferredValue,
   useLayoutEffect,
   memo,
@@ -36,6 +42,9 @@ import {
   MoreHorizontal,
   Check,
   ListChecks,
+  Tag,
+  HardDrive,
+  GitBranch,
 } from "lucide-react";
 import { invoke, listen, revealItemInDir, openSkillFolder, openUrl } from "@/mainview/lib/native";
 import {
@@ -48,7 +57,7 @@ import { SkillAgentList, installedAgentCount, busyKey, type BusyOp } from "@/mai
 import { useRepos } from "@/mainview/hooks/useRepos";
 
 /** Skill extended with optional repo origin */
-type SkillWithRepo = Skill & { _repoName?: string };
+type SkillWithRepo = Skill & { _repoName?: string; userTags?: string[] };
 type GlobalSkillUpdateCheck = {
   checked_at: string;
   items: Array<{
@@ -248,6 +257,9 @@ export default function SkillsManager() {
   const { t } = useTranslation();
   const { toast } = useToast();
   const { data: skills, isLoading } = useSkills();
+  const skillTags = useQuery({ queryKey: ['skill-tags'], queryFn: () => invoke('list_skill_tags') });
+  const allTags = useMemo(() => [...new Set((skillTags.data ?? []).flatMap(row => row.tags))].sort(), [skillTags.data]);
+  const tagMap = useMemo(() => new Map((skillTags.data ?? []).map(row => [JSON.stringify([row.id, row.sourcePath]), row.tags])), [skillTags.data]);
   const { data: agents } = useAgents();
   const { data: repos } = useRepos();
   // Fetch skills from all subscribed repos
@@ -303,9 +315,9 @@ export default function SkillsManager() {
       }
     });
 
-    return [...enrichedLocal, ...repoOnly];
+    return [...enrichedLocal, ...repoOnly].map(skill => ({ ...skill, userTags: tagMap.get(JSON.stringify([skill.id, skill.canonical_path])) ?? [] }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [skills, ...repoSkillsData, repos]);
+  }, [skills, ...repoSkillsData, repos, tagMap]);
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const agentParam = searchParams.get("agent") ?? "all";
@@ -315,8 +327,17 @@ export default function SkillsManager() {
     filter: agentParam,
     installFilter: parseInstallFilter(installParam),
     searchQuery: "",
+    tagFilters: [] as string[],
+    untagged: false,
   });
-  const { filter, installFilter, searchQuery } = savedFilters;
+  const { filter, installFilter, searchQuery, tagFilters, untagged } = savedFilters;
+  useEffect(() => {
+    if (!skillTags.data) return;
+    setSavedFilters(previous => {
+      const tags = previous.tagFilters.filter(tag => allTags.includes(tag));
+      return tags.length === previous.tagFilters.length ? previous : { ...previous, tagFilters: tags };
+    });
+  }, [skillTags.data, allTags, setSavedFilters]);
   const setFilter = (filter: string) => setSavedFilters((previous) => ({ ...previous, filter }));
   const setInstallFilter = (installFilter: InstallFilter) => setSavedFilters((previous) => ({ ...previous, installFilter }));
   const [busyAgents, setBusyAgents] = useState<Map<string, BusyOp>>(new Map());
@@ -325,9 +346,10 @@ export default function SkillsManager() {
   const isSearchStale = deferredSearch !== searchQuery;
   // selectedId drives list highlight (instant); selectedSkill drives detail (deferred)
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
+  const [selectedSkill, setSelectedSkill] = useState<SkillWithRepo | null>(null);
+  const [tagSelection, setTagSelection] = useState<SkillWithRepo[] | null>(null);
   const [batchSelectionMode, setBatchSelectionMode] = useState(false);
-  const [batchSelectedIds, setBatchSelectedIds] = useState<Set<string>>(new Set());
+  const [rawBatchSelectedIds, setBatchSelectedIds] = useState<Set<string>>(new Set());
   const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
   const [batchRunning, setBatchRunning] = useState(false);
   useEffect(() => {
@@ -335,9 +357,9 @@ export default function SkillsManager() {
     setBatchSelectedIds(new Set());
     setBatchConfirmOpen(false);
   }, [filter]);
-  const [isPending, startTransition] = useTransition();
   const [panelMode, setPanelMode] = useState<"detail" | "editor">("detail");
   const listPane = useResizable(SKILL_LIST_PANE);
+  const [viewMode, setViewMode] = useSkillViewMode('skiller-skills-view', 'grid');
   // The current list remains immediately available from its cache. This check
   // runs separately and silently: it only reads approved Git sources through
   // dotagents and never blocks the All Skills experience.
@@ -430,11 +452,11 @@ export default function SkillsManager() {
   );
 
   // Sync agent filter from URL. When the agent changes (e.g. sidebar click), drop the
-  // selected skill so the auto-select effect below picks the first skill applicable to
-  // the new agent. First render doesn't clear so deep links (?skill=) still work.
+  // selected skill. First render preserves restored filters and deep links.
   const prevAgentParam = useRef(agentParam);
   useEffect(() => {
     if (prevAgentParam.current !== agentParam) {
+      setFilter(agentParam);
       setSelectedId(null);
       setSelectedSkill(null);
       prevAgentParam.current = agentParam;
@@ -448,7 +470,7 @@ export default function SkillsManager() {
   }, [installParam, restoredFilters]);
 
   // Skills visible for the current agent filter, ignoring search (used for URL skill id + auto-select)
-  const listWithoutSearch = useMemo(() => {
+  const listForAgent = useMemo(() => {
     const available = mergedSkills?.filter((s) => s.scope.type === "SharedLibrary" || allAgents(s).length > 0);
     const byAgent = filter === "all"
       ? available
@@ -456,12 +478,14 @@ export default function SkillsManager() {
     return byAgent?.filter((s) => matchesInstallFilter(s, installFilter, filter === "all" ? null : filter));
   }, [mergedSkills, filter, installFilter]);
 
+  const listWithoutSearch = useMemo(() => listForAgent?.filter(skill => !tagFilters.length && !untagged || (untagged && !skill.userTags?.length) || skill.userTags?.some(tag => tagFilters.includes(tag))), [listForAgent, tagFilters, untagged]);
+
   /** Sum of listing-slice ~tok and full-file ~tok for skills visible under the agent filter (no budget / caps in UI). */
   const agentTokenTotals = useMemo(() => {
-    if (filter === "all" || !listWithoutSearch?.length) return null;
+    if (filter === "all" || !listForAgent?.length) return null;
     let sumListingChars = 0;
     let sumFullChars = 0;
-    for (const s of listWithoutSearch) {
+    for (const s of listForAgent) {
       sumListingChars += s.footprint_listing_slice_chars ?? 0;
       sumFullChars += s.footprint_skill_md_chars ?? 0;
     }
@@ -469,14 +493,12 @@ export default function SkillsManager() {
       listingTok: approxTokensFromChars(sumListingChars),
       fullTok: approxTokensFromChars(sumFullChars),
     };
-  }, [filter, listWithoutSearch]);
+  }, [filter, listForAgent]);
 
-  // Apply ?skill= deep link or auto-select first row when nothing is selected.
-  // Prefer a skill that is actually visible in the tree: a top-level row (either
-  // standalone or a collection parent). A collection child whose parent isn't in the
-  // filtered list is not directly visible, so skip it.
+  // Open details only for an explicit selection or deep link. Refreshing the
+  // inventory must not reopen a dismissed inspector or select an unrelated skill.
   useEffect(() => {
-    if (!listWithoutSearch?.length) return;
+    if (!listWithoutSearch?.length) { setSelectedId(null); setSelectedSkill(null); return; }
 
     if (skillParam) {
       const found = listWithoutSearch.find((s) => s.id === skillParam);
@@ -488,14 +510,8 @@ export default function SkillsManager() {
       }
     }
 
-    // Prefer a top-level (non-child) skill — collection children are only visible when
-    // their parent is expanded, and are hidden entirely when the parent isn't in the
-    // filtered list. Fall back to the first item if there's nothing top-level.
-    const firstTopLevel =
-      listWithoutSearch.find((s) => !s.collection) ?? listWithoutSearch[0];
-
-    setSelectedId((current) => (current != null ? current : firstTopLevel.id));
-    setSelectedSkill((current) => (current != null ? current : firstTopLevel));
+    setSelectedId((current) => (listWithoutSearch.some(skill => skill.id === current) ? current : null));
+    setSelectedSkill((current) => (current && listWithoutSearch.some(skill => skill.id === current.id) ? current : null));
   }, [mergedSkills, filter, skillParam, listWithoutSearch]);
 
   // Keep selectedSkill in sync when underlying data refreshes (e.g. filesystem changes)
@@ -541,9 +557,7 @@ export default function SkillsManager() {
     (skill: Skill) => {
       setSelectedId(skill.id);
       setPanelMode("detail");
-      startTransition(() => {
-        setSelectedSkill(skill);
-      });
+      setSelectedSkill(skill);
       setSearchParams(
         (prev) => {
           const p = new URLSearchParams(prev);
@@ -583,14 +597,7 @@ export default function SkillsManager() {
 
   // Filter by agent (direct + inherited), then by search query
   const filtered = useMemo(() => {
-    // Shared-library skills are user-owned sources, not installations on every
-    // agent that can read ~/.agents/skills. They belong in the all-skills view
-    // but never in a specific agent's filter unless an explicit link exists.
-    const available = mergedSkills?.filter((s) => s.scope.type === "SharedLibrary" || allAgents(s).length > 0);
-    let list = filter === "all"
-      ? available
-      : available?.filter((s) => allAgents(s).includes(filter));
-    list = list?.filter((s) => matchesInstallFilter(s, installFilter, filter === "all" ? null : filter));
+    let list = listWithoutSearch;
     if (deferredSearch.trim()) {
       const q = deferredSearch.toLowerCase();
       list = list?.filter(
@@ -613,7 +620,7 @@ export default function SkillsManager() {
       const freshness = Number(isRecentlyAdded(b)) - Number(isRecentlyAdded(a));
       return freshness || a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
     });
-  }, [mergedSkills, filter, installFilter, deferredSearch, updateBySkillId]);
+  }, [listWithoutSearch, deferredSearch, updateBySkillId]);
 
   // Filtering may match a child skill but not its package name (for example
   // “design review”). Keep the real package parent available to the list so
@@ -633,27 +640,21 @@ export default function SkillsManager() {
       ),
     [filtered],
   );
+  const batchSelectedIds = useMemo(() => visibleSkillSelection(rawBatchSelectedIds, batchSelectableSkills.map(skill => skill.id)), [rawBatchSelectedIds, batchSelectableSkills]);
+  useEffect(() => { if (batchSelectedIds !== rawBatchSelectedIds) setBatchSelectedIds(batchSelectedIds); }, [batchSelectedIds, rawBatchSelectedIds]);
   const batchSelectedSkills = useMemo(() => {
     if (!mergedSkills) return [];
     return mergedSkills.filter((skill) => batchSelectedIds.has(skill.id));
   }, [mergedSkills, batchSelectedIds]);
+  const batchAgent = detectedAgents.find(agent => agent.slug === filter);
+  const batchRemovalSkills = batchSelectedSkills.filter(skill => !skill.collection && skill.installations.some(installation =>
+    !installation.is_inherited && (!batchAgent || installation.agent_slug === batchAgent.slug)
+    && (skill.scope.type !== 'SharedLibrary' || installation.path !== skill.canonical_path),
+  ));
+  const [batchRemovalErrors, setBatchRemovalErrors] = useState<{ id: string; error: string }[]>([]);
   const allVisibleBatchSelected =
     batchSelectableSkills.length > 0 &&
     batchSelectableSkills.every((skill) => batchSelectedIds.has(skill.id));
-
-  // Filesystem refreshes can remove selected skills behind the UI (including
-  // collection children removed with their parent), so keep the selection valid.
-  useEffect(() => {
-    const validIds = new Set(
-      (mergedSkills ?? [])
-        .filter((skill) => !skill.collection && (skill.installations.length > 0 || skill.scope.type === "SharedLibrary"))
-        .map((skill) => skill.id),
-    );
-    setBatchSelectedIds((previous) => {
-      const next = new Set([...previous].filter((id) => validIds.has(id)));
-      return next.size === previous.size ? previous : next;
-    });
-  }, [mergedSkills]);
 
   // Skills managed by a collection (parent + children) — read-only, no sync/uninstall
   const collectionSkillIds = useMemo(() => {
@@ -789,14 +790,12 @@ export default function SkillsManager() {
   }
 
   async function handleBatchUninstall() {
-    if (batchRunning || batchSelectedSkills.length === 0) return;
-    const skillsToRemove = batchSelectedSkills.filter(
-      (skill) => !skill.collection && directInstallSlugs(skill).length > 0,
-    );
+    if (batchRunning || isSearchStale || batchSelectedSkills.length === 0) return;
+    const skillsToRemove = batchRemovalSkills;
     if (skillsToRemove.length === 0) return;
 
     const busyKeys = skillsToRemove.flatMap((skill) =>
-      directInstallSlugs(skill).map((slug) => busyKey(skill.id, slug)),
+      directInstallSlugs(skill).filter(slug => !batchAgent || slug === batchAgent.slug).map((slug) => busyKey(skill.id, slug)),
     );
     setBatchRunning(true);
     setBusyAgents((previous) => {
@@ -808,14 +807,16 @@ export default function SkillsManager() {
     try {
       const result = await invoke("uninstall_skills_all", {
         skillIds: skillsToRemove.map((skill) => skill.id),
+        ...(batchAgent ? { agentSlug: batchAgent.slug } : {}),
       });
       await refreshAndReselect();
-      setBatchConfirmOpen(false);
+      setBatchRemovalErrors(result.failed);
 
       if (result.failed.length === 0) {
+        setBatchConfirmOpen(false);
         setBatchSelectedIds(new Set());
         setBatchSelectionMode(false);
-        toast(t("skills.batchUninstallDone", { count: result.removed.length }));
+        toast(batchAgent ? `Removed ${result.removed.length} skill${result.removed.length === 1 ? '' : 's'} from ${batchAgent.name}.` : t("skills.batchUninstallDone", { count: result.removed.length }));
       } else {
         setBatchSelectedIds(new Set(result.failed.map((failure) => failure.id)));
         if (result.removed.length > 0) {
@@ -831,6 +832,7 @@ export default function SkillsManager() {
         }
       }
     } catch (error) {
+      setBatchRemovalErrors([{ id: 'Request', error: error instanceof Error ? error.message : String(error) }]);
       console.error(
         "Batch uninstall failed:",
         error instanceof Error ? error.message : String(error),
@@ -1026,11 +1028,11 @@ export default function SkillsManager() {
   }
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="relative flex h-full min-h-0">
       {/* Main list: header + filters scroll with pane; skill rows are virtualized */}
       <div
-        className="flex h-full min-h-0 shrink-0 flex-col px-3 pt-3"
-        style={{ width: listPane.width }}
+        className={cn("skills-grid-surface flex h-full min-h-0 flex-col px-3 pt-3", viewMode === 'grid' ? 'min-w-0 flex-1' : 'shrink-0')}
+        style={viewMode === 'list' ? { width: listPane.width } : undefined}
       >
         <div className="flex shrink-0 flex-col space-y-3">
         <div className="flex items-center justify-between gap-2 relative z-20">
@@ -1055,18 +1057,19 @@ export default function SkillsManager() {
                 </span>
               </>
             ) : mergedSkills ? (
-              <span className="text-sm text-muted-foreground tabular-nums">
-                ({filtered?.length})
+              <span className="truncate text-sm font-medium tabular-nums">
+                {filter === 'all' ? t('sidebar.skills') : detectedAgents.find(agent => agent.slug === filter)?.name ?? 'Skills'} <span className="ml-2 text-xs font-normal text-muted-foreground">{filtered?.length === listForAgent?.length ? t('skills.visibleCount', { count: filtered?.length ?? 0 }) : t('skills.filteredCount', { count: filtered?.length ?? 0, total: listForAgent?.length ?? 0 })}</span>
               </span>
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            <SkillViewToggle value={viewMode} onChange={setViewMode} disabled={batchRunning} />
             {batchSelectionMode ? (
               <Button
                 variant="ghost"
                 size="sm"
                 className="gap-1 text-xs"
-                disabled={batchSelectableSkills.length === 0 || batchRunning}
+                disabled={batchSelectableSkills.length === 0 || batchRunning || isSearchStale}
                 onClick={toggleSelectAllVisible}
               >
                 {allVisibleBatchSelected ? (
@@ -1114,8 +1117,16 @@ export default function SkillsManager() {
           </div>
         </div>
 
-        {/* Agent + install source (single row, 50/50) */}
-        <div className="grid min-w-0 grid-cols-2 gap-2">
+        {/* Search leads; selectors keep a compact width instead of sharing the canvas. */}
+        <div className="flex flex-wrap items-center gap-2">
+        {/* Search */}
+        <div className={cn('min-w-0', viewMode === 'grid' ? 'max-w-sm flex-[1_1_16rem]' : 'w-full')}><SearchInput
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder={t("skills.filterPlaceholder")}
+          debounce={0}
+        /></div>
+        <div className="grid w-80 max-w-full shrink-0 grid-cols-2 gap-2">
           <AgentFilterDropdown
             value={filter}
             detectedAgents={detectedAgents}
@@ -1140,13 +1151,10 @@ export default function SkillsManager() {
           </div>
         </div>
 
-        {/* Search */}
-        <SearchInput
-          value={searchQuery}
-          onChange={setSearchQuery}
-          placeholder={t("skills.filterPlaceholder")}
-          debounce={0}
-        />
+
+        </div>
+        <SkillTagFilter allTags={allTags} selected={tagFilters} untagged={untagged} onChange={(tags, untagged) => { setSavedFilters(previous => ({ ...previous, tagFilters: [...new Set(tags)], untagged })); closePanel(); }} />
+        {skillTags.isError && <p role="alert" className="text-xs text-destructive">Could not load tags. <button type="button" className="underline" onClick={() => skillTags.refetch()}>Retry</button></p>}
 
         {(pendingGlobalUpdates.length > 0 || globalUpdateScan.active) && (
           <button
@@ -1195,7 +1203,8 @@ export default function SkillsManager() {
         )}
         </div>
 
-        <SkillPresets selectedIds={[...batchSelectedIds]} skills={skills} agentSlug={agents?.some(agent => agent.slug === filter && agent.detected) ? filter : undefined} disabled={batchRunning || busyAgents.size > 0} />
+        {!!batchSelectedSkills.length && <div className="mt-3 flex shrink-0"><Button size="sm" variant="outline" disabled={batchRunning || isSearchStale || !skillTags.data} onClick={() => setTagSelection(batchSelectedSkills)}><Tag className="size-3.5" aria-hidden />Edit tags</Button></div>}
+        <SkillPresets selectedIds={[...batchSelectedIds]} skills={skills} agentSlug={agents?.some(agent => agent.slug === filter && agent.detected) ? filter : undefined} disabled={batchRunning || isSearchStale || busyAgents.size > 0} />
 
         {/* Skill list (virtualized) */}
         <InsetScrollArea scroll={false} className="mt-3 flex-1">
@@ -1220,11 +1229,13 @@ export default function SkillsManager() {
           </div>
         ) : (
           <SkillListGrouped
+            viewMode={viewMode}
             skills={filtered}
             selectedId={selectedId}
             agents={agents}
             activeAgentSlug={filter !== "all" && filter !== "installed-anywhere" ? filter : null}
             onSelect={selectSkill}
+            tagsReady={!!skillTags.data}
             isSearchStale={isSearchStale}
             batchSelectionMode={batchSelectionMode}
             batchSelectedIds={batchSelectedIds}
@@ -1235,13 +1246,13 @@ export default function SkillsManager() {
         )}
         </InsetScrollArea>
 
-        {batchSelectionMode && filter === "all" && (
+        {batchSelectionMode && (filter === "all" || batchAgent) && (
           <div className="mt-3 shrink-0 border-t border-border/50 pt-3">
             <Button
               variant="ghost"
               className="w-full gap-1.5 text-muted-foreground"
-              disabled={!batchSelectedSkills.some(skill => directInstallSlugs(skill).length > 0) || batchRunning}
-              onClick={() => setBatchConfirmOpen(true)}
+              disabled={batchRemovalSkills.length === 0 || batchRunning || isSearchStale}
+              onClick={() => { setBatchRemovalErrors([]); setBatchConfirmOpen(true); }}
             >
               {batchRunning ? (
                 <Loader2 className="size-3.5 animate-spin" />
@@ -1250,15 +1261,15 @@ export default function SkillsManager() {
               )}
               {batchRunning
                 ? t("skills.runningAction")
-                : t("skills.uninstallAll")}
+                : batchAgent ? t("skills.removeFromAgent", { agent: batchAgent.name }) : t("skills.uninstallAll")}
             </Button>
           </div>
         )}
       </div>
 
-      <ResizeHandle onPointerDown={listPane.onPointerDown} onMouseDown={listPane.onMouseDown} isResizing={listPane.isResizing} />
+      {viewMode === 'list' && <ResizeHandle onPointerDown={listPane.onPointerDown} onMouseDown={listPane.onMouseDown} isResizing={listPane.isResizing} />}
 
-      {!selectedId && (
+      {!selectedId && viewMode === 'list' && (
         <div className="flex min-w-0 flex-1 flex-col items-center justify-center px-6">
           {filtered && filtered.length > 0 ? (
             <div className="text-center">
@@ -1273,13 +1284,9 @@ export default function SkillsManager() {
         </div>
       )}
 
-      {/* Detail / Editor panel */}
-      {selectedId && panelMode === "detail" && (
-        isPending || !selectedSkill ? (
-          <div className="flex-1 min-w-0 m-2 ml-0 flex items-center justify-center rounded-2xl glass-panel">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
+      {/* Grid details overlay the canvas; list details stay alongside the rows. */}
+      <SkillDetailFrame open={!!selectedSkill} overlay={viewMode === 'grid'} onClose={closePanel}>
+        {selectedSkill && (panelMode === 'detail' ? (
           <SkillDetail
             skill={selectedSkill}
             detectedAgents={detectedAgents}
@@ -1289,6 +1296,8 @@ export default function SkillsManager() {
             readOnly={collectionSkillIds.has(selectedSkill.id)}
             onClose={closePanel}
             onEdit={() => setPanelMode("editor")}
+            onEditTags={() => setTagSelection([selectedSkill])}
+            tagsReady={!!skillTags.data}
             onSync={handleSync}
             onUpdate={handleUpdate}
 			onMarkReviewed={handleMarkReviewed}
@@ -1300,15 +1309,10 @@ export default function SkillsManager() {
             onReveal={revealItemInDir}
 			onOpenFolder={openSkillFolder}
           />
-        )
-      )}
-      {selectedSkill && panelMode === "editor" && (
-        <SkillEditor
-          skill={selectedSkill}
-          onClose={closePanel}
-          onBack={() => setPanelMode("detail")}
-        />
-      )}
+        ) : <SkillEditor skill={selectedSkill} onClose={closePanel} onBack={() => setPanelMode('detail')} />)}
+      </SkillDetailFrame>
+
+      {tagSelection && <SkillTagEditor skills={tagSelection} allTags={allTags} onClose={() => setTagSelection(null)} />}
 
       <SkillNameConfirmDialog
         open={confirmIntent !== null}
@@ -1323,7 +1327,9 @@ export default function SkillsManager() {
       />
       <BatchUninstallConfirmDialog
         open={batchConfirmOpen}
-        skills={batchSelectedSkills.filter(skill => directInstallSlugs(skill).length > 0)}
+        skills={batchRemovalSkills}
+        agentName={batchAgent?.name}
+        errors={batchRemovalErrors}
         pending={batchRunning}
         onCancel={() => {
           if (!batchRunning) setBatchConfirmOpen(false);
@@ -1364,7 +1370,7 @@ export default function SkillsManager() {
                   </div>
                   {linkedPackageReview?.state === "ready" && <div className="flex items-center justify-between gap-3 border-t border-primary/15 px-4 py-2.5"><p className="text-xs leading-5 text-muted-foreground">This fast-forwards the package once. Its existing skill links remain intact.</p><Button size="xs" disabled={applyingLinkedPackage} onClick={() => void applyLinkedPackageUpdate()}>{applyingLinkedPackage ? <Loader2 className="size-3 animate-spin" /> : "Update gstack"}</Button></div>}
                   {linkedPackageReview?.state === "local-changes" && <div className="border-t border-amber-500/20 bg-amber-500/[0.04] px-4 py-2.5"><p className="text-xs leading-5 text-amber-700 dark:text-amber-300">This package has local changes, so it will not be overwritten. Open its repository to follow its update instructions, or review and commit the local changes first.</p><Button variant="ghost" size="xs" className="mt-1.5" onClick={() => setLinkedPackageChangesOpen((open) => !open)}>{linkedPackageChangesOpen ? "Hide local changes" : `Show ${linkedPackageReview.local_changes.length} local changes`}</Button>{linkedPackageChangesOpen && <ul className="mt-2 max-h-44 divide-y divide-amber-500/10 overflow-y-auto rounded-md border border-amber-500/15 bg-background/50 font-mono text-[11px]">{linkedPackageReview.local_changes.map((change) => <li key={`${change.status}:${change.path}`} className="flex gap-2 px-2 py-1.5"><span className={cn("w-4 shrink-0 font-semibold", change.status.includes("D") ? "text-red-600 dark:text-red-400" : "text-amber-700 dark:text-amber-300")}>{change.status}</span><span className="min-w-0 break-all text-foreground/80">{change.path}</span></li>)}</ul>}</div>}
-                  {expandedReviewPackages.has("gstack") && <div className="border-t border-primary/15 px-4 py-2"><p className="mb-2 text-xs leading-5 text-muted-foreground">These copies predate the linked gstack package. They are grouped so the suite stays understandable, but they are not replaced by the package update.</p><ul className="divide-y divide-border/60">{gstackReviewItems.map((item) => <li key={`${item.skill}:${item.local_path}`} className="py-2 text-sm"><div className="flex items-center justify-between gap-3"><span className="min-w-0 truncate font-medium">{item.skill}</span><span className="shrink-0 text-[11px] text-muted-foreground">{item.state === "local-changes" ? "Local edits" : item.state === "update-available" ? "Update available" : "Review needed"}</span></div><div className="mt-1 space-y-0.5 text-[11px]"><button type="button" className="block max-w-full truncate font-mono text-primary hover:underline" onClick={() => item.repository && void openUrl(item.repository)}>{item.repository}</button>{item.local_path && <span className="block truncate font-mono text-muted-foreground">{item.local_path}</span>}</div></li>)}</ul></div>}
+                  {expandedReviewPackages.has("gstack") && <div className="border-t border-primary/15 px-4 py-2"><p className="mb-2 text-xs leading-5 text-muted-foreground">These copies predate the linked gstack package. They are grouped so the suite stays understandable, but they are not replaced by the package update.</p><ul className="divide-y divide-border/60">{gstackReviewItems.map((item) => <li key={`${item.skill}:${item.local_path}`} className="py-2 text-sm"><div className="flex items-center justify-between gap-3"><span className="min-w-0 truncate font-medium">{item.skill}</span><span className="shrink-0 text-[11px] text-muted-foreground">{item.state === "local-changes" ? "Local edits" : item.state === "update-available" ? "Update available" : "Review needed"}</span></div><div className="mt-1 space-y-0.5 text-[11px]"><AppLink className="block max-w-full truncate font-mono text-primary hover:underline" href={item.repository ?? undefined}>{item.repository}</AppLink>{item.local_path && <span className="block truncate font-mono text-muted-foreground">{item.local_path}</span>}</div></li>)}</ul></div>}
                 </div>}
                 {ungroupedUpdatesInReview.map((item) => (
                 <div key={item.skill} className="rounded-xl px-3 py-3 hover:bg-muted/50">
@@ -1388,7 +1394,7 @@ export default function SkillsManager() {
                     </div>
                     <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground">{item.managed ? "Can update safely" : "Managed elsewhere"}</span>
                   </div>
-                  <div className="mt-2 space-y-0.5 text-[11px]"><button type="button" className="block max-w-full truncate font-mono text-primary hover:underline" onClick={() => item.repository && void openUrl(item.repository)}>{item.repository}</button>{item.local_path && <span className="block truncate font-mono text-muted-foreground">{item.local_path}</span>}</div>
+                  <div className="mt-2 space-y-0.5 text-[11px]"><AppLink className="block max-w-full truncate font-mono text-primary hover:underline" href={item.repository ?? undefined}>{item.repository}</AppLink>{item.local_path && <span className="block truncate font-mono text-muted-foreground">{item.local_path}</span>}</div>
                   {item.state === "update-available" && item.managed && (
                     <Button variant="ghost" size="xs" className="mt-2" disabled={fileReviewLoading === item.skill} onClick={() => void openFileReview(item)}>
                       {fileReviewLoading === item.skill ? <Loader2 className="size-3 animate-spin" /> : "See file changes"}
@@ -1452,11 +1458,13 @@ type SkillVirtualRow =
   | { kind: "collection_child"; skill: SkillWithRepo; key: string };
 
 function SkillListGrouped({
+  viewMode,
   skills,
   selectedId,
   agents,
   activeAgentSlug,
   onSelect,
+  tagsReady,
   isSearchStale,
   batchSelectionMode,
   batchSelectedIds,
@@ -1464,11 +1472,13 @@ function SkillListGrouped({
   updateStates,
   collectionParents,
 }: {
+  viewMode: 'grid' | 'list';
   skills: SkillWithRepo[];
   selectedId: string | null;
   agents: import("@/mainview/hooks/useAgents").AgentConfig[] | undefined;
   activeAgentSlug?: string | null;
   onSelect: (skill: SkillWithRepo) => void;
+  tagsReady: boolean;
   isSearchStale: boolean;
   batchSelectionMode: boolean;
   batchSelectedIds: Set<string>;
@@ -1478,6 +1488,7 @@ function SkillListGrouped({
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
+  const columns = useSkillGridColumns(scrollRef, viewMode);
 
   // Group skills: collection skills grouped under their parent, standalone skills as-is
   const groups = useMemo(() => {
@@ -1553,23 +1564,24 @@ function SkillListGrouped({
     return rows;
   }, [groups, collapsed]);
 
+  const visualRows = useMemo(() => packSkillRows(flatRows, viewMode === 'grid' ? columns : 1), [flatRows, viewMode, columns]);
   const virtualizer = useVirtualizer({
-    count: flatRows.length,
+    count: visualRows.length,
     getScrollElement: () => scrollRef.current,
     // These estimates deliberately match the three visual row shapes. The old
     // one-size 116px estimate made a filtered or newly-expanded collection
     // look as if it had blank rows until scrolling eventually measured it.
     estimateSize: (index) => {
-      const kind = flatRows[index]?.kind;
+      const kind = visualRows[index]?.[0]?.kind;
       if (kind === "section") return 34;
       // Start at the full card height. The measured value settles downward
       // after paint, but a conservative estimate never lets a lazily rendered
       // description or agent strip overlap the next item.
       if (kind === "collection_header") return 112;
-      return 112;
+      return viewMode === 'grid' ? 172 : 112;
     },
     overscan: 12,
-    getItemKey: (index) => flatRows[index]?.key ?? String(index),
+    getItemKey: (index) => visualRows[index]?.map(row => row.key).join('|') ?? String(index),
   });
 
   // A search can shrink a long, already-scrolled list to a handful of rows.
@@ -1580,25 +1592,25 @@ function SkillListGrouped({
   // the next user scroll.
   useLayoutEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 });
-  }, [flatRows]);
+  }, [flatRows, columns, viewMode]);
 
   const toggle = (name: string) =>
     setCollapsed((prev) => ({ ...prev, [name]: !prev[name] }));
 
   useEffect(() => {
     if (selectedId == null) return;
-    const idx = flatRows.findIndex((r) => {
+    const idx = visualRows.findIndex(rows => rows.some((r) => {
 		if (r.kind === "section") return false;
       if (r.kind === "standalone") return r.skill.id === selectedId;
       if (r.kind === "collection_header") return r.parent.id === selectedId;
       return r.skill.id === selectedId;
-    });
+    }));
     if (idx >= 0) virtualizer.scrollToIndex(idx, { align: "auto" });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scroll when selection changes; virtualizer stable; flatRows from same render
-  }, [selectedId]);
+  }, [selectedId, columns, viewMode]);
 
   return (
-    <div className="relative h-full min-h-0">
+    <div className="relative h-full min-h-0" role="region" aria-label={viewMode === 'grid' ? 'Skills grid' : 'Skills list'}>
       <div
         ref={scrollRef}
         className="h-full min-h-0 overflow-y-auto pr-1 transition-opacity"
@@ -1609,8 +1621,8 @@ function SkillListGrouped({
         style={{ height: virtualizer.getTotalSize() }}
       >
         {virtualizer.getVirtualItems().map((vi) => {
-          const row = flatRows[vi.index];
-          if (!row) return null;
+          const rows = visualRows[vi.index];
+          if (!rows) return null;
           return (
             <div
               key={vi.key}
@@ -1619,18 +1631,21 @@ function SkillListGrouped({
               className="absolute left-0 top-0 w-full"
               style={{ transform: `translateY(${vi.start}px)` }}
             >
-              <div className="pb-1">
+              <div className={viewMode === 'grid' ? 'grid gap-3 pb-3' : 'pb-1'} style={viewMode === 'grid' ? { gridTemplateColumns: `repeat(${rows[0]?.kind === 'collection_header' || rows[0]?.kind === 'section' ? 1 : columns},minmax(0,1fr))` } : undefined}>
+              {rows.map(row => <div key={row.key} className="min-w-0">
                 {row.kind === "section" ? (
                   <div className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-primary">
                     {row.title}
                   </div>
                 ) : row.kind === "standalone" ? (
                   <SkillListItem
+                    viewMode={viewMode}
                     skill={row.skill}
                     selected={selectedId === row.skill.id}
                     agents={agents}
                     activeAgentSlug={activeAgentSlug}
                     onSelect={onSelect}
+                    tagsReady={tagsReady}
                     batchSelectionMode={batchSelectionMode}
                     batchSelected={batchSelectedIds.has(row.skill.id)}
                     onToggleBatch={onToggleBatch}
@@ -1652,12 +1667,14 @@ function SkillListGrouped({
                     updateStates={updateStates}
                   />
                 ) : (
-                  <div className="ml-3 border-l border-black/[0.06] dark:border-white/[0.06] pl-1">
+                  <div className={viewMode === 'list' ? 'ml-3 border-l border-black/[0.06] dark:border-white/[0.06] pl-1' : 'h-full'}>
                     <SkillListItem
+                      viewMode={viewMode}
                       skill={row.skill}
                       selected={selectedId === row.skill.id}
                       agents={agents}
                       onSelect={onSelect}
+                        tagsReady={tagsReady}
                       batchSelectionMode={batchSelectionMode}
                       batchSelected={false}
                       batchSelectable={false}
@@ -1666,6 +1683,7 @@ function SkillListGrouped({
                     />
                   </div>
                 )}
+              </div>)}
               </div>
             </div>
           );
@@ -1809,6 +1827,7 @@ const CollectionItem = memo(function CollectionItem({
                 {parent.description}
               </p>
             )}
+            <SkillTagBadges tags={parent.userTags} />
             <AgentChipsCompact
               directSlugs={directSlugs}
               inheritedSlugs={inheritedSlugs}
@@ -1841,17 +1860,20 @@ const CollectionItem = memo(function CollectionItem({
 });
 
 const SkillListItem = memo(function SkillListItem({
+  viewMode,
   skill,
   selected,
   agents,
   activeAgentSlug,
   onSelect,
+  tagsReady,
   batchSelectionMode,
   batchSelected,
   batchSelectable,
   onToggleBatch,
   updateState,
 }: {
+  viewMode: 'grid' | 'list';
   skill: SkillWithRepo;
   selected: boolean;
   agents: import("@/mainview/hooks/useAgents").AgentConfig[] | undefined;
@@ -1859,6 +1881,7 @@ const SkillListItem = memo(function SkillListItem({
    *  the agent chip strip (redundant — every row would show the same icon). */
   activeAgentSlug?: string | null;
   onSelect: (skill: SkillWithRepo) => void;
+  tagsReady: boolean;
   batchSelectionMode: boolean;
   batchSelected: boolean;
   batchSelectable?: boolean;
@@ -1871,34 +1894,30 @@ const SkillListItem = memo(function SkillListItem({
     .filter((i) => i.is_inherited)
     .map((i) => i.agent_slug)
     .filter((s) => !directSlugs.includes(s));
-  const hasDirectInstall = directSlugs.length > 0;
-  const inheritedOnly = !hasDirectInstall && inheritedSlugs.length > 0;
   const canBatchSelect = batchSelectable ?? (!skill.collection && (skill.installations.length > 0 || skill.scope.type === "SharedLibrary"));
+  const [editingTags, setEditingTags] = useState(false);
+  const tagCatalog = useQuery({ queryKey: ['skill-tags'], queryFn: () => invoke('list_skill_tags'), enabled: editingTags });
+
+  function selectItem() {
+    if (batchSelectionMode) {
+      if (canBatchSelect) onToggleBatch(skill.id);
+    } else onSelect(skill);
+  }
 
   return (
-    <div className="relative overflow-hidden rounded-xl">
+    <ContextMenu.Root>
+    <ContextMenu.Trigger render={<SkillCardSurface selected={batchSelectionMode ? batchSelected : selected} viewMode={viewMode} />} onClick={event => { if (!(event.target as HTMLElement).closest('button')) selectItem(); }} className={cn(batchSelectionMode && !canBatchSelect && "opacity-55")}>
       <button
         type="button"
-        className={cn(
-          "w-full overflow-hidden rounded-xl px-3 py-2.5 text-left transition-all duration-200 select-none border-[0.5px]",
-          batchSelectionMode ? "pl-10 pr-3" : "pr-3",
-          batchSelected
-            ? "border-primary/25 bg-primary/[0.07] dark:bg-primary/[0.1]"
-            : selected
-            ? "glass"
-            : "border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]",
-          batchSelectionMode && !canBatchSelect && "opacity-55",
-        )}
-        onClick={() => {
-          if (batchSelectionMode) {
-            if (canBatchSelect) onToggleBatch(skill.id);
-            return;
-          }
-          onSelect(skill);
-        }}
+        aria-pressed={batchSelectionMode ? undefined : selected}
+        data-selected={batchSelectionMode ? batchSelected : selected}
+        className="flex w-full flex-col overflow-hidden rounded-t-xl border-0 bg-transparent p-0 text-left select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        onClick={selectItem}
       >
-        <div className="flex min-w-0 items-center gap-1.5">
-          <Tooltip content={skill.name}><h3 className="min-w-0 flex-1 truncate text-sm font-medium">{skill.name}</h3></Tooltip>
+        <div className={cn('flex w-full min-w-0 flex-col px-3', viewMode === 'grid' ? 'pt-3' : 'pt-2', batchSelectionMode && 'pl-10')}>
+        <div className={"flex w-full min-w-0 items-center gap-2"}>
+
+          <h3 title={skill.name} className={'min-w-0 flex-1 truncate text-sm font-semibold'}>{skill.name}</h3>
           {isRecentlyAdded(skill) && (
             <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
               New
@@ -1915,58 +1934,22 @@ const SkillListItem = memo(function SkillListItem({
           )}
         </div>
         {skill.description && (
-          <Tooltip content={skill.description}><p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{skill.description}</p></Tooltip>
+          <p title={skill.description} className={cn("text-xs text-muted-foreground", viewMode === 'grid' ? 'mt-1 line-clamp-2' : 'mt-0.5 line-clamp-1')}>{skill.description}</p>
         )}
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-medium tabular-nums text-muted-foreground/90">
-		  {skill.scope.type === "SharedLibrary" && (
-            <Tooltip content={t("skills.sharedLibrarySkillHint")}>
-			<span
-              className="rounded-full bg-secondary px-1.5 py-0.5 text-secondary-foreground"
-            >
-              {t("skills.sharedDirectory")}
-            </span>
-            </Tooltip>
-		  )}
-          <Tooltip content={t("skills.tokenTooltipListing")}>
-          <span
-            className="inline-flex items-center gap-0.5"
-          >
-            <LayoutList className="size-3 shrink-0 opacity-80" aria-hidden />
-            {formatApproxTok(approxTokensFromChars(skill.footprint_listing_slice_chars ?? 0))}
-          </span>
-          </Tooltip>
-          <span className="text-border">·</span>
-          <Tooltip content={t("skills.tokenTooltipFull")}>
-          <span
-            className="inline-flex items-center gap-0.5"
-          >
-            <FileText className="size-3 shrink-0 opacity-80" aria-hidden />
-            {formatApproxTok(approxTokensFromChars(skill.footprint_skill_md_chars ?? 0))}
-          </span>
-          </Tooltip>
-          {(skill.listing_excluded ?? false) && (
-            <Tooltip content={t("skills.listingExcludedTooltip")}>
-            <span
-              className="inline-flex items-center gap-0.5 text-muted-foreground/70"
-            >
-              <Ban className="size-3 shrink-0" aria-hidden />
-            </span>
-            </Tooltip>
-          )}
         </div>
-        {inheritedOnly && (
-          <p className="mt-1 text-[11px] text-muted-foreground/80">
-            {t("skills.inheritedOnlyHint")}
-          </p>
-        )}
-        {!activeAgentSlug && (
-          <AgentChipsCompact
-            directSlugs={directSlugs}
-            inheritedSlugs={inheritedSlugs}
-            agents={agents}
-          />
-        )}
       </button>
+      {!!skill.userTags?.length && <div className={cn("min-h-5 px-3", viewMode === 'grid' ? "mt-2 pb-2" : "mt-1 pb-1")}>
+        {batchSelectionMode ? <div className="[&>div]:mt-0"><SkillTagBadges tags={skill.userTags} /></div> : <InlineSkillTags skill={skill} disabled={!tagsReady} />}
+      </div>}
+        <div className={cn("mt-auto flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 pb-2 text-[10px] font-medium tabular-nums text-muted-foreground", !skill.userTags?.length && 'pt-1')}>
+          {skill.scope.type === 'SharedLibrary' && <Tooltip content={t('skills.sharedLibrarySkillHint')}><span className="rounded-full bg-secondary px-1.5 py-0.5 text-secondary-foreground">{t('skills.sharedDirectory')}</span></Tooltip>}
+          <Tooltip content={t('skills.tokenTooltipListing')}><span className="inline-flex items-center gap-0.5"><LayoutList className="size-3 shrink-0" aria-hidden />{formatApproxTok(approxTokensFromChars(skill.footprint_listing_slice_chars ?? 0))}</span></Tooltip>
+          <Tooltip content={t('skills.tokenTooltipFull')}><span className="inline-flex items-center gap-0.5"><FileText className="size-3 shrink-0" aria-hidden />{formatApproxTok(approxTokensFromChars(skill.footprint_skill_md_chars ?? 0))}</span></Tooltip>
+          {!!skill.listing_excluded && <Tooltip content={t('skills.listingExcludedTooltip')}><span><Ban className="size-3" aria-hidden /></span></Tooltip>}
+          {!!skill.source && skill.source !== 'Unknown' && <span title={getSourceRepo(skill.source) ?? getSourceFolder(skill.source) ?? getSourceLabel(skill.source, t)} className="inline-flex min-w-0 items-center gap-1">{getSourceRepo(skill.source) ? <GitBranch className="size-3 shrink-0" aria-hidden /> : <HardDrive className="size-3 shrink-0" aria-hidden />}<span className="truncate">{getSourceLabel(skill.source, t)}</span></span>}
+          <span className="flex-1" aria-hidden />
+          {!activeAgentSlug && <AgentChipsCompact directSlugs={directSlugs} inheritedSlugs={inheritedSlugs} agents={agents} card />}
+        </div>
       {batchSelectionMode ? (
         <BatchSelectionCheckbox
           checked={batchSelected}
@@ -1981,7 +1964,16 @@ const SkillListItem = memo(function SkillListItem({
           className="absolute left-3 top-3"
         />
       ) : null}
-    </div>
+    </ContextMenu.Trigger>
+    <ContextMenu.Portal>
+      <ContextMenu.Positioner className="z-50 outline-none" sideOffset={4}>
+        <ContextMenu.Popup className="min-w-40 rounded-xl border border-border bg-popover p-1.5 text-sm text-popover-foreground shadow-lg outline-none">
+          <ContextMenu.Item disabled={!tagsReady || batchSelectionMode} onClick={() => setEditingTags(true)} className="flex min-h-8 cursor-default items-center gap-2 rounded-lg px-2.5 py-1.5 outline-none focus:bg-accent focus:text-accent-foreground data-disabled:opacity-50"><Tag className="size-3.5" aria-hidden />{skill.userTags?.length ? 'Edit tags…' : 'Add tags…'}</ContextMenu.Item>
+        </ContextMenu.Popup>
+      </ContextMenu.Positioner>
+    </ContextMenu.Portal>
+    {editingTags && <SkillTagEditor skills={[skill]} allTags={[...new Set((tagCatalog.data ?? []).flatMap(row => row.tags))].sort()} onClose={() => setEditingTags(false)} />}
+    </ContextMenu.Root>
   );
 });
 
@@ -1991,7 +1983,9 @@ function AgentChipsCompact({
   directSlugs,
   inheritedSlugs,
   agents,
+  card = false,
 }: {
+  card?: boolean;
   directSlugs: string[];
   inheritedSlugs: string[];
   agents: import("@/mainview/hooks/useAgents").AgentConfig[] | undefined;
@@ -2012,13 +2006,14 @@ function AgentChipsCompact({
     : "";
 
   return (
-    <div className="mt-1.5 flex items-center gap-1">
+    <div className={cn("flex shrink-0 items-center gap-1", !card && "mt-1.5")}>
       {visible.map(({ slug, inherited }) => (
         <Tooltip key={slug} content={inherited ? `${nameOf(slug)} (inherited)` : nameOf(slug)}>
         <span
           key={slug}
           className={cn(
-            "inline-flex size-4 items-center justify-center",
+            "inline-flex items-center justify-center",
+            card ? "size-5 rounded bg-secondary/80" : "size-4",
             inherited && "opacity-40",
           )}
         >
@@ -2084,6 +2079,12 @@ function getSourceLabel(source: unknown, t: (key: string) => string): string {
   return t("skills.sourceUnknown");
 }
 
+function getSourceFolder(source: unknown): string | null {
+  if (!source || typeof source !== 'object' || !('LocalPath' in source)) return null;
+  const local = source.LocalPath;
+  return local && typeof local === 'object' && 'path' in local && typeof local.path === 'string' ? local.path : null;
+}
+
 function getSourceRepo(source: unknown): string | null {
   if (!source || typeof source !== "object") return null;
   const src = source as Record<string, unknown>;
@@ -2102,6 +2103,7 @@ function getSourceRepo(source: unknown): string | null {
   return null;
 }
 
+
 function SkillDetail({
   skill,
   detectedAgents,
@@ -2109,7 +2111,10 @@ function SkillDetail({
   busyAgents,
   updating,
   readOnly = false,
+  onClose,
   onEdit,
+  onEditTags,
+  tagsReady,
   onSync,
 	onUpdate,
 	onMarkReviewed,
@@ -2121,7 +2126,7 @@ function SkillDetail({
   onReveal,
 	onOpenFolder,
 }: {
-  skill: Skill;
+  skill: SkillWithRepo;
   detectedAgents: AgentConfig[];
   /** Currently-filtered agent in the sidebar (or null when "All"). */
   activeAgentSlug?: string | null;
@@ -2130,6 +2135,8 @@ function SkillDetail({
   readOnly?: boolean;
   onClose: () => void;
   onEdit: () => void;
+  onEditTags: () => void;
+  tagsReady: boolean;
   onSync: (skillId: string, targetAgents: string[]) => void;
   onUpdate: (skillId: string) => void;
 	onMarkReviewed: (skillId: string) => Promise<void>;
@@ -2148,6 +2155,8 @@ function SkillDetail({
   const uninstallAllBusy = directSlugs.some((slug) =>
     busyAgents.has(busyKey(skill.id, slug)),
   );
+  const [comparisonAgent, setComparisonAgent] = useState<string | null>(null);
+  useEffect(() => { setComparisonAgent(null); }, [skill.id]);
   const allAgentSlugs = new Set(allAgents(skill));
   const syncTargets = detectedAgents.filter(
     (a) => !allAgentSlugs.has(a.slug)
@@ -2251,6 +2260,7 @@ function SkillDetail({
           <Info className="size-4 shrink-0 text-muted-foreground" />
           <h3 className="truncate text-sm font-medium">{t("skills.detail")}</h3>
         </div>
+        <Button variant="ghost" size="icon-sm" aria-label="Close skill details" onClick={onClose}><X className="size-4" /></Button>
       </div>
 
       {/* Content */}
@@ -2293,6 +2303,7 @@ function SkillDetail({
             </div>
             </div>
 		  </div>
+          <div className="mt-2 flex items-center gap-2"><Button size="sm" variant="ghost" disabled={!tagsReady} onClick={onEditTags}><Tag className="size-3.5" aria-hidden />Edit tags</Button><SkillTagBadges tags={skill.userTags} /></div>
           {skill.description && (
             <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
               {skill.description}
@@ -2341,12 +2352,12 @@ function SkillDetail({
             {sourceRepo && (
               <>
                 <span className="text-xs text-muted-foreground">{t("skills.repository")}</span>
-                <button
+                <AppLink
                   className="text-xs font-mono break-all text-left text-primary hover:underline cursor-pointer"
-                  onClick={() => openUrl(sourceRepo!)}
+                  href={sourceRepo!}
                 >
                   {sourceRepo}
-                </button>
+                </AppLink>
               </>
             )}
 			<span className="text-xs text-muted-foreground">Location</span>
@@ -2449,7 +2460,9 @@ function SkillDetail({
               readOnly={readOnly}
               onInstall={(targets) => onSync(skill.id, targets)}
               onUninstall={onUninstall}
+              onCompare={skill.scope.type === 'SharedLibrary' && !readOnly ? setComparisonAgent : undefined}
             />
+            {comparisonAgent && <AgentSkillComparisonDialog key={`${skill.id}:${comparisonAgent}`} skill={skill} agentSlug={comparisonAgent} agentName={detectedAgents.find(agent => agent.slug === comparisonAgent)?.name ?? comparisonAgent} onClose={() => setComparisonAgent(null)} />}
             {inheritedOnly && (
               <p className="mt-2 text-xs text-muted-foreground">
                 {t("skills.inheritedOnlyUninstallInfo")}
@@ -2690,7 +2703,7 @@ function SkillDetail({
           )}
           {skill.library_state?.ownership === "external" && (
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs leading-5 text-muted-foreground">External skill{sourceRepo ? <> from <Tooltip content={sourceRepo}><button type="button" onClick={() => openUrl(sourceRepo)} className="font-medium text-primary hover:underline">its original source</button></Tooltip></> : ''}. Make an editable copy when you want to adapt it.</p>
+              <p className="text-xs leading-5 text-muted-foreground">External skill{sourceRepo ? <> from <Tooltip content={sourceRepo}><AppLink href={sourceRepo} className="font-medium text-primary hover:underline">its original source</AppLink></Tooltip></> : ''}. Make an editable copy when you want to adapt it.</p>
               {!forking ? (
                 <Button size="sm" variant="outline" className="h-8 shrink-0 gap-1.5" onClick={() => setForking(true)}><Copy className="size-3.5" />Make editable copy</Button>
               ) : (
@@ -2703,7 +2716,7 @@ function SkillDetail({
             </div>
           )}
           {(!skill.library_state || skill.library_state.ownership === "unknown") && (
-            <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs leading-5 text-muted-foreground">Local skill with no recorded source. Mark it as yours before improving it.</p><Button size="sm" variant="outline" className="h-8 shrink-0" onClick={() => void onClaimOwnership(skill.id)}>This is my skill</Button></div>
+            <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs leading-5 text-muted-foreground">No original source is recorded. Mark this skill as yours before improving it.</p><Button size="sm" variant="outline" className="h-8 shrink-0" onClick={() => void onClaimOwnership(skill.id)}>This is my skill</Button></div>
           )}
         </section>
 
@@ -2739,29 +2752,37 @@ function SkillDetail({
 function BatchUninstallConfirmDialog({
   open,
   skills,
+  agentName,
+  errors,
   pending,
   onCancel,
   onConfirm,
 }: {
   open: boolean;
   skills: Skill[];
+  agentName?: string;
+  errors: { id: string; error: string }[];
   pending: boolean;
   onCancel: () => void;
   onConfirm: () => void | Promise<void>;
 }) {
   const { t } = useTranslation();
-  if (!open) return null;
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (open && dialog && !dialog.open) dialog.showModal();
+    else if (!open && dialog?.open) dialog.close();
+  }, [open]);
 
   const preview = skills.slice(0, 6);
   const remaining = skills.length - preview.length;
 
   return (
-    <div className="modal-shell modal-overlay fixed inset-0 z-[320] flex items-center justify-center">
-      <div className="absolute inset-0" onClick={onCancel} />
+    <dialog ref={dialogRef} aria-labelledby="batch-removal-title" className="modal-shell m-auto border-0 bg-transparent p-0 text-foreground backdrop:bg-black/50" onCancel={event => { event.preventDefault(); if (!pending) onCancel(); }} onClick={event => { if (event.target === event.currentTarget && !pending) onCancel(); }}>
       <div className="modal-panel relative z-10 w-[min(32rem,calc(100vw-2rem))] rounded-2xl glass-panel border border-border/50 p-5 shadow-xl">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-[590]">
-            {t("skills.batchConfirmTitle", { count: skills.length })}
+          <h2 id="batch-removal-title" className="text-sm font-[590]">
+            {agentName ? t("skills.removeFromAgent", { agent: agentName }) : t("skills.batchConfirmTitle", { count: skills.length })}
           </h2>
           <button
             type="button"
@@ -2774,7 +2795,7 @@ function BatchUninstallConfirmDialog({
           </button>
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          {t("skills.batchConfirmBody", { count: skills.length })}
+          {agentName ? `Remove ${skills.length} selected skill${skills.length === 1 ? '' : 's'} from ${agentName}?` : t("skills.batchConfirmBody", { count: skills.length })}
         </p>
         <div className="my-4 max-h-44 overflow-y-auto rounded-xl border border-border/60 bg-muted/25 p-2">
           {preview.map((skill) => (
@@ -2790,8 +2811,9 @@ function BatchUninstallConfirmDialog({
           )}
         </div>
         <p className="text-[11px] leading-relaxed text-muted-foreground">
-          {t("skills.batchConfirmInheritedHint")}
+          {agentName ? 'Private copies move to Trash. Shared sources and other agents are kept.' : t("skills.batchConfirmInheritedHint")}
         </p>
+        {errors.length > 0 && <div role="alert" className="mt-3 max-h-32 overflow-y-auto text-xs text-destructive">{errors.map(failure => <p key={failure.id}>{failure.id}: {failure.error}</p>)}</div>}
       <div className="mt-4 flex justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onCancel} disabled={pending}>
             {t("common.cancel")}
@@ -2805,11 +2827,11 @@ function BatchUninstallConfirmDialog({
             {pending && <Loader2 className="size-3.5 animate-spin" />}
             {pending
               ? t("skills.runningAction")
-              : t("skills.confirmBatchUninstall", { count: skills.length })}
+              : agentName ? 'Remove selected' : t("skills.confirmBatchUninstall", { count: skills.length })}
           </Button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
 

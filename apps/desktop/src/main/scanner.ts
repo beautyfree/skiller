@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { computeSkillFootprint } from "../shared/skill-footprint";
 import type { ParsedSkillMd } from "./parser";
 import type { AgentConfig } from "./types";
@@ -14,7 +14,7 @@ export type SkillCandidate = {
 	parsed_name?: string;
 };
 
-/** Recursively find directories containing SKILL.md (skips `.git`). */
+/** Recursively find directories containing SKILL.md (skips Git and dotagents metadata). */
 export function discoverSkillDirs(root: string): SkillCandidate[] {
 	const candidates: SkillCandidate[] = [];
 
@@ -26,7 +26,7 @@ export function discoverSkillDirs(root: string): SkillCandidate[] {
 			return;
 		}
 		for (const name of entries) {
-			if (name === ".git") continue;
+			if (name === ".git" || name === ".dotagents") continue;
 			const path = join(dir, name);
 			try {
 				const st = statSync(path);
@@ -72,7 +72,7 @@ const MAX_SCAN_DEPTH = 8;
  * Recursively collect directories that contain a `SKILL.md`, supporting nested
  * skill packages (e.g. `skills/Pkg/skills/className/leaf/SKILL.md`). Descent
  * stops at the first `SKILL.md` so a skill's own resource subfolders are not
- * mistaken for separate skills. Follows symlinks, skips `.git`, depth-capped.
+ * mistaken for separate skills. Follows symlinks, skips Git and dotagents metadata, depth-capped.
  */
 function collectSkillRoots(root: string): string[] {
 	const found: string[] = [];
@@ -86,7 +86,7 @@ function collectSkillRoots(root: string): string[] {
 			return;
 		}
 		for (const name of entries) {
-			if (name === ".git") continue;
+			if (name === ".git" || name === ".dotagents") continue;
 			const path = join(dir, name);
 			let st;
 			try {
@@ -160,9 +160,8 @@ function listingFootprintFromParsed(parsed: ParsedSkillMd, rawName: string, dirN
 	};
 }
 
-function resolveSource(
+export function resolveSkillSource(
 	skillId: string,
-	canonical: string,
 	provenance: Record<string, LocalSkillSourceRecord>,
 ): SkillSource {
 	const entry = provenance[skillId];
@@ -172,11 +171,12 @@ function resolveSource(
 		const skillPath = entry.skill_path != null ? String(entry.skill_path) : undefined;
 		if (src === "skills.sh") return { kind: "SkillsSh", repository: repo ?? null };
 		if (src === "clawhub") return { kind: "ClawHub", repository: repo ?? null };
-		if (src === "git") {
-			return { kind: "GitRepository", repo_url: repo ?? "", skill_path: skillPath ?? null };
+		if (src === "git" && repo) {
+			return { kind: "GitRepository", repo_url: repo, skill_path: skillPath ?? null };
 		}
+		if (src === "local" && repo && isAbsolute(repo)) return { kind: "LocalPath", path: repo };
 	}
-	return { kind: "LocalPath", path: canonical };
+	return { kind: "Unknown" };
 }
 
 function resolveLibraryState(
@@ -245,7 +245,7 @@ function scanInheritedRoot(
 			description: parsed.description,
 			...fp,
 			canonical_path: canonical,
-			source: resolveSource(dirName, canonical, provenance),
+			source: resolveSkillSource(dirName, provenance),
 			metadata: parsed.metadata,
 			collection: detectCollection(skillDir, root),
 			scope: { kind: "AgentLocal", agent: sourceAgent },
@@ -297,7 +297,7 @@ function scanSkillMdRoot(
 			description: parsed.description,
 			...fp,
 			canonical_path: canonical,
-			source: resolveSource(skillId, canonical, provenance),
+			source: resolveSkillSource(skillId, provenance),
 			metadata: parsed.metadata,
 			collection,
 			scope,
@@ -351,7 +351,7 @@ function scanSharedRoot(
 			description: parsed.description,
 			...fp,
 			canonical_path: canonical,
-			source: resolveSource(dirName, canonical, provenance),
+			source: resolveSkillSource(dirName, provenance),
 			metadata: parsed.metadata,
 			collection: detectCollection(skillDir, root),
 			scope: { kind: "SharedLibrary" },

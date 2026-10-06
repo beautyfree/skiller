@@ -102,6 +102,10 @@ export function createElectronPlatform(
 			if (result.canceled) return null;
 			return result.filePaths[0] ?? null;
 		},
+		saveFile: async (opts) => {
+			const result = await dialog.showSaveDialog(getWindow(), { title: opts.title, defaultPath: opts.filename, filters: [{ name: "Skiller pack", extensions: ["json"] }] });
+			return result.canceled ? null : result.filePath ?? null;
+		},
 		getMainWindow: () => wrapElectronWindow(getWindow()),
 		syncMacOSChromeFromSettings: () => {
 			applyMacOSChromeSync();

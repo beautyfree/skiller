@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { isTrpcQueryProcedure } from "./trpc-query-procedures";
 
 describe("tRPC query procedure registry", () => {
-	test("keeps Sync Center read operations on GET", () => {
+	test("keeps read operations on GET", () => {
 		for (const name of [
+			"compare_agent_skill",
+			"list_skill_tags",
 			"dotagents_machine_inventory",
 			"dotagents_doctor",
 			"dotagents_materialization_status",
@@ -35,8 +37,12 @@ describe("tRPC query procedure registry", () => {
 		}
 	});
 
-	test("does not classify state-changing Sync operations as queries", () => {
+	test("does not classify state-changing operations as queries", () => {
 		for (const name of [
+			"replace_agent_skill",
+			"update_project_skill_to_library",
+			"edit_skill_tags",
+			"rename_skill_tag",
 			"sync_center_publish_preview",
 			"sync_center_publish",
 			"sync_center_connect",

@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from "react";
-import { Trash2 } from "lucide-react";
+import { GitCompareArrows, Trash2 } from "lucide-react";
 import { revealItemInDir } from "@/mainview/lib/native";
 import { Button } from "@/mainview/components/ui/button";
 import { Tooltip } from "@/mainview/components/ui/tooltip";
@@ -22,6 +22,7 @@ interface AgentRowProps {
   onUninstall?: () => void;
   /** Install handler — shown when status is "not-installed" and no custom action */
   onInstall?: () => void;
+  onCompare?: () => void;
   /** Labels */
   uninstallTitle?: string;
   installLabel?: string;
@@ -39,6 +40,7 @@ export const AgentRow = memo(function AgentRow({
   action,
   onUninstall,
   onInstall,
+  onCompare,
   uninstallTitle,
   installLabel = "Install",
   installTitle,
@@ -55,7 +57,7 @@ export const AgentRow = memo(function AgentRow({
 
   return (
     <div
-      className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs transition-colors ${
+      className={`flex min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-xs transition-colors ${
         isInstalled
           ? "glass-inset"
           : isInherited
@@ -73,17 +75,18 @@ export const AgentRow = memo(function AgentRow({
           {tags}
         </div>
         {path && (
-          <Tooltip content={revealTitle ?? "Reveal in Finder"}>
           <button
-            className="mt-1 break-all text-left font-mono text-[10px] leading-relaxed text-muted-foreground/70 transition-colors hover:text-primary cursor-pointer"
+            className="mt-1 block w-full truncate text-left font-mono text-[10px] leading-relaxed text-muted-foreground/70 transition-colors hover:text-primary cursor-pointer"
+            title={path}
+            aria-label={`${revealTitle ?? "Reveal in Finder"}: ${path}`}
             onClick={() => revealItemInDir(path)}
           >
             {path}
           </button>
-          </Tooltip>
         )}
       </div>
       {/* Right: action */}
+      {onCompare && <Button variant="ghost" size="icon-xs" aria-label={`Compare ${name} with library`} disabled={disabled} onClick={onCompare}><GitCompareArrows className="size-3.5" /></Button>}
       {action ?? (
         isInstalled && onUninstall ? (
           <Tooltip content={uninstallTitle ?? "Remove"}>
@@ -91,6 +94,7 @@ export const AgentRow = memo(function AgentRow({
           <button
             className="flex items-center justify-center size-6 rounded-md text-destructive/60 hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50 shrink-0"
             disabled={disabled}
+            aria-label={uninstallTitle ?? `Remove ${name}`}
             onClick={onUninstall}
           >
             <Trash2 className="size-3" aria-hidden="true" />

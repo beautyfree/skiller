@@ -27,6 +27,7 @@ interface SkillAgentListProps {
   onUninstall: (skillId: string, agentSlug: string) => void;
   /** When true, show agent list but disable install/uninstall actions */
   readOnly?: boolean;
+  onCompare?: (agentSlug: string) => void;
 }
 
 /**
@@ -41,6 +42,7 @@ export const SkillAgentList = memo(function SkillAgentList({
   onInstall,
   onUninstall,
   readOnly = false,
+  onCompare,
 }: SkillAgentListProps) {
   const { t } = useTranslation();
   // If a local skill exists, the canonical copy is available — use sync (fast copy), not install (git clone)
@@ -60,7 +62,7 @@ export const SkillAgentList = memo(function SkillAgentList({
 	}
 
   return (
-    <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2 2xl:grid-cols-3">
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-1.5">
       {visibleAgents.map((agent) => {
         const installation = skill?.installations.find(
           (i) => i.agent_slug === agent.slug
@@ -84,6 +86,7 @@ export const SkillAgentList = memo(function SkillAgentList({
 			tags={sourceTag ? <span className="shrink-0 text-[10px] text-muted-foreground/60">{t("skills.via", { name: sourceTag })}</span> : undefined}
             onUninstall={!readOnly && isDirect && skill ? () => onUninstall(skill.id, agent.slug) : undefined}
             onInstall={readOnly ? undefined : () => onInstall([agent.slug])}
+            onCompare={onCompare && installation ? () => onCompare(agent.slug) : undefined}
             uninstallTitle={`${t("skills.uninstall")} ${agent.name}`}
             installLabel={actionLabel}
             installTitle={`${actionLabel} → ${agent.name}`}

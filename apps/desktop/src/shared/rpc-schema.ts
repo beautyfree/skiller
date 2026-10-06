@@ -58,6 +58,23 @@ export type SkillJson = {
   library_state?: SkillLibraryStateJson | null;
 };
 
+export type ProjectSkillComparisonJson = {
+  projectPath: string; libraryPath: string;
+  comparison: SyncConflictComparisonJson;
+  filePreview?: DotagentsLibraryLocalChangePreviewJson['file_preview'];
+  libraryUpdate?: { projectHash: string; libraryHash: string };
+  libraryUpdateBlocked?: string;
+};
+export type AgentSkillComparisonJson = {
+  agentPath: string; libraryPath: string; sameSource: boolean;
+  comparison: SyncConflictComparisonJson;
+  filePreview?: DotagentsLibraryLocalChangePreviewJson['file_preview'];
+  replacement?: { libraryHash: string; agentHash: string };
+  replacementBlocked?: string;
+};
+
+export type SkillTagsJson = { id: string; sourcePath: string; tags: string[] };
+
 export type SkillPresetJson = {
   id: string; name: string;
   skills: { id: string; name: string; sourcePath: string }[];
@@ -66,6 +83,12 @@ export type SkillPresetReviewJson = {
   presetId: string; presetName: string;
   target: { agents: string[]; projectPath?: string };
   rows: { skillId: string; name: string; sourcePath: string; destination: string; hash: string | null; state: 'add' | 'installed' | 'conflict' | 'unavailable' }[];
+};
+
+export type SkillPresetRemovalReviewJson = {
+  presetId: string; presetName: string;
+  target: SkillPresetReviewJson['target'];
+  rows: { name: string; destination: string; hash: string | null; state: 'remove' | 'keep'; reason: string }[];
 };
 
 export type AgentConfigJson = {
@@ -223,6 +246,7 @@ export type ProjectEntryJson = {
 };
 
 export type ProjectSkillJson = {
+  enabled?: boolean;
   id: string;
   name: string;
   description?: string | null;
@@ -283,6 +307,7 @@ export type SkillRepoJson = {
 };
 
 export type AddRepoResultJson = {
+  created?: boolean;
   repo: SkillRepoJson;
   skills: SkillJson[];
 };
@@ -1007,11 +1032,20 @@ export type SkillSourceParam =
 export type AppRPCSchema = {
   bun: {
     requests: {
+      list_skill_tags: { params?: void; response: SkillTagsJson[] };
+      edit_skill_tags: { params: { skills: { id: string; sourcePath: string }[]; add: string[]; remove: string[] }; response: void };
+      rename_skill_tag: { params: { oldName: string; newName: string | null }; response: void };
+      export_skill_pack: { params: { id: string }; response: boolean };
+      preview_import_skill_pack: { params?: void; response: { reviewId: string; name: string; count: number; added: number; reused: number } | null };
+      import_skill_pack: { params: { reviewId: string }; response: SkillPresetJson };
       list_skill_presets: { params?: void; response: SkillPresetJson[] };
       save_skill_preset: { params: { id?: string; name: string; skillIds: string[] }; response: SkillPresetJson };
       remove_skill_preset: { params: { id: string }; response: void };
+      set_skill_preset_member: { params: { id: string; skillId: string; sourcePath: string; enabled: boolean }; response: SkillPresetJson };
       review_skill_preset: { params: ({ id: string } | { skillIds: string[] }) & { target: SkillPresetReviewJson['target'] }; response: SkillPresetReviewJson & { reviewId: string } };
       apply_skill_preset: { params: { reviewId: string }; response: { added: string[]; failed: { destination: string; reason: string }[]; skipped: number } };
+      review_skill_preset_removal: { params: { id: string; target: SkillPresetReviewJson['target'] }; response: SkillPresetRemovalReviewJson & { reviewId: string } };
+      remove_skill_preset_installations: { params: { reviewId: string }; response: { removed: string[]; failed: { destination: string; reason: string }[]; skipped: number } };
       list_agents: { params?: void; response: AgentConfigJson[] };
       detect_agents: { params?: void; response: AgentConfigJson[] };
       save_custom_agent: { params: { slug?: string; name: string; globalPath: string; projectPath: string; command: string; marker: string }; response: string };
@@ -1200,7 +1234,7 @@ export type AppRPCSchema = {
       uninstall_skill: { params: { skillId: string; agentSlug: string }; response: void };
       uninstall_skill_all: { params: { skillId: string }; response: void };
       uninstall_skills_all: {
-        params: { skillIds: string[] };
+        params: { skillIds: string[]; agentSlug?: string };
         response: {
           removed: string[];
           failed: { id: string; error: string }[];
@@ -1239,7 +1273,7 @@ export type AppRPCSchema = {
       fetch_skillssh: { params: { sort: string; page: number }; response: MarketplaceSkillJson[] };
       fetch_clawhub: { params: { endpoint: string; params: Record<string, string> }; response: MarketplaceSkillJson[] };
       search_marketplace: { params: { query: string; source: string }; response: MarketplaceSkillJson[] };
-      install_from_marketplace: { params: { skill: MarketplaceSkillJson; targetAgents: string[] }; response: void };
+      install_from_marketplace: { params: { skill: MarketplaceSkillJson; targetAgents: string[] }; response: string };
       shell_runtime: {
         params?: void;
         response: {
@@ -1268,6 +1302,11 @@ export type AppRPCSchema = {
       list_projects: { params?: void; response: ProjectEntryJson[] };
       add_project: { params: { path: string }; response: ProjectEntryJson };
       remove_project: { params: { path: string }; response: void };
+      compare_project_skill: { params: { projectPath: string; skillId: string; librarySourcePath: string; file?: string }; response: ProjectSkillComparisonJson };
+      update_project_skill_to_library: { params: { projectPath: string; skillId: string; librarySourcePath: string; projectHash: string; libraryHash: string }; response: { backupPath?: string } };
+      compare_agent_skill: { params: { agentSlug: string; skillId: string; librarySourcePath: string; file?: string }; response: AgentSkillComparisonJson };
+      replace_agent_skill: { params: { agentSlug: string; skillId: string; librarySourcePath: string; libraryHash: string; agentHash: string }; response: { backupPath?: string } };
+      set_project_skill_enabled: { params: { projectPath: string; skillId: string; enabled: boolean }; response: void };
       list_project_skills: { params: { path: string }; response: ProjectSkillJson[] };
       install_skill_to_project: {
         params: { source: SkillSourceParam; projectPath: string };
@@ -1283,7 +1322,7 @@ export type AppRPCSchema = {
       };
       uninstall_project_skill: {
         params: { projectPath: string; skillId: string };
-        response: void;
+        response: { removed: string[]; kept: string[] };
       };
       set_project_group: {
         params: { path: string; group: string | null };

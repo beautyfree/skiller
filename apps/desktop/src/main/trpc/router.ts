@@ -29,9 +29,22 @@ export function createAppRouter(ctx: {
   const proc = t.procedure
 
   return t.router({
+    compare_project_skill: proc.input(anyIn).query(({ input }) => h.compare_project_skill(input)),
+    update_project_skill_to_library: proc.input(anyIn).mutation(({ input }) => h.update_project_skill_to_library(input)),
+    compare_agent_skill: proc.input(anyIn).query(({ input }) => h.compare_agent_skill(input)),
+    replace_agent_skill: proc.input(anyIn).mutation(({ input }) => h.replace_agent_skill(input)),
+    list_skill_tags: proc.query(() => h.list_skill_tags()),
+    edit_skill_tags: proc.input(anyIn).mutation(({ input }) => h.edit_skill_tags(input)),
+    rename_skill_tag: proc.input(anyIn).mutation(({ input }) => h.rename_skill_tag(input)),
+    export_skill_pack: proc.input(anyIn).mutation(({ input }) => h.export_skill_pack(input)),
+    preview_import_skill_pack: proc.mutation(() => h.preview_import_skill_pack()),
+    import_skill_pack: proc.input(anyIn).mutation(({ input }) => h.import_skill_pack(input)),
     list_skill_presets: proc.query(() => h.list_skill_presets()),
     save_skill_preset: proc.input(anyIn).mutation(({ input }) => h.save_skill_preset(input)),
     remove_skill_preset: proc.input(anyIn).mutation(({ input }) => h.remove_skill_preset(input)),
+    set_skill_preset_member: proc.input(anyIn).mutation(({ input }) => h.set_skill_preset_member(input)),
+    review_skill_preset_removal: proc.input(anyIn).mutation(({ input }) => h.review_skill_preset_removal(input)),
+    remove_skill_preset_installations: proc.input(anyIn).mutation(({ input }) => h.remove_skill_preset_installations(input)),
     review_skill_preset: proc.input(anyIn).mutation(({ input }) => h.review_skill_preset(input)),
     apply_skill_preset: proc.input(anyIn).mutation(({ input }) => h.apply_skill_preset(input)),
     list_agents: proc.query(() => h.list_agents()),
@@ -205,6 +218,7 @@ export function createAppRouter(ctx: {
     install_marketplace_skill_to_project: proc.input(anyIn).mutation(({ input }) =>
       h.install_marketplace_skill_to_project(input),
     ),
+    set_project_skill_enabled: proc.input(anyIn).mutation(({ input }) => h.set_project_skill_enabled(input)),
     uninstall_project_skill: proc.input(anyIn).mutation(({ input }) =>
       h.uninstall_project_skill(input),
     ),

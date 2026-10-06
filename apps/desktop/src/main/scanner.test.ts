@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { scanAllSkills } from "./scanner";
+import { scanAllSkills, resolveSkillSource, discoverSkillDirs } from "./scanner";
 import { defaultAgentConfig } from "./types";
 
 const cleanup: string[] = [];
@@ -89,4 +89,25 @@ describe("shared skills scanner", () => {
 		expect(skills[0]?.scope).toEqual({ kind: "AgentLocal", agent: "codex" });
 		expect(skills[0]?.installations).toHaveLength(2);
 	});
+});
+
+
+it("distinguishes recorded origins from discovery without provenance", () => {
+  const base = { repository: null, skill_path: null, ref: null, content_sha256: null, first_seen_at: '2026-10-06T00:00:00Z', reviewed_at: null, ownership: 'unknown' as const, forked_from: null, updated_at: '2026-10-06T00:00:00Z' }
+  expect(resolveSkillSource('example', {})).toEqual({ kind: 'Unknown' })
+  expect(resolveSkillSource('example', { example: { ...base, source: 'local' } })).toEqual({ kind: 'Unknown' })
+  expect(resolveSkillSource('example', { example: { ...base, source: 'local', repository: '/original/folder' } })).toEqual({ kind: 'LocalPath', path: '/original/folder' })
+  expect(resolveSkillSource('example', { example: { ...base, source: 'git', repository: 'https://github.com/owner/repo', skill_path: 'skills/example' } })).toEqual({ kind: 'GitRepository', repo_url: 'https://github.com/owner/repo', skill_path: 'skills/example' })
+  expect(resolveSkillSource('example', { example: { ...base, source: 'git' } })).toEqual({ kind: 'Unknown' })
+  expect(resolveSkillSource('example', { example: { ...base, source: 'skills.sh', repository: 'https://github.com/owner/repo' } })).toEqual({ kind: 'SkillsSh', repository: 'https://github.com/owner/repo' })
+  expect(resolveSkillSource('example', { example: { ...base, source: 'clawhub' } })).toEqual({ kind: 'ClawHub', repository: null })
+})
+
+it("does not display rollback snapshots as installed skills or repository candidates", () => {
+  const shared = root(), personal = root();
+  writeSkill(shared, "writing");
+  writeSkill(shared, ".dotagents/history/old/payload/writing");
+  writeSkill(shared, ".git/fixture");
+  expect(scanAllSkills([agent(personal, shared)], shared).map(skill => skill.id)).toEqual(["writing"]);
+  expect(discoverSkillDirs(shared).map(skill => skill.dir)).toEqual([join(shared, "writing")]);
 });

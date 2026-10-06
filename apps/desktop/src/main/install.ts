@@ -1,5 +1,6 @@
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -22,7 +23,19 @@ import { checkoutReviewedGitSource } from "./git-transport";
 
 export { sharedSkillsDir };
 
-function sanitizeSkillDirName(raw: string): string {
+/** Batch imports are new installations; replacing an existing package requires review. */
+export function assertSkillDestinationsAvailable(paths: string[]): void {
+  for (const path of paths) {
+    try { lstatSync(path); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      throw error;
+    }
+    throw new Error(`A skill already exists at ${path}. Use the update/review flow; this import keeps it unchanged.`);
+  }
+}
+
+export function sanitizeSkillDirName(raw: string): string {
   return raw
     .trim()
     .split("")

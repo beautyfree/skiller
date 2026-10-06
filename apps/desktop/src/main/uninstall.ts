@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import type { Skill } from './skill-types';
 import { parse as parseToml, stringify as stringifyToml } from "@iarna/toml";
 import type { AgentConfig } from "./types";
 import { removeLocalSkillSource } from "dotagents/source-registry";
@@ -115,6 +116,54 @@ export function uninstallSkill(skillId: string, agentSlug: string, agents: Agent
 			}
 		}
 	}
+}
+
+/** Remove private agent entries only; shared sources and other agents stay intact. */
+export function privateAgentSkillEntries(
+  skillId: string,
+  agentSlug: string,
+  agents: AgentConfig[],
+  skills: Skill[],
+) {
+  if (!/^[^./\\][^/\\]*$/.test(skillId) || skillId.includes('\0')) throw new Error('Invalid skill ID');
+  const agent = agents.find(a => a.slug === agentSlug);
+  const skill = skills.find(s => s.id === skillId);
+  if (!agent || !skill || skill.collection) throw new Error('Agent skill not found');
+  const entries = [...new Set(skill.installations.filter(i => i.agent_slug === agentSlug && !i.is_inherited).map(i => i.path))];
+  if (!entries.length) throw new Error('This skill is available through a shared source');
+  return entries.map(path => {
+    if (!isAbsolute(path) || !agent.global_paths.some(root => resolve(join(root, skillId)) === resolve(path))) throw new Error('Invalid agent skill path');
+    const parent = realpathSync(dirname(path));
+    const meta = lstatSync(path);
+    const destination = realpathSync(path);
+    if (existsSync(sharedSkillsDir()) && parent === realpathSync(sharedSkillsDir())) throw new Error('Keep the shared library source');
+    for (const other of agents) {
+      if (other.slug === agentSlug) continue;
+      for (const root of [...other.global_paths, ...other.additional_readable_paths.map(r => r.path)]) {
+        if (!existsSync(root)) continue;
+        const realRoot = realpathSync(root);
+        if (realRoot === parent) throw new Error(`Keep the source used by ${other.name}`);
+        if (!meta.isSymbolicLink()) {
+          if (destination === realRoot || destination.startsWith(realRoot + sep)) throw new Error(`Keep the source used by ${other.name}`);
+          if (existsSync(join(root, skillId)) && realpathSync(join(root, skillId)) === destination) throw new Error(`Keep the source used by ${other.name}`);
+        }
+      }
+    }
+    return { path, parent, destination, dev: meta.dev, ino: meta.ino };
+  });
+}
+
+export async function trashAgentSkill(skillId: string, agentSlug: string, agents: AgentConfig[], skills: Skill[], trash: (path: string) => Promise<void>): Promise<void> {
+  const entries = privateAgentSkillEntries(skillId, agentSlug, agents, skills);
+  for (const entry of entries) {
+    const meta = lstatSync(entry.path);
+    if (meta.dev !== entry.dev || meta.ino !== entry.ino || realpathSync(dirname(entry.path)) !== entry.parent || realpathSync(entry.path) !== entry.destination) throw new Error('Agent skill changed; refresh and try again');
+    await trash(entry.path);
+  }
+  const agent = agents.find(agent => agent.slug === agentSlug)!;
+  if (!agent.additional_readable_paths.some(root => rootContainsSkill(root.path, skillId))) {
+    for (const cfg of agent.extra_config ?? []) if (cfg.target_file) cleanupRegistryEntry(expandHomePath(cfg.target_file), skillId);
+  }
 }
 
 export function uninstallSkillFromAll(skillId: string, agents: AgentConfig[]): void {

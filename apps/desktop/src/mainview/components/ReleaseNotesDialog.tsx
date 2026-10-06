@@ -1,3 +1,4 @@
+import { AppLink } from "@/mainview/components/AppLink";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -19,9 +20,9 @@ const markdownPlugins = [remarkGfm];
 const releaseNoteMarkdownComponents = {
 	p: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
 	a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
-		<a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+		<AppLink href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
 			{children}
-		</a>
+		</AppLink>
 	),
 	strong: ({ children }: { children?: React.ReactNode }) => <strong className="font-[590] text-foreground">{children}</strong>,
 	em: ({ children }: { children?: React.ReactNode }) => <em className="italic">{children}</em>,

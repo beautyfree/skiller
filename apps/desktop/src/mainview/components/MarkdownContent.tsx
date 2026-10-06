@@ -1,3 +1,4 @@
+import { AppLink } from "@/mainview/components/AppLink";
 import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -46,14 +47,14 @@ export default memo(function MarkdownContent({ content }: { content: string }) {
 
         // Links
         a: ({ href, children }) => (
-          <a
+          <AppLink
             href={href}
             target="_blank"
             rel="noopener noreferrer"
             className="text-primary hover:underline"
           >
             {children}
-          </a>
+          </AppLink>
         ),
 
         // Lists

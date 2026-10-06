@@ -1,4 +1,6 @@
-import { useState, useEffect, useCallback, useDeferredValue, useMemo, memo, useRef } from "react";
+import MarketplacePackPicker from "@/mainview/components/MarketplacePackPicker";
+import { AppLink } from "@/mainview/components/AppLink";
+import { useState, useEffect, useCallback, useDeferredValue, useMemo, memo, useRef, useLayoutEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTranslation } from "react-i18next";
 import {
@@ -10,8 +12,12 @@ import {
   Check,
   FolderKanban,
   MoreHorizontal,
+  ChevronRight,
+  FolderGit2,
+  Layers,
+  X,
 } from "lucide-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { invoke, openUrl } from "@/mainview/lib/native";
 import { useAgents, type AgentConfig } from "@/mainview/hooks/useAgents";
 import { useSkills, type Skill } from "@/mainview/hooks/useSkills";
@@ -30,7 +36,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { Tooltip } from "@/mainview/components/ui/tooltip";
 import { useToast } from "@/mainview/components/ToastProvider";
 import InstallToProjectPicker from "@/mainview/components/InstallToProjectPicker";
-import { cn } from "@/mainview/lib/utils";
+import ImportWizard from "@/mainview/components/ImportWizard";
+import { SkillCardSurface, SkillDetailFrame, SkillViewToggle, useSkillViewMode, useSkillGridColumns, type SkillViewMode } from '@/mainview/components/SkillBrowser';
+import { packSkillRows } from '@/mainview/lib/skill-grid';
+import { groupMarketplaceRows, marketplaceRepository, marketplaceSkillKey as skillKey } from '@/mainview/lib/marketplace-groups';
+import { nextMarketplacePage } from '@/mainview/lib/marketplace-pagination';
+import { cn } from '@/mainview/lib/utils';
+import { visibleResultSelection } from "@/mainview/lib/selection";
 import { extractMarkdownBody, skillMarkdownDescription } from "@/mainview/lib/markdown";
 
 interface MarketplaceSkill {
@@ -60,6 +72,10 @@ export default function Marketplace() {
     searchQuery: "",
   });
   const { source, skillsshSort, clawhubSort, searchQuery } = marketplaceView;
+  const [groupByRepository, setGroupByRepository] = useState(() => {
+    try { return localStorage.getItem('skiller-marketplace-group-repositories') === 'true'; } catch { return false; }
+  });
+  useEffect(() => { try { localStorage.setItem('skiller-marketplace-group-repositories', String(groupByRepository)); } catch { /* Storage may be unavailable. */ } }, [groupByRepository]);
   const [busyAgents, setBusyAgents] = useState<Map<string, BusyOp>>(new Map());
   // selectedKey drives list highlight (instant); detail uses deferred key
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -67,6 +83,10 @@ export default function Marketplace() {
   const { data: localSkills } = useSkills();
   const queryClient = useQueryClient();
   const listPane = useResizable(SKILL_LIST_PANE);
+  const [viewMode, setViewMode] = useSkillViewMode('skiller-marketplace-view', 'list');
+  const [collapsedRepositories, setCollapsedRepositories] = useState<Set<string>>(new Set());
+  const [expandedGridRepositories, setExpandedGridRepositories] = useState<Set<string>>(new Set());
+  const [installRepository, setInstallRepository] = useState<string | null>(null);
 
   // Sort options with translations
   const SKILLSSH_SORTS = useMemo(() => [
@@ -95,12 +115,18 @@ export default function Marketplace() {
   const deferredSelectedKey = useDeferredValue(selectedKey);
 
   const {
-    data: items,
+    data: pages,
     isLoading,
     error,
-  } = useQuery<MarketplaceSkill[]>({
-    queryKey: ["marketplace", source, currentSort, searchQuery],
-    queryFn: async () => {
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useInfiniteQuery<MarketplaceSkill[], Error, InfiniteData<MarketplaceSkill[]>, string[], number>({
+    queryKey: ["marketplace-pages", source, currentSort, searchQuery],
+    initialPageParam: 1,
+    getNextPageParam: (_last, allPages) => source === 'skills.sh' && !searchQuery.trim() ? nextMarketplacePage(allPages) : undefined,
+    queryFn: async ({ pageParam }): Promise<MarketplaceSkill[]> => {
       if (searchQuery.trim()) {
         return (await invoke("search_marketplace", {
           query: searchQuery.trim(),
@@ -110,7 +136,7 @@ export default function Marketplace() {
       if (source === "skills.sh") {
         return (await invoke("fetch_skillssh", {
           sort: currentSort,
-          page: 1,
+          page: pageParam,
         })) as MarketplaceSkill[];
       }
       return (await invoke("fetch_clawhub", {
@@ -132,13 +158,13 @@ export default function Marketplace() {
     },
   });
 
-  // Auto-select first item when data loads
+  const items = useMemo(() => pages ? Array.from(new Map(pages.pages.flat().map(skill => [skillKey(skill), skill])).values()) : undefined, [pages]);
+
+  // Keep details tied to the current results, including after search or sort changes.
   useEffect(() => {
-    if (items?.length && !selectedKey) {
-      const first = items[0];
-      setSelectedKey(skillKey(first));
-    }
-  }, [items]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!items) return;
+    setSelectedKey(current => viewMode === 'grid' && current === null ? null : visibleResultSelection(current, items.map(skillKey)));
+  }, [items, viewMode]);
 
   const selectedSkill = useMemo(() => {
     if (!items?.length || !deferredSelectedKey) return null;
@@ -146,23 +172,33 @@ export default function Marketplace() {
   }, [items, deferredSelectedKey]);
 
   const listScrollRef = useRef<HTMLDivElement>(null);
+  const columns = useSkillGridColumns(listScrollRef, viewMode, !!items?.length && !isLoading && !error);
+  const gridCollapsedRepositories = useMemo(() => new Set((items ?? []).flatMap(skill => {
+    const repository = marketplaceRepository(skill);
+    const key = repository ? `repository:${repository.toLowerCase()}` : null;
+    return key && !expandedGridRepositories.has(key) ? [key] : [];
+  })), [items, expandedGridRepositories]);
+  const resultRows = useMemo(() => groupMarketplaceRows(items ?? [], source === 'skills.sh' && groupByRepository, viewMode === 'grid' ? gridCollapsedRepositories : collapsedRepositories), [items, source, groupByRepository, viewMode, gridCollapsedRepositories, collapsedRepositories]);
+  function toggleRepository(key: string, collapsed: boolean) {
+    if (viewMode === 'grid') setExpandedGridRepositories(previous => { const next = new Set(previous); if (collapsed) next.add(key); else next.delete(key); return next; });
+    else setCollapsedRepositories(previous => { const next = new Set(previous); if (collapsed) next.delete(key); else next.add(key); return next; });
+  }
+  const visualRows = useMemo(() => packSkillRows(resultRows, columns), [resultRows, columns]);
   const virtualizer = useVirtualizer({
-    count: items?.length ?? 0,
+    count: visualRows.length,
     getScrollElement: () => listScrollRef.current,
-    estimateSize: () => 92,
+    estimateSize: index => visualRows[index]?.[0]?.kind === 'collection_header' && !visualRows[index]?.[0]?.collapsed ? 64 : viewMode === 'grid' ? 160 : 92,
     overscan: 12,
-    getItemKey: (index) => {
-      const list = items;
-      if (!list?.[index]) return String(index);
-      return skillKey(list[index]);
-    },
+    getItemKey: index => visualRows[index]?.map(row => row.key).join('|') ?? String(index),
   });
   useEffect(() => {
     if (!selectedKey || !items?.length) return;
-    const idx = items.findIndex((s) => skillKey(s) === selectedKey);
+    const idx = visualRows.findIndex(rows => rows.some(row => row.kind !== 'collection_header' && row.key === selectedKey));
     if (idx >= 0) virtualizer.scrollToIndex(idx, { align: "auto" });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scroll when selection changes; items from same render
-  }, [selectedKey]);
+  }, [selectedKey, columns, groupByRepository, viewMode]);
+
+  useLayoutEffect(() => { if (listScrollRef.current) listScrollRef.current.scrollTop = 0; virtualizer.measure(); }, [source, currentSort, searchQuery, columns, groupByRepository, viewMode]);
 
   async function handleInstall(
     skill: MarketplaceSkill,
@@ -237,31 +273,19 @@ export default function Marketplace() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1">
+    <div className="skills-grid-surface relative flex h-full min-h-0 flex-1 bg-card!">
       {/* Main list */}
       <div
-        className="flex h-full min-h-0 shrink-0 flex-col px-3 pt-3"
-        style={{ width: listPane.width }}
+        className={cn('flex h-full min-h-0 flex-col px-3 pt-3', viewMode === 'grid' ? 'min-w-0 flex-1' : 'shrink-0')}
+        style={viewMode === 'list' ? { width: listPane.width } : undefined}
       >
         <div className="flex shrink-0 flex-col space-y-3">
-        {/* Source tabs + sorts: stack on narrow panes, wrap gracefully */}
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2">
-          <div className="flex min-w-0 flex-wrap gap-1.5">
-            {SOURCES.map((s) => (
-              <Button
-                key={s.key}
-                variant={source === s.key ? "default" : "outline"}
-                size="sm"
-                onClick={() => {
-                  setMarketplaceView((previous) => ({ ...previous, source: s.key, searchQuery: "" }));
-                  setSelectedKey(null);
-                }}
-              >
-                {s.label}
-              </Button>
-            ))}
-          </div>
-
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium">{t('sidebar.marketplace')} <span className="ml-2 text-xs font-normal text-muted-foreground">{items ? `${items.length} loaded` : ''}</span></span>
+          <SkillViewToggle value={viewMode} onChange={setViewMode} />
+        </div>
+        {/* Sort filters on the left; marketplace sources on the right. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           {!searchQuery && (
             <div className="flex min-w-0 flex-wrap gap-1">
               {sorts.map((s) => (
@@ -276,9 +300,26 @@ export default function Marketplace() {
               ))}
             </div>
           )}
+          <div className="ml-auto flex shrink-0 flex-wrap justify-end gap-1.5">
+            {SOURCES.map((s) => (
+              <Button
+                key={s.key}
+                variant={source === s.key ? "default" : "outline"}
+                size="xs"
+                onClick={() => {
+                  setMarketplaceView((previous) => ({ ...previous, source: s.key, searchQuery: "" }));
+                  setSelectedKey(null);
+                }}
+              >
+                {s.label}
+              </Button>
+            ))}
+          </div>
         </div>
 
         {/* Search */}
+        <div className="flex flex-wrap items-center gap-2">
+        <div className={cn('min-w-0 w-full', viewMode === 'grid' && 'max-w-sm')}>
         <SearchInput
           value={searchQuery}
           onChange={handleSearchChange}
@@ -286,27 +327,18 @@ export default function Marketplace() {
           debounce={350}
         />
         </div>
+        {source === 'skills.sh' && <Button variant={groupByRepository ? 'secondary' : 'ghost'} size="xs" className="gap-1.5" aria-pressed={groupByRepository} onClick={() => setGroupByRepository(previous => !previous)}><FolderGit2 className="size-3.5" aria-hidden />Group by repository</Button>}
+        </div>
+        </div>
 
         {/* Results (virtualized) */}
         <InsetScrollArea scroll={false} className="mt-3 flex-1">
         <div className="relative h-full min-h-0">
         {isLoading ? (
-          <div className="space-y-1.5 py-2">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="rounded-lg px-3 py-2.5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="h-4 w-28 rounded animate-skeleton" />
-                  <div className="h-3 w-8 rounded animate-skeleton" />
-                </div>
-                <div className="h-3 w-44 rounded animate-skeleton" />
-                <div className="flex gap-2">
-                  <div className="h-3 w-16 rounded animate-skeleton" />
-                  <div className="h-4 w-12 rounded-full animate-skeleton" />
-                </div>
-              </div>
-            ))}
+          <div role="status" aria-label={t("skills.loading")} className="flex h-full items-center justify-center">
+            <Loader2 className="size-5 animate-spin text-muted-foreground" aria-hidden />
           </div>
-        ) : error ? (
+        ) : error && !items?.length ? (
           <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
             {t("marketplace.failedToLoad", { error: String(error) })}
           </div>
@@ -328,30 +360,36 @@ export default function Marketplace() {
               className="relative w-full"
               style={{ height: virtualizer.getTotalSize() }}
             >
-              {virtualizer.getVirtualItems().map((vi) => {
-                const skill = items[vi.index];
-                if (!skill) return null;
-                const k = skillKey(skill);
-                return (
-                  <div
-                    key={vi.key}
-                    data-index={vi.index}
-                    ref={virtualizer.measureElement}
-                    className="absolute left-0 top-0 w-full"
-                    style={{ transform: `translateY(${vi.start}px)` }}
-                  >
-                    <div className="pb-1">
-                      <MarketplaceListItem
-                        skill={skill}
-                        summary={skill.description ?? undefined}
-                        selected={selectedKey === k}
-                        onSelect={setSelectedKey}
-                      />
-                    </div>
+              {virtualizer.getVirtualItems().map(vi => {
+                const rows = visualRows[vi.index];
+                if (!rows) return null;
+                return <div key={vi.key} data-index={vi.index} ref={virtualizer.measureElement} className="absolute left-0 top-0 w-full" style={{ transform: `translateY(${vi.start}px)` }}>
+                  <div className={viewMode === 'grid' ? 'grid gap-3 pb-3' : 'pb-1'} style={viewMode === 'grid' ? { gridTemplateColumns: `repeat(${rows[0]?.kind === 'collection_header' && !rows[0]?.collapsed ? 1 : columns},minmax(0,1fr))` } : undefined}>
+                    {rows.map(row => row.kind === 'collection_header' ? viewMode === 'grid' && row.collapsed ?
+                      <SkillCardSurface key={row.key} selected={false} viewMode="grid" className="min-h-32" role="group" aria-label={`Repository ${row.repository}`}>
+                        <button type="button" aria-expanded={false} title={row.repository} onClick={() => toggleRepository(row.key, true)} className="flex min-w-0 flex-1 flex-col gap-2 rounded-xl px-3 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                          <span className="flex w-full min-w-0 items-center gap-2"><FolderGit2 className="size-4 shrink-0 text-muted-foreground" aria-hidden /><span className="min-w-0 flex-1 truncate text-sm font-semibold">{row.repository}</span><ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden /></span>
+                          <span title="Skills from this repository in the loaded results" className="text-xs text-muted-foreground">{row.count} skills{row.installs != null && <span title="Combined skill installs in the loaded results; not unique users or installs of the whole repository"> · {formatInstalls(row.installs)} installs</span>}</span>
+                        </button>
+                        <Button variant="outline" size="sm" className="mx-3 mb-3 self-end" aria-label={`Install all skills from ${row.repository}`} onClick={() => { setSelectedKey(null); setInstallRepository(`https://github.com/${row.repository}`); }}><Download className="size-3.5" aria-hidden />Install all</Button>
+                      </SkillCardSurface> :
+                      <div key={row.key} role="group" aria-label={`Repository ${row.repository}`} className="my-1 flex min-h-14 min-w-0 items-center gap-2 rounded-lg border border-foreground/15 bg-muted/60 px-3 py-2 transition-colors hover:border-foreground/25 hover:bg-muted/80 focus-within:border-foreground/25 focus-within:bg-muted/80">
+                      <button type="button" title={row.repository} aria-expanded={!row.collapsed} onClick={() => toggleRepository(row.key, row.collapsed)} className="flex min-w-0 flex-1 items-center gap-2 self-stretch rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none', !row.collapsed && 'rotate-90')} aria-hidden />
+                        <FolderGit2 className="size-4 shrink-0 text-foreground/80" aria-hidden />
+                        <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{row.repository}</span><span title="Skills from this repository in the loaded results" className="mt-0.5 block text-xs text-muted-foreground">{row.count} skills{row.installs != null && <span title="Combined skill installs in the loaded results; not unique users or installs of the whole repository"> · {formatInstalls(row.installs)} installs</span>}</span></span>
+                      </button>
+                      <Button variant="outline" size="sm" className="shrink-0 gap-1" aria-label={`Install all skills from ${row.repository}`} onClick={() => { setSelectedKey(null); setInstallRepository(`https://github.com/${row.repository}`); }}><Download className="size-3.5" aria-hidden />Install all</Button>
+                      </div> :
+                      <div key={row.key} className={viewMode === 'list' && row.kind === 'collection_child' ? 'ml-3 border-l border-border/60 pl-2' : undefined}><MarketplaceListItem viewMode={viewMode} skill={row.skill} summary={row.skill.description ?? undefined} selected={selectedKey === row.key} onSelect={setSelectedKey} /></div>)}
                   </div>
-                );
+                </div>;
               })}
             </div>
+            {(hasNextPage || isFetchNextPageError) && <div className="flex flex-col items-center gap-2 py-4">
+              {isFetchNextPageError && <p role="alert" className="text-xs text-destructive">Could not load more skills. Your loaded results are still available.</p>}
+              <Button size="sm" variant="outline" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()}>{isFetchingNextPage ? <><Loader2 className="size-3.5 animate-spin" aria-hidden />Loading…</> : isFetchNextPageError ? 'Retry loading more' : 'Load more skills'}</Button>
+            </div>}
           </div>
         )}
         <ScrollFade viewportRef={listScrollRef} />
@@ -359,44 +397,25 @@ export default function Marketplace() {
         </InsetScrollArea>
       </div>
 
-      <ResizeHandle onPointerDown={listPane.onPointerDown} onMouseDown={listPane.onMouseDown} isResizing={listPane.isResizing} />
-
-      {/* Detail panel — always occupies right column so empty state is explicit when nothing is selected */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {selectedKey && !selectedSkill ? (
-          <div className="m-2 ml-0 flex min-h-0 flex-1 items-center justify-center rounded-2xl glass-panel">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : selectedKey && selectedSkill ? (
-          <MarketplaceSkillDetail
-            skill={selectedSkill}
-            summary={undefined}
-            busyAgents={busyAgents}
-            detectedAgents={detectedAgents}
-            localSkills={localSkills}
-            onInstall={(targets) => handleInstall(selectedSkill, targets)}
-            onUninstall={handleUninstall}
-            onClose={() => {
-              setSelectedKey(null);
-            }}
-          />
-        ) : items?.length ? (
-          <div className="m-2 ml-0 flex min-h-0 flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-border/60 bg-muted/20 px-6 py-12 text-center">
-            <Store className="mb-3 size-10 text-muted-foreground/50" />
-            <p className="max-w-sm text-sm text-muted-foreground">{t("marketplace.selectSkillDetail")}</p>
-          </div>
-        ) : null}
-      </div>
+      {viewMode === 'list' && <ResizeHandle onPointerDown={listPane.onPointerDown} onMouseDown={listPane.onMouseDown} isResizing={listPane.isResizing} />}
+      <SkillDetailFrame open={!!selectedKey} overlay={viewMode === 'grid'} onClose={() => setSelectedKey(null)}>
+        {selectedKey && !selectedSkill ? <div className="flex min-h-0 flex-1 items-center justify-center bg-card"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div> : selectedSkill ?
+          <MarketplaceSkillDetail skill={selectedSkill} summary={undefined} busyAgents={busyAgents} detectedAgents={detectedAgents} localSkills={localSkills} onInstall={targets => handleInstall(selectedSkill, targets)} onUninstall={handleUninstall} onClose={() => setSelectedKey(null)} /> : null}
+      </SkillDetailFrame>
+      {!selectedKey && viewMode === 'list' && <div className="flex min-w-0 flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">{items?.length ? t('marketplace.selectSkillDetail') : null}</div>}
+      {installRepository && <ImportWizard mode="git" initialRepoUrl={installRepository} onClose={() => setInstallRepository(null)} />}
     </div>
   );
 }
 
 const MarketplaceListItem = memo(function MarketplaceListItem({
+  viewMode,
   skill,
   summary,
   selected,
   onSelect,
 }: {
+  viewMode: SkillViewMode;
   skill: MarketplaceSkill;
   summary?: string;
   selected: boolean;
@@ -405,14 +424,12 @@ const MarketplaceListItem = memo(function MarketplaceListItem({
   const key = skillKey(skill);
   const description = skill.description ?? summary;
   return (
+    <SkillCardSurface selected={selected} viewMode={viewMode}>
     <button
       type="button"
-      className={cn(
-        "w-full rounded-xl px-3 py-2.5 text-left transition-all duration-200 border-[0.5px]",
-        selected
-          ? "glass"
-          : "border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]",
-      )}
+      aria-pressed={selected}
+      data-selected={selected}
+      className={cn('flex w-full flex-1 flex-col rounded-xl bg-transparent px-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', viewMode === 'grid' ? 'py-3' : 'py-2.5')}
       onClick={() => onSelect(key)}
     >
       <div className="flex items-center justify-between gap-2">
@@ -424,12 +441,12 @@ const MarketplaceListItem = memo(function MarketplaceListItem({
         )}
       </div>
       {description && (
-        <Tooltip content={description}><p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{description}</p></Tooltip>
+        <Tooltip content={description}><p className={cn('mt-0.5 text-xs text-muted-foreground', viewMode === 'grid' ? 'line-clamp-3' : 'line-clamp-1')}>{description}</p></Tooltip>
       )}
-      <div className="flex items-center gap-2 mt-1">
+      <div className="mt-auto flex w-full min-w-0 items-center gap-2 pt-1.5">
         {skill.author && (
           <span className="text-[11px] text-muted-foreground truncate">
-            {skill.author}
+            {marketplaceRepository(skill) ?? skill.author}
           </span>
         )}
         <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
@@ -437,6 +454,7 @@ const MarketplaceListItem = memo(function MarketplaceListItem({
         </span>
       </div>
     </button>
+    </SkillCardSurface>
   );
 });
 
@@ -448,6 +466,7 @@ function MarketplaceSkillDetail({
   localSkills,
   onInstall,
   onUninstall,
+  onClose,
 }: {
   skill: MarketplaceSkill;
   summary?: string;
@@ -460,6 +479,7 @@ function MarketplaceSkillDetail({
 }) {
   const { t } = useTranslation();
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [packPickerOpen, setPackPickerOpen] = useState(false);
   const [selectedRemoteFile, setSelectedRemoteFile] = useState<string | null>(null);
   const anyBusy = busyAgents.size > 0;
   const isInstalling = [...busyAgents.values()].some((op) => op === "installing" || op === "syncing");
@@ -551,6 +571,7 @@ function MarketplaceSkillDetail({
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between px-4 py-3">
         <h3 className="truncate text-sm font-medium">{t("marketplace.detail")}</h3>
+        <Button variant="ghost" size="icon-xs" aria-label="Close skill details" onClick={onClose}><X className="size-3.5" /></Button>
       </div>
 
       {/* Content */}
@@ -569,6 +590,7 @@ function MarketplaceSkillDetail({
                 </Tooltip>
                 <DropdownMenuContent align="start" className="w-56">
                   <DropdownMenuGroup>
+                  <DropdownMenuItem onClick={() => setPackPickerOpen(true)} disabled={anyBusy || (!localSkill && !skill.repository)}><Layers />Add to pack…</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setProjectPickerOpen(true)} disabled={!skill.repository}>
                     <FolderKanban />{t("marketplace.installToProject")}
                   </DropdownMenuItem>
@@ -669,24 +691,24 @@ function MarketplaceSkillDetail({
           <InfoGrid>
             {skill.repository && (
               <InfoRow label={t("marketplace.repository")}>
-                <button
+                <AppLink
                   className="text-xs text-primary hover:underline font-mono break-all text-left inline-flex items-start gap-1 cursor-pointer"
-                  onClick={() => openUrl(skill.repository!)}
+                  href={skill.repository!}
                 >
                   {skill.repository}
                   <ExternalLink className="size-3 shrink-0 mt-0.5" />
-                </button>
+                </AppLink>
               </InfoRow>
             )}
             {skill.url && (
               <InfoRow label="URL">
-                <button
+                <AppLink
                   className="inline-flex items-start gap-1 break-all text-left font-mono text-xs text-primary hover:underline"
-                  onClick={() => openUrl(skill.url!)}
+                  href={skill.url!}
                 >
                   {skill.url}
                   <ExternalLink className="mt-0.5 size-3 shrink-0" />
-                </button>
+                </AppLink>
               </InfoRow>
             )}
             {skill.installs != null && (
@@ -744,6 +766,7 @@ function MarketplaceSkillDetail({
         </InfoSection>
       </InsetScrollArea>
 
+      {packPickerOpen && <MarketplacePackPicker skill={skill} localSkill={localSkill} onClose={() => setPackPickerOpen(false)} />}
       {projectPickerOpen && (
         <InstallToProjectPicker
           skillName={skill.name}
@@ -760,9 +783,6 @@ function MarketplaceSkillDetail({
   );
 }
 
-function skillKey(skill: MarketplaceSkill): string {
-  return `${skill.source}|${normalizeRepoUrl(skill.repository) ?? "no-repo"}|${skill.name}`;
-}
 
 function extractFrontmatterDescription(markdown: string): string | null {
   return skillMarkdownDescription(markdown);
@@ -823,7 +843,7 @@ function findLocalSkill(
     if (!nameMatches) return false;
     if (remoteRepo) {
       const localRepo = normalizeRepoUrl(sourceRepository(s.source));
-      if (localRepo) return localRepo === remoteRepo;
+      return !!localRepo && localRepo === remoteRepo;
     }
     return true;
   });

@@ -1,3 +1,5 @@
+import { AppLink } from "@/mainview/components/AppLink";
+import { FileChangePreview } from '@/mainview/components/FileChangePreview'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -78,39 +80,6 @@ function librarySectionFor(entry: LibraryListEntry): LibrarySection {
       : entry.change ? 'changes' : 'library'
 }
 
-function FileChangePreview({ diff }: { diff: string }) {
-  const lines = diff.split('\n')
-  const contentLines = lines.filter((line) => !line.startsWith('--- ') && !line.startsWith('+++ '))
-  const viewportRef = useRef<HTMLDivElement>(null)
-  const virtualizer = useVirtualizer({
-    count: contentLines.length,
-    getScrollElement: () => viewportRef.current,
-    estimateSize: () => 20,
-    overscan: 16,
-  })
-
-  return <section className="overflow-hidden rounded-lg border border-border/70 bg-background" aria-label="Changes in this file">
-    <div ref={viewportRef} className="max-h-[min(60dvh,48rem)] overflow-auto font-mono text-[11px] leading-5">
-      <div className="relative min-w-max" style={{ height: virtualizer.getTotalSize() }}>
-      {virtualizer.getVirtualItems().map((item) => {
-        const line = contentLines[item.index] ?? ''
-        const index = item.index
-        const added = line.startsWith('+ ')
-        const removed = line.startsWith('- ')
-        const unchanged = line.startsWith('  ')
-        const marker = added ? '+' : removed ? '−' : unchanged ? '·' : ' '
-        const value = added || removed || unchanged ? line.slice(2) : line
-        return <div key={`${index}:${line}`} className={cn(
-          'grid min-w-max grid-cols-[1.8rem_minmax(0,1fr)] px-3',
-          added && 'bg-emerald-500/12 text-emerald-950 dark:text-emerald-100',
-          removed && 'bg-red-500/12 text-red-950 dark:text-red-100',
-          !added && !removed && 'text-muted-foreground',
-        )} style={{ position: 'absolute', left: 0, top: 0, transform: `translateY(${item.start}px)`, height: item.size }}><span className="select-none text-center opacity-70">{marker}</span><code className="whitespace-pre">{value || ' '}</code></div>
-      })}
-      </div>
-    </div>
-  </section>
-}
 
 function ImagePreview({ source, alt }: { source: string; alt: string }) {
   return <figure className="overflow-hidden rounded-lg border border-border/70 bg-muted/20 p-3">
@@ -215,7 +184,7 @@ function ManageLibrariesDialog({
 
   return <>
     <div className="modal-shell modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
-    <button type="button" className="absolute inset-0 cursor-default" aria-label="Close library manager" onClick={onClose} disabled={busy} />
+    <button className="absolute inset-0 cursor-default" aria-label="Close library manager" onClick={onClose} disabled={busy} />
     <section role="dialog" aria-modal="true" aria-labelledby="manage-libraries-title" className="modal-panel relative z-10 w-[min(34rem,calc(100vw-2rem))] overflow-visible rounded-2xl outline-none animate-modal-in glass-elevated">
       <header className="flex items-start justify-between gap-4 border-b border-border/70 px-5 py-4">
         <div><h2 id="manage-libraries-title" className="text-lg font-semibold tracking-[-0.025em]">Libraries</h2><p className="mt-1 text-sm leading-5 text-muted-foreground">Each library is a separate Git repository.</p></div>
@@ -226,7 +195,7 @@ function ManageLibrariesDialog({
           {libraries.map((library) => {
             const isActive = library.profile_id === activeProfileId
             const libraryUrl = library.remote_identity && /^https?:\/\//i.test(library.remote_identity) ? library.remote_identity : null
-            return <div key={library.profile_id} className={cn('flex items-center gap-3 rounded-xl px-3 py-3', isActive ? 'bg-muted/45' : 'hover:bg-muted/25')}><span className={cn('grid size-8 shrink-0 place-items-center rounded-lg text-xs font-semibold', isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>{isActive ? '✓' : '·'}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{libraryDisplayName(library)}</p><p className="mt-0.5 text-xs text-muted-foreground">{library.mode === 'public' ? 'Public' : library.mode === 'team' ? 'Team' : 'Private'}{libraryUrl ? <> · <button type="button" onClick={() => openUrl(libraryUrl)} className="text-primary underline-offset-2 hover:underline">Open repository</button></> : null}</p></div>{isActive ? <><span className="text-xs font-medium text-muted-foreground">Current</span><DropdownMenu><DropdownMenuTrigger render={<Button size="icon-sm" variant="ghost" aria-label={`Actions for ${libraryDisplayName(library)}`} disabled={busy} />}><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent className="w-48"><DropdownMenuGroup><DropdownMenuItem variant="destructive" onClick={() => setRemovalOpen(true)}><Trash2 />Remove from Skiller…</DropdownMenuItem></DropdownMenuGroup></DropdownMenuContent></DropdownMenu></> : <Button size="sm" variant="outline" onClick={() => onOpenLibrary(library.profile_id)} disabled={busy}>Open</Button>}</div>
+            return <div key={library.profile_id} className={cn('flex items-center gap-3 rounded-xl px-3 py-3', isActive ? 'bg-muted/45' : 'hover:bg-muted/25')}><span className={cn('grid size-8 shrink-0 place-items-center rounded-lg text-xs font-semibold', isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>{isActive ? '✓' : '·'}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{libraryDisplayName(library)}</p><p className="mt-0.5 text-xs text-muted-foreground">{library.mode === 'public' ? 'Public' : library.mode === 'team' ? 'Team' : 'Private'}{libraryUrl ? <> · <AppLink href={libraryUrl} className="text-primary underline-offset-2 hover:underline">Open repository</AppLink></> : null}</p></div>{isActive ? <><span className="text-xs font-medium text-muted-foreground">Current</span><DropdownMenu><DropdownMenuTrigger render={<Button size="icon-sm" variant="ghost" aria-label={`Actions for ${libraryDisplayName(library)}`} disabled={busy} />}><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent className="w-48"><DropdownMenuGroup><DropdownMenuItem variant="destructive" onClick={() => setRemovalOpen(true)}><Trash2 />Remove from Skiller…</DropdownMenuItem></DropdownMenuGroup></DropdownMenuContent></DropdownMenu></> : <Button size="sm" variant="outline" onClick={() => onOpenLibrary(library.profile_id)} disabled={busy}>Open</Button>}</div>
           })}
         </div>
       </div>
@@ -273,11 +242,11 @@ function SaveSelectionDialog({
   const secretBlockersAcknowledged = preview.secret_findings.length > 0 && preview.secret_findings.every((finding) => acknowledgedSecretFindingKeys.includes(finding.acknowledgement_key))
   const savingBlocked = preview.has_blockers && !(preview.secret_findings.length > 0 && secretBlockersAcknowledged)
   return <div className="modal-shell modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
-    <button type="button" className="absolute inset-0 cursor-default" aria-label="Close save confirmation" onClick={onClose} disabled={busy} />
+    <button className="absolute inset-0 cursor-default" aria-label="Close save confirmation" onClick={onClose} disabled={busy} />
     <section role="dialog" aria-modal="true" aria-labelledby="save-selection-title" className="modal-panel relative z-10 w-[min(34rem,calc(100vw-2rem))] overflow-hidden rounded-2xl outline-none animate-modal-in glass-elevated">
       <header className="px-6 pb-2 pt-6">
         <h2 id="save-selection-title" className="text-lg font-semibold tracking-[-0.025em]">{title}</h2>
-        <p className="mt-2 text-sm leading-5 text-muted-foreground">It will be saved to {destinationUrl ? <button type="button" onClick={() => openUrl(destinationUrl)} className="font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">{destination}</button> : <span className="font-medium text-foreground">{destination}</span>} and synced right away.</p>
+        <p className="mt-2 text-sm leading-5 text-muted-foreground">It will be saved to {destinationUrl ? <AppLink href={destinationUrl} className="font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">{destination}</AppLink> : <span className="font-medium text-foreground">{destination}</span>} and synced right away.</p>
       </header>
       <div className="flex items-center gap-2 border-y border-border/70 px-6 py-3">
         <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{isUpdate ? 'Changes to save' : 'Skills to add'}</p>
@@ -328,7 +297,7 @@ export default function ResourceLibrary() {
   const queryClient = useQueryClient()
   const { toast, dismiss } = useToast()
   const navigate = useNavigate()
-  // Reuse the active profile immediately when Agent Library is reopened. This
+  // Reuse the active profile immediately when Sync is reopened. This
   // avoids briefly rendering the empty state while the same cached profile is
   // being read again in the background.
   const [profileId, setProfileId] = useState<string | null>(() =>
@@ -460,7 +429,7 @@ export default function ResourceLibrary() {
     enabled: Boolean(profileId),
     staleTime: 30_000,
     // This is a local filesystem comparison, not a remote poll. It is safe to
-    // refresh quietly whenever Agent Library regains focus.
+    // refresh quietly whenever Sync regains focus.
     refetchOnWindowFocus: 'always',
   })
   const recovery = useQuery<{ pending: boolean; operations: Array<{ kind: 'restore' | 'library-update'; item_count: number | null; changed_item_count: number | null }> }>({
@@ -536,7 +505,7 @@ export default function ResourceLibrary() {
 
   useEffect(() => () => {
     // The review itself is also a cancellable, no-write comparison. Keep the
-    // same guarantee when Agent Library unmounts mid-review.
+    // same guarantee when Sync unmounts mid-review.
     const requestId = remoteReviewRequestRef.current
     if (requestId) {
       remoteReviewRequestRef.current = null
@@ -965,7 +934,7 @@ export default function ResourceLibrary() {
         queryClient.invalidateQueries({ queryKey: ['sync-history', profileId] }),
         queryClient.invalidateQueries({ queryKey: ['sync-profiles'] }),
       ])
-      toast('The reviewed local repair was applied. Its result is available in Agent Library.')
+      toast('The reviewed local repair was applied. Its result is available in Sync.')
       setRepairPreview(null)
     } catch (cause) {
       setRepairError(cause instanceof Error ? cause.message : 'The reviewed library repair could not be applied.')
@@ -1253,7 +1222,7 @@ export default function ResourceLibrary() {
       />}
       <header className="shrink-0 border-b border-border/70 px-6 pb-5 pt-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <h1 className="text-lg font-semibold tracking-[-0.03em] text-foreground">Agent Library</h1>
+          <h1 className="text-lg font-semibold tracking-[-0.03em] text-foreground">Backup &amp; sync</h1>
           <div className="flex items-center gap-2">
             {(profiles.data?.length ?? 0) > 1 && (
               <label className="relative"><span className="sr-only">Active library</span><select value={profileId ?? ''} onChange={(event) => void chooseActiveLibrary(event.target.value)} className="h-9 appearance-none rounded-md border border-border bg-background pl-3 pr-8 text-xs font-medium outline-none focus:ring-2 focus:ring-ring/40">{profiles.data?.map((profile) => <option key={profile.profile_id} value={profile.profile_id}>{libraryDisplayName(profile)}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" /></label>
@@ -1267,13 +1236,12 @@ export default function ResourceLibrary() {
             {profile && <span>{profile.mode === 'public' ? 'Public' : profile.mode === 'team' ? 'Team' : 'Private'} library ·</span>}
             {profile && (remoteLibraryUrl ? (
               <Tooltip content={`Open ${remoteLibraryUrl} in browser`}>
-              <button
-                type="button"
-                onClick={() => openUrl(remoteLibraryUrl)}
+              <AppLink
+                href={remoteLibraryUrl}
                 className="font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               >
                 {libraryDisplayName(profile)}
-              </button>
+              </AppLink>
               </Tooltip>
             ) : <span>{libraryDisplayName(profile)}</span>)}
             {profile && <span aria-hidden="true">·</span>}
@@ -1418,7 +1386,7 @@ export default function ResourceLibrary() {
 						<div className="relative flex min-h-0 flex-1 flex-col">
 							<div ref={resourceListScrollRef} onScroll={(event) => updateStickySectionHeader(event.currentTarget.scrollTop)} className="min-h-0 flex-1 overflow-y-auto">
           {overview.isError ? (
-            <div className="grid min-h-72 place-items-center text-center"><div><AlertTriangle className="mx-auto size-7 text-red-500" /><p className="mt-3 text-sm font-medium">Agent Library could not be loaded</p><p className="mt-1 text-xs text-muted-foreground">Nothing changed. Retry the local library review.</p><Button size="sm" variant="outline" className="mt-4" onClick={() => overview.refetch()}>Try again</Button></div></div>
+            <div className="grid min-h-72 place-items-center text-center"><div><AlertTriangle className="mx-auto size-7 text-red-500" /><p className="mt-3 text-sm font-medium">Sync could not be loaded</p><p className="mt-1 text-xs text-muted-foreground">Nothing changed. Retry the local library review.</p><Button size="sm" variant="outline" className="mt-4" onClick={() => overview.refetch()}>Try again</Button></div></div>
 						) : libraryListPending ? Array.from({ length: 7 }).map((_, index) => <div key={index} className="flex items-center gap-3 border-b border-border/60 px-4 py-3.5"><div className="size-9 animate-skeleton" /><div className="space-y-2"><div className="h-3 w-36 animate-skeleton" /><div className="h-2.5 w-52 animate-skeleton" /></div></div>) : visible.length === 0 ? (
 							<div className="grid min-h-72 place-items-center text-center"><div><LibraryBig className="mx-auto size-7 text-muted-foreground/50" /><p className="mt-3 text-sm font-medium">No library items here yet</p><p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{libraryEmpty ? 'Skiller will show agent content here after you review and save changes found on this computer.' : 'No library items match your search.'}</p></div></div>
 						) : <div className="relative w-full" style={{ height: resourceListVirtualizer.getTotalSize() }}>{resourceListVirtualizer.getVirtualItems().map((virtualRow) => {
@@ -1445,7 +1413,7 @@ export default function ResourceLibrary() {
 							return <div key={virtualRow.key} data-index={virtualRow.index} ref={resourceListVirtualizer.measureElement} className="absolute left-0 top-0 w-full" style={{ transform: `translateY(${virtualRow.start}px)` }}>
 					<div className={cn('px-2 pb-1', sectionAnimationClass)}>
 						{packageGroup ? <button type="button" className="w-full rounded-xl border-[0.5px] border-primary/15 bg-primary/[0.04] px-3 py-3 text-left transition-colors hover:bg-primary/[0.08]" onClick={() => navigate(`/skills?skill=${encodeURIComponent(packageGroup.id)}`)}>
-							<div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-sm font-medium">{packageGroup.id}</p><span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">Package</span></div><p className="mt-0.5 text-xs text-muted-foreground">{packageGroup.resources.length} skills · Managed from All Skills</p></div><ChevronDown className="size-4 shrink-0 -rotate-90 text-muted-foreground" /></div>
+							<div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-sm font-medium">{packageGroup.id}</p><span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">Package</span></div><p className="mt-0.5 text-xs text-muted-foreground">{packageGroup.resources.length} skills · Managed from Library</p></div><ChevronDown className="size-4 shrink-0 -rotate-90 text-muted-foreground" /></div>
 						</button> :
 						<button
 							type="button"
@@ -1480,7 +1448,7 @@ export default function ResourceLibrary() {
 									<div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] font-medium text-muted-foreground">
 										<Tooltip content={resource?.path ?? 'skills/' + (change?.id ?? '')}><span className="min-w-0 flex-1 truncate font-mono">{resource?.path ?? 'skills/' + (change?.id ?? '')}</span></Tooltip>
 										<span className="shrink-0 rounded-full bg-secondary px-1.5 py-0.5 text-secondary-foreground">Skill</span>
-										{resource?.package_id && <Tooltip content={`${resource.package_id} is updated as one package from All Skills`}><button type="button" className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-primary" onClick={(event) => { event.stopPropagation(); navigate(`/skills?skill=${encodeURIComponent(resource.package_id!)}`) }}>Managed from All Skills</button></Tooltip>}
+										{resource?.package_id && <Tooltip content={`${resource.package_id} is updated as one package from Library`}><button type="button" className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-primary" onClick={(event) => { event.stopPropagation(); navigate(`/skills?skill=${encodeURIComponent(resource.package_id!)}`) }}>Managed from Library</button></Tooltip>}
 									</div>
 								</div>
 							</div>
@@ -1518,8 +1486,8 @@ export default function ResourceLibrary() {
                       <p className="text-sm font-semibold">{selectedResource?.id ?? selectedLocalChange?.display_name}</p>
                       {selectedResource?.description && <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{selectedResource.description}</p>}
                       <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">{selectedResource?.path ?? selectedLocalChange?.detail}</p>
-                      {selectedResource && <p className="mt-1 text-[10px] text-muted-foreground">Source: {selectedResource.source_url ? <button type="button" className="text-primary underline-offset-2 hover:underline" onClick={() => openUrl(selectedResource.source_url!)}>{selectedResource.source_label}</button> : selectedResource.source_label}</p>}
-                      {selectedResource?.package_id && <button type="button" className="mt-1 text-[10px] text-primary underline-offset-2 hover:underline" onClick={() => navigate(`/skills?skill=${encodeURIComponent(selectedResource.package_id!)}`)}>Managed from All Skills · {selectedResource.package_id}</button>}
+                      {selectedResource && <p className="mt-1 text-[10px] text-muted-foreground">Source: {selectedResource.source_url ? <AppLink className="text-primary underline-offset-2 hover:underline" href={selectedResource.source_url!}>{selectedResource.source_label}</AppLink> : selectedResource.source_label}</p>}
+                      {selectedResource?.package_id && <button type="button" className="mt-1 text-[10px] text-primary underline-offset-2 hover:underline" onClick={() => navigate(`/skills?skill=${encodeURIComponent(selectedResource.package_id!)}`)}>Managed from Library · {selectedResource.package_id}</button>}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       {selectedResource && !selectedLocalChange && (providerReconnectRequired ? <ReconnectRequiredTooltip><Button

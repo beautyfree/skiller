@@ -12,6 +12,7 @@ export interface SkillRepo {
 }
 
 export interface AddRepoResult {
+  created?: boolean;
   repo: SkillRepo;
   skills: import("@/mainview/hooks/useSkills").Skill[];
 }

@@ -49,6 +49,8 @@ export interface AppPlatform {
 	pickFolder(opts?: FileDialogOpts): Promise<string | null>;
 	/** Single-file picker. Resolves to absolute path or `null` if cancelled. */
 	pickFile(opts?: FileDialogOpts): Promise<string | null>;
+	/** Native save dialog; selected filename includes the suggested extension. */
+	saveFile(opts: { title: string; filename: string }): Promise<string | null>;
 	getMainWindow(): PlatformWindow;
 	/**
 	 * After settings change (theme, blur). macOS: re-syncs NSWindow appearance

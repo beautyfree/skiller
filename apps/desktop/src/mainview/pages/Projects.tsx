@@ -1,27 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import {
   FolderOpen,
   FolderPlus,
+  Plus,
   Folder,
   Trash2,
   Puzzle,
   GitBranch,
-  Download,
   ChevronDown,
   ChevronRight,
   X,
 } from "lucide-react";
 import { Button } from "@/mainview/components/ui/button";
+import { Checkbox } from "@/mainview/components/ui/checkbox";
+import { visibleSkillSelection } from "@/mainview/lib/selection";
 import { Tooltip } from "@/mainview/components/ui/tooltip";
 import { invoke, pickFolder, revealItemInDir } from "@/mainview/lib/native";
 import ImportWizard from "@/mainview/components/ImportWizard";
 import ProjectSkillDetailModal from "@/mainview/components/ProjectSkillDetailModal";
 import ResizeHandle from "@/mainview/components/ResizeHandle";
 import { useResizable } from "@/mainview/hooks/useResizable";
-import { useSkills, type Skill } from "@/mainview/hooks/useSkills";
+import { useSkills } from "@/mainview/hooks/useSkills";
+import { SkillPresets } from "@/mainview/components/SkillPresets";
 import {
   useAddProject,
   useAddProjectFolder,
@@ -106,25 +109,26 @@ export default function ProjectsPage() {
         className="flex shrink-0 flex-col border-r border-border/60"
         style={{ width: sidebar.width }}
       >
-        <div className="flex items-center justify-between gap-2 px-3 py-3">
+        <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-3">
           <h2 className="text-sm font-[590]">{t("projects.title")}</h2>
           <div className="flex items-center gap-1">
             <Tooltip content={t("projects.newFolder")}>
             <Button
               size="sm"
               variant="ghost"
+              aria-label={t("projects.newFolder")}
               onClick={requestNewFolder}
             >
-              <FolderPlus className="size-3.5" />
+              <FolderPlus className="size-3.5" aria-hidden />
             </Button>
             </Tooltip>
             <Button size="sm" variant="outline" onClick={handleAddProject}>
-              <FolderPlus className="size-3.5" />
+              <Plus className="size-3.5" aria-hidden />
               {t("projects.add")}
             </Button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-2 pb-2 pt-2">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2 pt-2">
           {isLoading ? (
             <div className="space-y-1 px-2">
               <div className="h-10 rounded-md bg-muted/30 animate-pulse" />
@@ -190,7 +194,7 @@ export default function ProjectsPage() {
       {/* Right: selected project's skills */}
       <div className="min-w-0 flex-1 overflow-y-auto">
         {active ? (
-          <ProjectDetail project={active} />
+          <ProjectDetail key={active.path} project={active} />
         ) : (
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
@@ -324,7 +328,7 @@ function ProjectTree({
 
   return (
     <div
-      className={`min-h-full rounded-md transition-colors ${
+      className={`flex-1 rounded-md transition-colors ${
         isCanvasDragOver ? "bg-primary/5 ring-1 ring-primary/20" : ""
       }`}
       onContextMenu={(e) => {
@@ -612,18 +616,19 @@ function ProjectRow({
           ? "bg-black/[0.05] dark:bg-white/[0.09]"
           : "hover:bg-black/[0.03] dark:hover:bg-white/[0.05]"
       }`}
-      onClick={onClick}
     >
-      <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium truncate leading-tight">{project.name}</p>
-        <p className="text-[10px] text-muted-foreground/70 truncate font-mono">
+      <button type="button" aria-label={`Open project ${project.name}`} aria-current={active ? 'true' : undefined} onClick={onClick} className="flex min-w-0 flex-1 items-center gap-2 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium truncate leading-tight">{project.name}</span>
+        <span className="block text-[10px] text-muted-foreground/70 truncate font-mono">
           {project.path}
-        </p>
-      </div>
+        </span>
+      </span>
+      </button>
       <button
         type="button"
-        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+        className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
         onClick={(e) => {
           e.stopPropagation();
           onRemove();
@@ -639,12 +644,45 @@ function ProjectRow({
 function ProjectDetail({ project }: { project: Project }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const { data: skills, isLoading } = useProjectSkills(project.path);
+  const projectSkillsQuery = useProjectSkills(project.path);
+  const { data: skills, isLoading } = projectSkillsQuery;
+  const inventory = useSkills();
   const uninstall = useUninstallProjectSkill();
+  const toggle = useMutation({
+    mutationFn: (skill: ProjectSkill) => invoke('set_project_skill_enabled', { projectPath: project.path, skillId: skill.id, enabled: skill.enabled === false }),
+    onSuccess: async () => { await projectSkillsQuery.refetch(); await queryClient.invalidateQueries({ queryKey: ['skills'] }); },
+  });
   const [wizardMode, setWizardMode] = useState<"git" | "local" | null>(null);
   const [wizardLocalPath, setWizardLocalPath] = useState<string | null>(null);
-  const [copyPickerOpen, setCopyPickerOpen] = useState(false);
   const [openedSkill, setOpenedSkill] = useState<ProjectSkill | null>(null);
+  const [search, setSearch] = useState('');
+  const [selecting, setSelecting] = useState(false);
+  const [rawSelection, setRawSelection] = useState<Set<string>>(new Set());
+  const [removal, setRemoval] = useState<ProjectSkill[] | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const [removalError, setRemovalError] = useState('');
+  const removalDialog = useRef<HTMLDialogElement>(null);
+  const visible = (skills ?? []).filter(skill => `${skill.name} ${skill.id} ${skill.description ?? ''}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const selection = visibleSkillSelection(rawSelection, visible.map(skill => skill.id));
+  useEffect(() => { setRawSelection(current => visibleSkillSelection(current, visible.map(skill => skill.id))) }, [skills, search]);
+  useEffect(() => { if (removal) removalDialog.current?.showModal() }, [!!removal]);
+
+  async function removeReviewedSkills() {
+    if (!removal || removing) return;
+    setRemoving(true);
+    const errors: string[] = [];
+    for (const skill of removal) {
+      try {
+        const result = await uninstall.mutateAsync({ projectPath: project.path, skillId: skill.id });
+        if (result.kept.length) errors.push(`${skill.name}: separate agent copies were kept`);
+        setRawSelection(current => new Set([...current].filter(id => id !== skill.id)));
+      } catch (error) { errors.push(`${skill.name}: ${error instanceof Error ? error.message : 'Could not remove skill'}`) }
+    }
+    await projectSkillsQuery.refetch();
+    setRemoving(false);
+    if (errors.length) setRemovalError(errors.join('\n'));
+    else { removalDialog.current?.close(); setSelecting(false); }
+  }
   const pickingLocalRef = useRef(false);
 
   async function openLocalImport() {
@@ -685,12 +723,10 @@ function ProjectDetail({ project }: { project: Project }) {
             <FolderOpen className="size-3.5" />
             {t("projects.installFromLocal")}
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setCopyPickerOpen(true)}>
-            <Download className="size-3.5" />
-            {t("projects.copyFromInstalled")}
-          </Button>
         </div>
       </div>
+
+      <SkillPresets key={project.path} project={project} projectSkills={skills} skills={inventory.data} disabled={isLoading || !inventory.data || uninstall.isPending} />
 
       {wizardMode && (
         <ImportWizard
@@ -705,34 +741,44 @@ function ProjectDetail({ project }: { project: Project }) {
         />
       )}
 
-      {copyPickerOpen && (
-        <CopyFromInstalledPicker
-          projectPath={project.path}
-          onClose={() => setCopyPickerOpen(false)}
-        />
-      )}
-
       {openedSkill && (
         <ProjectSkillDetailModal
           projectPath={project.path}
           skill={openedSkill}
+          librarySkill={inventory.data?.find(item => item.id === openedSkill.id)}
           onClose={() => setOpenedSkill(null)}
         />
       )}
 
+      {removal && <dialog ref={removalDialog} onClose={() => { setRemoval(null); setRemovalError('') }} onCancel={event => { if (removing) event.preventDefault() }} aria-labelledby="project-removal-title" className="m-auto w-[min(32rem,calc(100vw-2rem))] max-h-[calc(100vh-2rem)] overflow-auto rounded-2xl border border-border bg-card p-5 text-foreground shadow-2xl backdrop:bg-black/50">
+        <h2 id="project-removal-title" className="text-sm font-semibold">Remove {removal.length} {removal.length === 1 ? 'skill' : 'skills'} from {project.name}?</h2>
+        <ul className="my-4 max-h-64 space-y-3 overflow-auto">{removal.map(skill => <li key={skill.id} className="text-xs"><p className="font-medium">{skill.name}</p><code className="mt-1 block break-all text-muted-foreground">{skill.path}</code></li>)}</ul>
+        <p className="text-xs text-muted-foreground">Project copies move to Trash. Library sources stay in place.</p>
+        {removalError && <p role="alert" className="mt-3 whitespace-pre-line text-xs text-destructive">{removalError}</p>}
+        <div className="mt-4 flex gap-2"><Button size="sm" variant="destructive" disabled={removing || !!removalError} onClick={() => void removeReviewedSkills()}>{removing ? 'Removing…' : 'Move to Trash'}</Button><Button size="sm" variant="outline" disabled={removing} onClick={() => removalDialog.current?.close()}>{removalError ? 'Done' : 'Cancel'}</Button></div>
+      </dialog>}
+
       <div className="space-y-2">
+        {!!skills?.length && <div className="flex flex-wrap items-center justify-between gap-3">
+          <input type="search" aria-label="Filter project skills" placeholder="Filter skills…" value={search} onChange={event => setSearch(event.target.value)} className="w-64 rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+          <div className="flex items-center gap-2">
+            {selecting && <><span className="text-xs tabular-nums text-muted-foreground">{selection.size} selected</span><Button size="sm" variant="ghost" disabled={!visible.length || removing} onClick={() => setRawSelection(selection.size === visible.length ? new Set() : new Set(visible.map(skill => skill.id)))}>{selection.size === visible.length && visible.length > 0 ? 'Clear selection' : 'Select all in view'}</Button><Button size="sm" variant="outline" disabled={!selection.size || removing} onClick={() => { setRemovalError(''); setRemoval(visible.filter(skill => selection.has(skill.id))) }}>Remove selected…</Button></>}
+            <Button size="sm" variant="ghost" disabled={removing} onClick={() => { setSelecting(value => !value); setRawSelection(new Set()) }}>{selecting ? 'Done' : 'Select'}</Button>
+          </div>
+        </div>}
         <div className="flex items-center justify-between">
-          <h2 className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+          <h2 className="text-sm font-medium">
             {t("projects.skillsHeading")}
           </h2>
           {skills && skills.length > 0 && (
             <span className="text-[10px] tabular-nums text-muted-foreground/60">
-              {t("projects.skillsCount", { count: skills.length })}
+              {search.trim() ? `${visible.length} of ${skills.length} skills` : t("projects.skillsCount", { count: skills.length })}
             </span>
           )}
         </div>
 
-        {isLoading ? (
+        {toggle.error && <p role="alert" className="mb-2 text-xs text-destructive">{toggle.error.message}</p>}
+        {projectSkillsQuery.isError ? <div role="alert" className="space-y-2 rounded-xl border border-border p-4"><p className="text-sm text-destructive">{projectSkillsQuery.error.message}</p><Button size="sm" variant="outline" onClick={() => void projectSkillsQuery.refetch()}>Retry</Button></div> : isLoading ? (
           <div className="space-y-2">
             <div className="h-12 rounded-md bg-muted/30 animate-pulse" />
             <div className="h-12 rounded-md bg-muted/30 animate-pulse" />
@@ -747,45 +793,33 @@ function ProjectDetail({ project }: { project: Project }) {
               {t("projects.emptyStateIntro")}
             </p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
-              <Button size="sm" variant="outline" onClick={() => setCopyPickerOpen(true)}>
-                <Download className="size-3.5" />
-                {t("projects.copyFromInstalled")}
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setWizardMode("git")}>
-                <GitBranch className="size-3.5" />
-                {t("projects.installFromGit")}
-              </Button>
-              <RouterLink to="/marketplace">
-                <Button size="sm" variant="outline">
-                  {t("projects.openMarketplace")}
-                </Button>
-              </RouterLink>
+              <RouterLink to="/marketplace" className="rounded-md px-3 py-2 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">{t("projects.openMarketplace")}</RouterLink>
             </div>
           </div>
-        ) : (
+        ) : !visible.length ? <div className="rounded-xl border border-dashed border-border/60 p-8 text-center"><p className="text-sm text-muted-foreground">No matching skills.</p><Button size="sm" variant="ghost" className="mt-2" onClick={() => setSearch('')}>Clear search</Button></div> : (
           <div className="space-y-1">
-            {skills.map((s) => (
+            {visible.map((s) => (
               <div
                 key={s.id}
-                className="group flex items-center gap-3 rounded-md border border-border/40 px-3 py-2 cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-colors"
-                onClick={() => setOpenedSkill(s)}
+                className={`group flex items-center gap-3 rounded-md border px-3 py-2 transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04] ${selection.has(s.id) ? 'border-border bg-muted/30' : 'border-border/40'}`}
               >
-                <Puzzle className="size-3.5 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate">{s.name}</p>
+                {selecting ? <Checkbox aria-label={`Select ${s.name}`} checked={selection.has(s.id)} disabled={removing} onCheckedChange={checked => { const next = new Set(selection); if (checked) next.add(s.id); else next.delete(s.id); setRawSelection(next) }} /> : <Puzzle className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />}
+                <button type="button" aria-label={`Open ${s.name}`} onClick={() => setOpenedSkill(s)} className="min-w-0 flex-1 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <p className="text-sm font-medium truncate">{s.name}{s.enabled === false && <span className="ml-2 text-xs font-normal text-muted-foreground">Disabled</span>}</p>
                   {s.description && (
                     <p className="text-xs text-muted-foreground line-clamp-1">
                       {s.description}
                     </p>
                   )}
-                </div>
+                </button>
+                <input type="checkbox" role="switch" aria-label={`Enable ${s.name} in ${project.name}`} checked={s.enabled !== false} disabled={removing || uninstall.isPending || toggle.isPending} onChange={() => { toggle.reset(); toggle.mutate(s); }} className="relative h-5 w-9 shrink-0 appearance-none rounded-full bg-muted-foreground/20 outline-none transition-colors checked:bg-foreground before:absolute before:left-0.5 before:top-0.5 before:size-4 before:rounded-full before:bg-background before:transition-transform checked:before:translate-x-4 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50" />
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    uninstall.mutate({ projectPath: project.path, skillId: s.id });
-                  }}
+                  aria-label={`Remove ${s.name}`}
+                  className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
+                  disabled={removing || toggle.isPending}
+                  onClick={() => { setRemovalError(''); setRemoval([s]); }}
                 >
                   <Trash2 className="size-3.5" />
                 </Button>
@@ -793,118 +827,6 @@ function ProjectDetail({ project }: { project: Project }) {
             ))}
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-function CopyFromInstalledPicker({
-  projectPath,
-  onClose,
-}: {
-  projectPath: string;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const { data: allSkills, isLoading } = useSkills();
-  const { data: projectSkills } = useProjectSkills(projectPath);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-
-  const existingIds = new Set((projectSkills ?? []).map((s) => s.id));
-  const candidates = (allSkills ?? [])
-    .filter((s) => !existingIds.has(s.id))
-    .filter((s) =>
-      query.trim()
-        ? s.name.toLowerCase().includes(query.toLowerCase()) ||
-          s.id.toLowerCase().includes(query.toLowerCase())
-        : true,
-    );
-
-  async function handleCopy(skill: Skill) {
-    setBusyId(skill.id);
-    try {
-      await invoke("install_skill_to_project", {
-        source: { LocalPath: { path: skill.canonical_path } },
-        projectPath,
-      });
-      await queryClient.invalidateQueries({ queryKey: ["project-skills", projectPath] });
-    } catch (err) {
-      console.error("copy to project failed:", err);
-      alert(`Copy failed: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  return (
-    <div
-      className="modal-shell modal-overlay fixed inset-0 z-50 flex items-center justify-center"
-      onClick={onClose}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="modal-panel w-full max-w-lg rounded-3xl p-6 space-y-4 outline-none animate-modal-in glass-elevated"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-[590]">{t("projects.copyPickerTitle")}</h2>
-          <button
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            onClick={onClose}
-          >
-            ✕
-          </button>
-        </div>
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t("projects.copyPickerSearch")}
-          className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-          autoFocus
-        />
-        <div className="max-h-80 overflow-y-auto -mx-1 px-1">
-          {isLoading ? (
-            <div className="space-y-1">
-              <div className="h-12 rounded-md bg-muted/30 animate-pulse" />
-              <div className="h-12 rounded-md bg-muted/30 animate-pulse" />
-            </div>
-          ) : candidates.length === 0 ? (
-            <p className="py-8 text-center text-xs text-muted-foreground">
-              {t("projects.copyPickerEmpty")}
-            </p>
-          ) : (
-            <div className="space-y-1">
-              {candidates.map((s) => (
-                <div
-                  key={s.id}
-                  className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
-                >
-                  <Puzzle className="size-3.5 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{s.name}</p>
-                    {s.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-1">
-                        {s.description}
-                      </p>
-                    )}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busyId === s.id}
-                    onClick={() => handleCopy(s)}
-                  >
-                    {busyId === s.id ? "…" : t("projects.copy")}
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );

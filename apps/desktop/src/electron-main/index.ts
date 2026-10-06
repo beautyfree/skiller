@@ -36,7 +36,11 @@ import {
 // queries) with a person's installed application. The main data root already
 // supports this override; give Electron's own userData the same boundary.
 const qaDataRoot = process.env.SKILLER_TEST_DATA_ROOT?.trim();
-if (qaDataRoot) app.setPath("userData", join(qaDataRoot, "electron"));
+if (qaDataRoot) {
+	app.setPath("userData", join(qaDataRoot, "electron"));
+	// dotagents has its own metadata store; keep QA source/history records isolated too.
+	process.env.DOTAGENTS_CONFIG_HOME = join(qaDataRoot, "dotagents");
+}
 
 const TRPC_PORT = Number(process.env.AGENTSKILLS_TRPC_PORT ?? 17888);
 

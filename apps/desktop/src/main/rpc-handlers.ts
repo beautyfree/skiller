@@ -1,7 +1,9 @@
-import { listSkillPresets, skillSelection, saveSkillPreset, removeSkillPreset, reviewSkillPreset, applySkillPreset } from './skill-presets'
-import type { SkillPresetJson, SkillPresetReviewJson } from '../shared/rpc-schema'
+import { exportSkillPack, parseSkillPack, reviewSkillPackImport, importSkillPack, MAX_PACK_FILE_BYTES, type PortableSkillPack } from "./skill-pack-transfer";
+import { listSkillTags, editSkillTags, renameSkillTag } from './skill-tags'
+import { listSkillPresets, skillSelection, saveSkillPreset, setSkillPresetMember, removeSkillPreset, reviewSkillPreset, applySkillPreset, reviewSkillPresetRemoval, removeSkillPresetInstallations } from './skill-presets'
+import type { SkillPresetJson, SkillPresetReviewJson, SkillPresetRemovalReviewJson } from '../shared/rpc-schema'
 import { loadRegisteredAgents, saveCustomAgent, removeCustomAgent } from './custom-agents'
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { basename, dirname, join, relative, sep } from 'node:path'
@@ -96,6 +98,7 @@ import { isLibraryDocumentationOnlyUpdate, libraryDocumentationUpdatePlanId } fr
 import { SyncProfileCheckStore } from './sync-profile-check-state'
 import { applyReviewedSyncDisconnect, planSyncDisconnect } from './sync-disconnect'
 import { scanAllSkills } from './scanner'
+import { compareAgentSkill, replaceAgentSkill } from './agent-comparison'
 import { inspectSkillQualityOverview, skillQualityIdentity } from './skill-quality'
 import { createSkillQualityEvalPlan, inspectLocalCredentialProfile, inspectLocalDockerImage } from './skill-quality-eval'
 import { runSkillQualityDryPlan } from './skill-quality-dry-run'
@@ -105,7 +108,7 @@ import { discardPreparedGitSkill, installPreparedGitSkill, installSkillFromGit, 
 import {
   detachSharedSkill,
 	unlinkInheritedSkillFromAgentConfigs,
-  uninstallSkill,
+  trashAgentSkill,
   uninstallDirectSkillFromAll,
   uninstallSkillFromAll,
 } from './uninstall'
@@ -139,6 +142,8 @@ import {
   syncSkillRepo,
 } from './repos'
 import {
+  compareProjectSkill,
+  updateProjectSkillToLibrary,
   addProject,
   addProjectFolder,
   installMarketplaceSkillToProject,
@@ -153,6 +158,7 @@ import {
   renameProjectFolder,
   setProjectGroup,
   uninstallProjectSkill,
+  setProjectSkillEnabled,
 } from './projects'
 import { resolveSkillSourcePath } from './skill-paths'
 import { sharedSkillsDir } from './shared-skills'
@@ -1854,17 +1860,84 @@ export function createRequestHandlers(ctx: {
   const reviewedLinkedPackageUpdates = new Map<string, LinkedSkillPackageUpdate>()
 
   const presetReviews = new Map<string, { review: SkillPresetReviewJson; selection: SkillPresetJson | null; expires: number }>()
+  const presetRemovalReviews = new Map<string, { review: SkillPresetRemovalReviewJson; expires: number }>()
+  const packImportReviews = new Map<string, { pack: PortableSkillPack; expires: number }>();
   const handlers = {
+    compare_project_skill: async (params: unknown) => compareProjectSkill(params, scanAllSkills(loadDetectedAgents())),
+    update_project_skill_to_library: async (params: unknown) => { const result = await updateProjectSkillToLibrary(params, scanAllSkills(loadDetectedAgents()), path => platform.trashItem(path)); rpc.send('skills_changed'); return result },
+    compare_agent_skill: async (params: unknown) => { const agents = loadDetectedAgents(); return compareAgentSkill(params, scanAllSkills(agents), agents) },
+    replace_agent_skill: async (params: unknown) => { const agents = loadDetectedAgents(); const result = await replaceAgentSkill(params, scanAllSkills(agents), agents, path => platform.trashItem(path)); rpc.send('skills_changed'); return result },
+    list_skill_tags: async () => listSkillTags(scanAllSkills(loadDetectedAgents())),
+    edit_skill_tags: async (params: unknown) => { editSkillTags(params, scanAllSkills(loadDetectedAgents())) },
+    rename_skill_tag: async (params: unknown) => { renameSkillTag(params) },
+    export_skill_pack: async (params: { id: string }) => {
+      const preset = listSkillPresets().find(item => item.id === params?.id);
+      if (!preset) throw new Error('Skill pack no longer exists');
+      const text = exportSkillPack(preset);
+      const path = await platform.saveFile({ title: 'Export skill pack', filename: `${preset.name.replace(/[^a-z0-9_-]+/gi, '-').slice(0, 80)}.skiller-pack.json` });
+      if (!path) return false;
+      const temp = `${path}.${randomUUID()}.tmp`;
+      try { writeFileSync(temp, text, { flag: 'wx', mode: 0o600 }); renameSync(temp, path); }
+      finally { rmSync(temp, { force: true }); }
+      return true;
+    },
+    preview_import_skill_pack: async () => {
+      const path = await platform.pickFile({ title: 'Import skill pack' });
+      if (!path) return null;
+      if (statSync(path).size > MAX_PACK_FILE_BYTES) throw new Error('Pack file exceeds 30 MB');
+      const pack = parseSkillPack(readFileSync(path, 'utf8'));
+      const review = reviewSkillPackImport(pack, sharedSkillsDir());
+      const now = Date.now();
+      for (const [id, entry] of packImportReviews) if (entry.expires <= now) packImportReviews.delete(id);
+      if (packImportReviews.size >= 5) packImportReviews.delete(packImportReviews.keys().next().value!);
+      const reviewId = randomUUID();
+      packImportReviews.set(reviewId, { pack, expires: now + 5 * 60_000 });
+      return { reviewId, ...review };
+    },
+    import_skill_pack: async (params: { reviewId: string }) => {
+      const review = packImportReviews.get(params?.reviewId);
+      if (!review || review.expires <= Date.now()) throw new Error('Import preview expired; select the file again');
+      const preset = importSkillPack(review.pack, sharedSkillsDir());
+      packImportReviews.delete(params.reviewId);
+      rpc.send('skills_changed');
+      return preset;
+    },
     list_skill_presets: async () => listSkillPresets(),
     save_skill_preset: async (params: unknown) => saveSkillPreset(params, scanAllSkills(loadDetectedAgents())),
+    set_skill_preset_member: async (params: unknown) => setSkillPresetMember(params, scanAllSkills(loadDetectedAgents())),
     remove_skill_preset: async (params: { id: string }) => removeSkillPreset(params?.id),
+    review_skill_preset_removal: async (params: AppRPCSchema['bun']['requests']['review_skill_preset_removal']['params']) => {
+      const preset = listSkillPresets().find(item => item.id === params?.id)
+      if (!preset) throw new Error('Skill pack no longer exists')
+      const agents = loadDetectedAgents()
+      const review = reviewSkillPresetRemoval(preset, params.target, scanAllSkills(agents), agents, listProjects())
+      const now = Date.now()
+      for (const [id, entry] of presetRemovalReviews) if (entry.expires <= now) presetRemovalReviews.delete(id)
+      if (presetRemovalReviews.size >= 16) presetRemovalReviews.delete(presetRemovalReviews.keys().next().value!)
+      const reviewId = randomUUID()
+      presetRemovalReviews.set(reviewId, { review, expires: now + 5 * 60_000 })
+      return { ...review, reviewId }
+    },
+    remove_skill_preset_installations: async (params: { reviewId: string }) => {
+      const entry = presetRemovalReviews.get(params?.reviewId)
+      presetRemovalReviews.delete(params?.reviewId)
+      if (!entry || entry.expires <= Date.now()) throw new Error('Review expired; review the skill pack again')
+      const preset = listSkillPresets().find(item => item.id === entry.review.presetId)
+      if (!preset) throw new Error('Skill pack no longer exists')
+      const agents = loadDetectedAgents()
+      const fresh = reviewSkillPresetRemoval(preset, entry.review.target, scanAllSkills(agents), agents, listProjects())
+      if (JSON.stringify(fresh) !== JSON.stringify(entry.review)) throw new Error('Skills or destinations changed; review again')
+      const result = await removeSkillPresetInstallations(fresh, path => platform.trashItem(path))
+      rpc.send('skills_changed')
+      return result
+    },
     review_skill_preset: async (params: AppRPCSchema['bun']['requests']['review_skill_preset']['params']) => {
       if (!params || typeof params !== 'object' || ('id' in params) === ('skillIds' in params)) throw new Error('Choose a set or a skill selection')
       const agents = loadDetectedAgents()
       const inventory = scanAllSkills(agents)
       const selection = 'skillIds' in params ? skillSelection({ name: 'Selected skills', skillIds: params.skillIds }, inventory) : null
       const preset = selection ?? listSkillPresets().find(item => item.id === ('id' in params ? params.id : null))
-      if (!preset) throw new Error('Skill set no longer exists')
+      if (!preset) throw new Error('Skill pack no longer exists')
       const review = reviewSkillPreset(preset, params.target, inventory, agents, listProjects())
       const now = Date.now()
       for (const [id, entry] of presetReviews) if (entry.expires <= now) presetReviews.delete(id)
@@ -1876,9 +1949,9 @@ export function createRequestHandlers(ctx: {
     apply_skill_preset: async (params: { reviewId: string }) => {
       const entry = presetReviews.get(params?.reviewId)
       presetReviews.delete(params?.reviewId)
-      if (!entry || entry.expires <= Date.now()) throw new Error('Review expired; review the skill set again')
+      if (!entry || entry.expires <= Date.now()) throw new Error('Review expired; review the skill pack again')
       const preset = entry.selection ?? listSkillPresets().find(item => item.id === entry.review.presetId)
-      if (!preset) throw new Error('Skill set no longer exists')
+      if (!preset) throw new Error('Skill pack no longer exists')
       const agents = loadDetectedAgents()
       const fresh = reviewSkillPreset(preset, entry.review.target, scanAllSkills(agents), agents, listProjects())
       if (JSON.stringify(fresh) !== JSON.stringify(entry.review)) throw new Error('Skills or destinations changed; review again')
@@ -3303,13 +3376,14 @@ export function createRequestHandlers(ctx: {
     },
     uninstall_skill: async (params: { skillId: string; agentSlug: string }) => {
       const { skillId, agentSlug } = params
-      uninstallSkill(skillId, agentSlug, loadDetectedAgents())
+      const agents = loadDetectedAgents()
+      await trashAgentSkill(skillId, agentSlug, agents, scanAllSkills(agents), path => platform.trashItem(path))
     },
     uninstall_skill_all: async (params: { skillId: string }) => {
       const { skillId } = params
       uninstallSkillFromAll(skillId, loadDetectedAgents())
     },
-    uninstall_skills_all: async (params: { skillIds: string[] }) => {
+    uninstall_skills_all: async (params: { skillIds: string[]; agentSlug?: string }) => {
       if (!Array.isArray(params.skillIds)) {
         throw new Error('skillIds must be an array')
       }
@@ -3317,12 +3391,17 @@ export function createRequestHandlers(ctx: {
         params.skillIds.filter((id): id is string => typeof id === 'string' && id.length > 0),
       )]
       const agents = loadDetectedAgents()
+      if (params.agentSlug !== undefined && (typeof params.agentSlug !== 'string' || !agents.some(agent => agent.slug === params.agentSlug))) throw new Error('Unknown agent')
       const removed: string[] = []
       const failed: { id: string; error: string }[] = []
 
       for (const skillId of skillIds) {
         try {
-          uninstallDirectSkillFromAll(skillId, agents)
+          if (params.agentSlug !== undefined) {
+            await trashAgentSkill(skillId, params.agentSlug, agents, scanAllSkills(agents), path => platform.trashItem(path))
+          } else {
+            uninstallDirectSkillFromAll(skillId, agents)
+          }
           removed.push(skillId)
         } catch (err) {
           failed.push({
@@ -3351,7 +3430,7 @@ export function createRequestHandlers(ctx: {
         )
         if (!direct) continue
         try {
-          uninstallSkill(skill.id, params.agentSlug, agents)
+          await trashAgentSkill(skill.id, params.agentSlug, agents, scanAllSkills(agents), path => platform.trashItem(path))
           removed.push(skill.id)
         } catch (err) {
           failed.push({
@@ -3563,12 +3642,14 @@ export function createRequestHandlers(ctx: {
         installs: s.installs ?? null,
         source: s.source,
       }
-      await installFromMarketplace(
+      const installed = await installFromMarketplace(
         internal,
         params.targetAgents,
 		loadDetectedAgents(),
 		exactSourceSecurityPolicy(internal.repository ? [internal.repository] : []),
       )
+      rpc.send('skills_changed');
+      return installed;
     },
     shell_runtime: async () => {
       return {
@@ -3620,10 +3701,11 @@ export function createRequestHandlers(ctx: {
       platform.quit()
     },
     add_skill_repo: async (params: { repoUrl: string }) => {
-      const { repo, skills } = await addSkillRepo(params.repoUrl, (p) => {
+      const { repo, skills, created } = await addSkillRepo(params.repoUrl, (p) => {
         rpc.send('repo_progress', p)
 	  }, exactSourceSecurityPolicy([normalizeSkillRepoUrl(params.repoUrl)]))
       return {
+        created,
         repo: {
           id: repo.id,
           name: repo.name,
@@ -3850,11 +3932,14 @@ export function createRequestHandlers(ctx: {
 		exactSourceSecurityPolicy(internal.repository ? [internal.repository] : []),
 	  )
     },
+    set_project_skill_enabled: async (params: { projectPath: string; skillId: string; enabled: boolean }) => { setProjectSkillEnabled(params); rpc.send('skills_changed') },
     uninstall_project_skill: async (params: {
       projectPath: string
       skillId: string
     }) => {
-      uninstallProjectSkill(params.projectPath, params.skillId)
+      const result = await uninstallProjectSkill(params.projectPath, params.skillId, path => platform.trashItem(path))
+      rpc.send('skills_changed')
+      return result
     },
     set_project_group: async (params: { path: string; group: string | null }) =>
       setProjectGroup(params.path, params.group),

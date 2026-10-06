@@ -1,0 +1,76 @@
+import { expect, test } from 'bun:test';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { compareAgentSkill, replaceAgentSkill } from './agent-comparison';
+import { defaultAgentConfig } from './types';
+import { scanAllSkills } from './scanner';
+
+test('agent comparison and reviewed replacement preserve local versions and reject stale or shared targets', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'skiller-agent-compare-')));
+  try {
+    const id = 'qa-agent-comparison';
+    const library = join(root, 'library', id);
+    const local = join(root, 'agent', id);
+    for (const path of [library, local]) {
+      mkdirSync(join(path, 'scripts'), { recursive: true });
+      writeFileSync(join(path, 'SKILL.md'), '---\nname: QA agent comparison\ndescription: Test\n---\nInstructions');
+    }
+    writeFileSync(join(library, 'scripts/check.sh'), 'echo Library\n');
+    writeFileSync(join(local, 'scripts/check.sh'), 'echo Local\n');
+    writeFileSync(join(local, 'local-only.txt'), 'Local notes');
+    writeFileSync(join(library, 'library-only.txt'), 'Library notes');
+    const agent = defaultAgentConfig({ slug: 'qa-compare', name: 'QA compare', detected: true, global_paths: [join(root, 'agent')] });
+    const peer = defaultAgentConfig({ slug: 'qa-peer', name: 'Peer', detected: true, global_paths: [join(root, 'peer')] });
+    const agents = [agent, peer];
+    const scanned = scanAllSkills(agents).find(skill => skill.id === id)!;
+    const skill = { ...scanned, canonical_path: library, scope: { kind: 'SharedLibrary' as const } };
+    const inventory = [skill];
+    const params = { skillId: id, agentSlug: agent.slug, librarySourcePath: library };
+    const review = () => compareAgentSkill(params, inventory, agents);
+    const initial = review();
+    expect(initial.sameSource).toBe(false);
+    expect(initial.comparison.changed_files).toEqual(['scripts/check.sh']);
+    expect(initial.comparison.only_on_computer).toEqual(['local-only.txt']);
+    expect(initial.comparison.only_in_library).toEqual(['library-only.txt']);
+    expect(initial.replacement).toBeDefined();
+    expect(compareAgentSkill({ ...params, file: 'scripts/check.sh' }, inventory, agents).filePreview?.diff).toContain('Local');
+    expect(() => compareAgentSkill({ ...params, agentSlug: 'unknown' }, inventory, agents)).toThrow();
+    expect(() => compareAgentSkill({ ...params, librarySourcePath: local }, inventory, agents)).toThrow();
+    expect(() => compareAgentSkill({ ...params, file: '../outside' }, inventory, agents)).toThrow();
+    const moved: string[] = [];
+    const trash = async (path: string) => { const target = join(root, `trash-${moved.length}`); renameSync(path, target); moved.push(target); };
+    writeFileSync(join(local, 'local-only.txt'), 'Unsaved review became new local notes');
+    await expect(replaceAgentSkill({ ...params, ...initial.replacement! }, inventory, agents, trash)).rejects.toThrow('changed');
+    expect(moved).toHaveLength(0);
+    const fresh = review();
+    writeFileSync(join(library, 'library-only.txt'), 'New library notes');
+    await expect(replaceAgentSkill({ ...params, ...fresh.replacement! }, inventory, agents, trash)).rejects.toThrow('changed');
+    expect(readFileSync(join(local, 'local-only.txt'), 'utf8')).toContain('Unsaved');
+    peer.additional_readable_paths = [{ path: agent.global_paths[0]!, source_agent: agent.slug }];
+    expect(review().replacement).toBeUndefined();
+    expect(review().replacementBlocked).toContain('Peer');
+    peer.additional_readable_paths = [];
+    mkdirSync(join(local, '.git'));
+    writeFileSync(join(local, '.git/config'), 'Private repository metadata');
+    expect(review().replacement).toBeUndefined();
+    rmSync(join(local, '.git'), { recursive: true });
+    await replaceAgentSkill({ ...params, ...review().replacement! }, inventory, agents, trash);
+    expect(review().comparison.changed_files).toEqual([]);
+    expect(review().comparison.only_on_computer).toEqual([]);
+    expect(readFileSync(join(moved[0]!, 'local-only.txt'), 'utf8')).toContain('Unsaved');
+    expect(existsSync(join(local, 'local-only.txt'))).toBe(false);
+    expect(readFileSync(join(local, 'library-only.txt'), 'utf8')).toBe('New library notes');
+    writeFileSync(join(local, 'SKILL.md'), 'Changed agent instructions');
+    const fallback = await replaceAgentSkill({ ...params, ...review().replacement! }, inventory, agents, async () => { throw new Error('Trash unavailable'); });
+    expect(readFileSync(join(fallback.backupPath!, 'SKILL.md'), 'utf8')).toBe('Changed agent instructions');
+    expect(review().comparison.changed_files).toEqual([]);
+    rmSync(local, { recursive: true });
+    symlinkSync(library, local);
+    expect(review().sameSource).toBe(true);
+    expect(review().replacement).toBeUndefined();
+    rmSync(local);
+    symlinkSync(root, local);
+    expect(() => review()).toThrow('another source');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

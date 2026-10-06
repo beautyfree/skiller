@@ -364,11 +364,11 @@ function ReviewSkillDetail({ item, decision, purpose, sourceIssue, reviewPositio
 }
 
 /**
- * This is the first-library flow rendered inside Agent Library when no library
+ * This is the first-library flow rendered inside Sync when no library
  * exists yet. It is intentionally not a separate application destination:
  * once a library is connected, ResourceLibrary is the sole place to browse it,
  * see sync status, and review changes. Setup actions stay behind their reviewed
- * plan so opening Agent Library never uploads or changes anything.
+ * plan so opening Sync never uploads or changes anything.
  */
 export default function SyncCenter({ embedded = false, allowExisting = false, onComplete, onClose }: {
   embedded?: boolean
@@ -1147,13 +1147,13 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 			setShowConnect(false)
 			setConnectPreview(null)
 			if (libraryCheckTokenRef.current !== token) {
-				toast('Library connected. Open Agent Library to review anything that needs attention.')
+				toast('Library connected. Open backup & sync to review anything that needs attention.')
 				return
 			}
 			// A connected library belongs in the same canonical workspace as a
-			// newly created one. Agent Library immediately refreshes its safe
+			// newly created one. Sync immediately refreshes its safe
 			// status and presents any resulting review inline.
-			toast('Library connected. Its status is ready in Agent Library.')
+			toast('Library connected. Its status is ready in Sync.')
 		onComplete?.(connected.profile_id)
 			navigate('/library', { replace: true })
     } catch (error) {
@@ -1540,7 +1540,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 				queryKey: ['sync-center-inventory'],
 			})
 			// Setup is complete. The canonical home for an existing library is
-			// Agent Library; leaving people on a second dashboard creates two
+			// Sync; leaving people on a second dashboard creates two
 			// competing places to understand and operate the same data.
 			onComplete?.(published.profile_id)
 			navigate('/library', { replace: true })
@@ -2066,7 +2066,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 		: `Ready to create your ${libraryPurpose === 'public' ? 'public' : libraryPurpose === 'team' ? 'team' : 'private'} library`
 
 	// SyncCenter is deliberately only the first-library journey. Once a profile
-	// exists, Agent Library is the single destination for its contents, status,
+	// exists, Sync is the single destination for its contents, status,
 	// reviews, and saving. Keeping this guard here also prevents a stale deep
 	// link from reviving the old, parallel "Library sync" dashboard.
 	if (!allowExisting && !profilesLoading && profiles?.length) {
@@ -2100,22 +2100,20 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 					)}
 					{!showConnect ? (
 						<div className="relative max-w-2xl">
-							<div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-white">
-								<Cloud className="size-3.5" /> {embedded ? 'Agent Library' : 'Sync Center'}
+							<div className="inline-flex items-center gap-2 text-sm font-medium text-white">
+								<Cloud className="size-3.5" /> Backup &amp; sync
 							</div>
-							<h1 className="mt-6 text-balance text-4xl font-semibold tracking-[-0.055em] text-white sm:text-5xl">
-								Keep your agent skills
-								<br />
-								ready for anything.
+							<h1 className="mt-4 text-balance text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">
+								Back up and sync your skills
 							</h1>
-							<p className="mx-auto mt-5 max-w-xl text-sm leading-relaxed text-primary-foreground/82 sm:text-base">Your hard-won skills, collected in one library you can carry to a new computer or share when you choose.</p>
+							<p className="mx-auto mt-5 max-w-xl text-sm leading-relaxed text-primary-foreground/82 sm:text-base">Save selected skills in a Git repository and restore them on another computer. Review changes before saving or applying them.</p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-2.5">
 								<Button size="lg" className="sync-library-cta h-11 px-5" onClick={startCreateLibrary}>
-									<span className="text-[13px] font-semibold">Create my library</span>
+									<span className="text-[13px] font-semibold">Back up skills</span>
                 <ChevronRight className="ml-0.5 size-4" />
               </Button>
               <Button size="lg" variant="outline" className="h-11 border-white/25 bg-white/8 px-5 text-white hover:border-white/40 hover:bg-white/14 hover:text-white" onClick={() => setShowConnect(true)}>
-                Use an existing library
+                Restore from repository
               </Button>
             </div>
 			<p className="mt-2 text-[11px] text-primary-foreground/68">Nothing is created or uploaded until you confirm the final step.</p>
@@ -2140,12 +2138,12 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 								Back
 							</button>
 							<div className="mt-5">
-								<h1 className="text-2xl font-semibold tracking-[-0.03em]">Use an existing library</h1>
-								<p className="mt-1.5 max-w-md text-sm leading-relaxed text-muted-foreground">Choose where it lives. You can inspect its skills before anything is added to this computer.</p>
+								<h1 className="text-2xl font-semibold tracking-[-0.03em]">Restore from repository</h1>
+								<p className="mt-1.5 max-w-md text-sm leading-relaxed text-muted-foreground">Choose a saved library. Review its skills before restoring them to this computer.</p>
             </div>
             <section className="mt-7">
 								<div>
-									<p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">Step 1</p>
+									<p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">Repository</p>
 									<p className="mt-1 text-sm font-semibold">Where does your library live?</p>
 									<p className="mt-1 text-xs text-muted-foreground">Choose one place to look. Nothing is downloaded yet.</p>
 								</div>
@@ -2391,10 +2389,10 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 							</label>
 						)}
 						{libraryInteractionLocked ? (
-							<Button size="sm" variant="outline" disabled>Back to Agent Library</Button>
+							<Button size="sm" variant="outline" disabled>Back to backup & sync</Button>
 						) : (
 							<Link to="/library" className={buttonVariants({ size: 'sm', variant: 'outline' })}>
-								Back to Agent Library
+								Back to backup & sync
 							</Link>
 						)}
 						{profile.mode !== 'private' && profile.remote_identity && (
@@ -2551,7 +2549,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 										{profile.check_error ? 'Try again' : 'Check for updates'}
 									</Button>
 									<Link to="/library" className={buttonVariants({ size: 'sm' })}>
-										Open Agent Library <ChevronRight className="size-3.5" />
+										Open backup & sync <ChevronRight className="size-3.5" />
 									</Link>
 								</>
 							) : (
@@ -2571,7 +2569,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 					{profile.skill_count === 0 && profile.behind === 0 && (
 						<div className="mt-4 rounded-xl border border-dashed border-border bg-muted/15 px-4 py-3 text-xs">
 							<p className="font-semibold text-foreground">This library is connected, but it is still empty.</p>
-							<p className="mt-1 text-muted-foreground">Open Agent Library to inspect or add the agent content you want to preserve, then return here only to review and sync it.</p>
+							<p className="mt-1 text-muted-foreground">Open backup & sync to inspect or add the agent content you want to preserve, then return here only to review and sync it.</p>
           </div>
 					)}
 		  {profile.remote_trust_required && !remoteTrustPreview && <p className="mt-3 text-xs leading-relaxed text-amber-700 dark:text-amber-300">This profile predates device-level source permissions, or its remote changed. Skiller will not contact it until you review the exact address once.</p>}
@@ -2639,7 +2637,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 					<div className="border-b border-border/70 pb-5">
 						<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Review changes</p>
 						<h2 className="mt-1 text-xl font-semibold tracking-[-0.03em]">Changes to save</h2>
-						<p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">These are changes in your Agent Library. Installed agent folders stay untouched until you use the library on a device.</p>
+						<p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">These are changes in your Sync. Installed agent folders stay untouched until you use the library on a device.</p>
 					</div>
 					<div className="mt-5 divide-y divide-border/70 border-y border-border/70">
 						<div className="flex items-start gap-3 py-4 text-sm"><span className={localPublishPreview.has_blockers ? 'grid size-8 shrink-0 place-items-center rounded-lg bg-destructive/10 text-destructive' : 'grid size-8 shrink-0 place-items-center rounded-lg bg-emerald-500/10 text-emerald-600'}>{localPublishPreview.has_blockers ? <AlertTriangle className="size-4" /> : <CheckCircle2 className="size-4" />}</span><div><p className="font-semibold">{localPublishPreview.has_blockers ? 'A few items need your decision' : `${plural(localPublishPreview.files.length, 'change')} ready to save`}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{localPublishPreview.has_blockers ? 'Nothing will be changed or uploaded until these items are resolved.' : 'Skiller will save and upload only the changes listed below.'}</p></div></div>
@@ -2742,7 +2740,7 @@ export default function SyncCenter({ embedded = false, allowExisting = false, on
 							className="h-8 px-2 text-muted-foreground hover:bg-muted hover:text-foreground"
 							aria-label={preview
 								? publishConfirmationOpen ? 'Back to storage setup' : showDestination ? destinationStage === 'setup' ? 'Back to storage choices' : 'Back to library review' : 'Back to skills'
-								: sourceDecisionReview ? 'Back to library review' : showPurposeChoice ? profile ? 'Back to library' : embedded ? 'Back to Agent Library' : 'Back to Sync' : 'Back to library access'}
+								: sourceDecisionReview ? 'Back to library review' : showPurposeChoice ? profile ? 'Back to library' : embedded ? 'Back to backup & sync' : 'Back to backup & sync' : 'Back to library access'}
 							onClick={() =>
 								preview
 									? publishConfirmationOpen

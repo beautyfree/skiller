@@ -1,5 +1,74 @@
 [
   {
+    "version": "0.3.5",
+    "date": "2026-10-02",
+    "sections": [
+      {
+        "title": "Bug Fixes",
+        "changes": [
+          "fit startup window to display and add catalog screenshot metadata (#69)"
+        ]
+      }
+    ]
+  },
+  {
+    "version": "0.3.4",
+    "date": "2026-10-02",
+    "sections": [
+      {
+        "title": "Bug Fixes",
+        "changes": [
+          "**linux:** build valid AppImages for AppImageHub (#68)",
+          "**settings:** avoid duplicate update banner"
+        ]
+      },
+      {
+        "title": "Documentation",
+        "changes": [
+          "use skiller.download as the public website"
+        ]
+      }
+    ]
+  },
+  {
+    "version": "0.3.3",
+    "date": "2026-08-14",
+    "sections": [
+      {
+        "title": "Bug Fixes",
+        "changes": [
+          "**library:** keep selected skills in view",
+          "**release:** allow release please drafts without tags"
+        ]
+      }
+    ]
+  },
+  {
+    "version": "0.3.2",
+    "date": "2026-08-14",
+    "sections": [
+      {
+        "title": "Bug Fixes",
+        "changes": [
+          "**desktop:** complete reconnect flow cleanly"
+        ]
+      }
+    ]
+  },
+  {
+    "version": "0.3.1",
+    "date": "2026-08-14",
+    "sections": [
+      {
+        "title": "Bug Fixes",
+        "changes": [
+          "**desktop:** avoid background keychain prompts",
+          "**release:** use root changelog in monorepo"
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.3.0",
     "date": "2026-08-14",
     "sections": [
@@ -231,121 +300,6 @@
         "changes": [
           "**ci:** re-enable release-please on release PR merges",
           "**updater:** make update downloads non-blocking and announce new version"
-        ]
-      }
-    ]
-  },
-  {
-    "version": "0.2.13",
-    "date": "2026-04-22",
-    "sections": [
-      {
-        "title": "Features",
-        "changes": [
-          "**telemetry:** add PostHog analytics with runtime opt-out control"
-        ]
-      },
-      {
-        "title": "Bug Fixes",
-        "changes": [
-          "**deps:** pin matching React and React DOM versions"
-        ]
-      }
-    ]
-  },
-  {
-    "version": "0.2.12",
-    "date": "2026-04-22",
-    "sections": [
-      {
-        "title": "Features",
-        "changes": [
-          "**app:** add GitHub star prompt and migrate app data paths"
-        ]
-      }
-    ]
-  },
-  {
-    "version": "0.2.11",
-    "date": "2026-04-21",
-    "sections": [
-      {
-        "title": "Features",
-        "changes": [
-          "**agents:** add 28 agents from vercel-labs/skills + project_skills_dir",
-          "**onboarding:** add informational wizard with Skiller branding",
-          "**projects:** add project-scope installs with folder tree sidebar",
-          "**skills:** per-agent lifecycle with bulk ops and smart Remove",
-          "**updater:** show progress bar while download is running"
-        ]
-      },
-      {
-        "title": "Bug Fixes",
-        "changes": [
-          "**updater:** adopt returned snapshot so \"Restart & install\" shows at once",
-          "**updater:** show update errors as a persistent destructive panel",
-          "**updater:** surface download failures and dev-mode no-op in UI"
-        ]
-      },
-      {
-        "title": "Documentation",
-        "changes": [
-          "mention macOS Intel build in README + landing",
-          "refresh README with new features and full agent list",
-          "update landing &lt;title&gt; to match h1 tagline"
-        ]
-      },
-      {
-        "title": "Refactors",
-        "changes": [
-          "drop unreleased cross-device sync feature"
-        ]
-      }
-    ]
-  },
-  {
-    "version": "0.2.10",
-    "date": "2026-04-21",
-    "sections": [
-      {
-        "title": "Features",
-        "changes": [
-          "**updater:** show progress bar while download is running"
-        ]
-      },
-      {
-        "title": "Bug Fixes",
-        "changes": [
-          "**updater:** adopt returned snapshot so \"Restart & install\" shows at once",
-          "**updater:** show update errors as a persistent destructive panel",
-          "**updater:** surface download failures and dev-mode no-op in UI"
-        ]
-      }
-    ]
-  },
-  {
-    "version": "0.2.9",
-    "date": "2026-04-21",
-    "sections": [
-      {
-        "title": "Features",
-        "changes": [
-          "**agents:** add 28 agents from vercel-labs/skills + project_skills_dir",
-          "**onboarding:** add informational wizard with Skiller branding",
-          "**projects:** add project-scope installs with folder tree sidebar",
-          "**skills:** per-agent lifecycle with bulk ops and smart Remove"
-        ]
-      },
-      {
-        "title": "Documentation",
-        "changes": [
-          "refresh README with new features and full agent list"
-        ]
-      },
-      {
-        "title": "Refactors",
-        "changes": [
-          "drop unreleased cross-device sync feature"
         ]
       }
     ]

@@ -2,9 +2,62 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { applySkillPreset, listSkillPresets, removeSkillPreset, reviewSkillPreset, saveSkillPreset, skillSelection } from './skill-presets'
+import { applySkillPreset, listSkillPresets, removeSkillPreset, reviewSkillPreset, saveSkillPreset, setSkillPresetMember, skillSelection } from './skill-presets'
 import { scanAllSkills } from './scanner'
 import { defaultAgentConfig } from './types'
+
+test('set curation supports empty sets and unavailable members without changing installed files', () => {
+  const root = mkdtempSync(join(tmpdir(), 'skiller-set-curation-'))
+  try {
+    const setsDir = join(root, 'sets')
+    expect(listSkillPresets(setsDir)).toEqual([])
+    const empty = saveSkillPreset({ name: 'My workflow', skillIds: [] }, [], setsDir)
+    expect(listSkillPresets(setsDir)).toEqual([empty])
+    expect(() => reviewSkillPreset(empty, { agents: [] }, [], [], [])).toThrow('Add skills')
+    const source = join(root, 'library/example')
+    mkdirSync(source, { recursive: true })
+    const content = '---\nname: example\ndescription: Example\n---\nKeep this content'
+    writeFileSync(join(source, 'SKILL.md'), content)
+    const inventory = scanAllSkills([], join(root, 'library'))
+    const filled = saveSkillPreset({ id: empty.id, name: 'My workflow', skillIds: ['example'] }, inventory, setsDir)
+    expect(readFileSync(join(source, 'SKILL.md'), 'utf8')).toBe(content)
+    rmSync(source, { recursive: true })
+    const renamed = saveSkillPreset({ id: empty.id, name: 'Renamed', skillIds: ['example'] }, [], setsDir)
+    expect(renamed.skills).toEqual(filled.skills)
+    expect(() => saveSkillPreset({ name: 'Unknown source', skillIds: ['example'] }, [], setsDir)).toThrow('no longer available')
+    const cleared = saveSkillPreset({ id: empty.id, name: 'Renamed', skillIds: [] }, [], setsDir)
+    expect(cleared.skills).toEqual([])
+    removeSkillPreset(empty.id, setsDir)
+    expect(listSkillPresets(setsDir)).toEqual([])
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('inline set membership preserves the latest selection and name, and validates source identity', () => {
+  const root = mkdtempSync(join(tmpdir(), 'skiller-set-members-'))
+  try {
+    const library = join(root, 'library')
+    for (const id of ['code', 'testing']) {
+      mkdirSync(join(library, id), { recursive: true })
+      writeFileSync(join(library, id, 'SKILL.md'), `---\nname: ${id}\ndescription: Test\n---\nKeep me`)
+    }
+    const inventory = scanAllSkills([], library)
+    const dir = join(root, 'sets')
+    const set = saveSkillPreset({ name: 'My workflow', skillIds: [] }, inventory, dir)
+    const toggle = (skillId: string, enabled: boolean) => setSkillPresetMember({ id: set.id, skillId, sourcePath: inventory.find(skill => skill.id === skillId)!.canonical_path, enabled }, inventory, dir)
+    expect(toggle('code', true).skills.map(ref => ref.id)).toEqual(['code'])
+    saveSkillPreset({ id: set.id, name: 'Renamed elsewhere', skillIds: ['code'] }, inventory, dir)
+    const latest = toggle('testing', true)
+    expect(latest.name).toBe('Renamed elsewhere')
+    expect(latest.skills.map(ref => ref.id)).toEqual(['code', 'testing'])
+    expect(toggle('testing', true).skills).toHaveLength(2)
+    expect(() => setSkillPresetMember({ id: set.id, skillId: 'code', sourcePath: root, enabled: true }, inventory, dir)).toThrow('source changed')
+    rmSync(join(library, 'code'), { recursive: true })
+    const withoutMissing = setSkillPresetMember({ id: set.id, skillId: 'code', sourcePath: inventory[0]!.canonical_path, enabled: false }, inventory.filter(skill => skill.id !== 'code'), dir)
+    expect(withoutMissing.skills.map(ref => ref.id)).toEqual(['testing'])
+    expect(readFileSync(join(library, 'testing/SKILL.md'), 'utf8')).toContain('Keep me')
+    expect(() => setSkillPresetMember({ id: set.id, skillId: '../unsafe', sourcePath: root, enabled: true }, inventory, dir)).toThrow()
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
 
 test('sets retain source identity, review changes, and add only missing skills across agents/projects', () => {
   const root = mkdtempSync(join(tmpdir(), 'skiller-presets-'))
@@ -18,6 +71,18 @@ test('sets retain source identity, review changes, and add only missing skills a
     mkdirSync(join(source, 'react/scripts'))
     writeFileSync(join(source, 'react/scripts/check.sh'), '#!/bin/sh\ntrue\n', { mode: 0o755 })
     const inventory = scanAllSkills([], source)
+    const sharedAgent = defaultAgentConfig({ slug: 'shared-agent', name: 'Shared agent', detected: true, global_paths: [join(root, 'personal/skills')] })
+    const inheritedInventory = inventory.map(skill => ({ ...skill, installations: [{ agent_slug: sharedAgent.slug, path: skill.canonical_path, is_symlink: false, is_inherited: true, inherited_from: 'shared' }] }))
+    const sharedSelection = skillSelection({ name: 'Shared', skillIds: ['react', 'testing'] }, inheritedInventory)
+    const sharedReview = reviewSkillPreset(sharedSelection, { agents: [sharedAgent.slug] }, inheritedInventory, [sharedAgent], [])
+    expect(sharedReview.rows.map(row => row.state)).toEqual(['installed', 'installed'])
+    expect(applySkillPreset(sharedReview).added).toEqual([])
+    expect(sharedReview.rows[0]?.destination).toBe(inventory[0]!.canonical_path)
+    const missingCopies = inheritedInventory.map(skill => ({ ...skill, installations: skill.installations.map(item => ({ ...item, path: join(root, 'missing', skill.id) })) }))
+    expect(reviewSkillPreset(sharedSelection, { agents: [sharedAgent.slug] }, missingCopies, [sharedAgent], []).rows.map(row => row.state)).toEqual(['add', 'add'])
+    const inheritedProject = join(root, 'inherited-project')
+    mkdirSync(inheritedProject)
+    expect(reviewSkillPreset(sharedSelection, { agents: [], projectPath: inheritedProject }, inheritedInventory, [sharedAgent], [{ name: 'Inherited project', path: inheritedProject }]).rows.map(row => row.state)).toEqual(['add', 'add'])
     const dir = join(root, 'sets')
     const preset = saveSkillPreset({ name: 'Frontend', skillIds: ['react', 'testing', 'react'] }, inventory, dir)
     expect(preset.skills).toHaveLength(2)

@@ -20,5 +20,8 @@
     "marketplace:dev": "bun --cwd=apps/marketplace-proxy run dev",
     "marketplace:build": "bun --cwd=apps/marketplace-proxy run build"
   },
-  "license": "SUL-1.0"
+  "license": "SUL-1.0",
+  "patchedDependencies": {
+    "dotagents@0.4.0": "patches/dotagents@0.4.0.patch"
+  }
 }

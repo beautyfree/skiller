@@ -1,10 +1,10 @@
-import { basename, join, resolve, sep } from "node:path";
+import { basename, join, resolve, relative, sep } from "node:path";
 import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { AgentConfig } from "../types";
 import type { MarketplaceSkill } from "../marketplace-types";
 import { discoverSkillDirs } from "../scanner";
-import { installSkillFromPath } from "../install";
+import { assertSkillDestinationsAvailable, resolveInstallTargets, sanitizeSkillDirName, sharedSkillsDir, installSkillFromPath } from "../install";
 import { saveLocalSkillSource } from "dotagents/source-registry";
 import type { SourceSecurityPolicyInput } from "dotagents/source-policy";
 import { checkoutReviewedGitSource } from "../git-transport";
@@ -51,7 +51,7 @@ export async function installFromMarketplace(
   targetAgents: string[],
   agents: AgentConfig[],
   sourcePolicy: SourceSecurityPolicyInput = {},
-): Promise<void> {
+): Promise<string> {
   const repoUrl = skill.repository?.trim();
   if (!repoUrl) {
     throw new Error("marketplace item has no repository url");
@@ -76,9 +76,13 @@ export async function installFromMarketplace(
       existsSync(join(candidateFromSource, "SKILL.md"))
       ? candidateFromSource
       : findSkillInRepo(tempDir, skill.name);
-    const canonical = skillDir
-      ? installSkillFromPath(skillDir, targetAgents, agents)
-      : installSkillFromPath(tempDir, targetAgents, agents);
+    if (!skillDir) throw new Error("Could not identify this skill in its repository");
+    const installedName = sanitizeSkillDirName(basename(skillDir));
+    assertSkillDestinationsAvailable([
+      join(sharedSkillsDir(), installedName),
+      ...resolveInstallTargets(targetAgents, agents).flatMap(agent => agent.global_paths.map(root => join(root, installedName))),
+    ]);
+    const canonical = installSkillFromPath(skillDir, targetAgents, agents);
 
     const skillId = basename(canonical);
 		const source = skill.source === "skills.sh"
@@ -89,11 +93,12 @@ export async function installFromMarketplace(
     saveLocalSkillSource(skillId, {
 			source,
       repository: repoUrl ?? null,
-      skill_path: explicitSkillPath && explicitSkillPath !== "." ? explicitSkillPath : null,
+      skill_path: relative(tempDir, skillDir).split(sep).join("/") || null,
       ref: checkout.resolvedCommit,
       content_sha256: null,
 			ownership: source === "local" ? "unknown" : "external",
     });
+    return skillId;
   } finally {
     try {
       rmSync(tempDir, { recursive: true, force: true });

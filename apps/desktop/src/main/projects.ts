@@ -1,14 +1,24 @@
+import { z } from 'zod'
+import type { Skill } from './skill-types'
+import type { ProjectSkillComparisonJson } from '../shared/rpc-schema'
+import { buildBundledConflictComparison, previewBundledConflictFile } from './sync-conflict-preview'
 import { loadRegisteredAgents } from './custom-agents'
+import { sharedSkillsDir } from './shared-skills'
+import { assertSkillDestinationsAvailable } from './install'
+import { reviewedPackageHashes, replaceReviewedPackage } from './reviewed-package-replacement'
 import {
   existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
+  readlinkSync,
+  renameSync,
+  realpathSync,
   rmSync,
   statSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, normalize, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import type { ProjectEntryJson, ProjectSkillJson } from "../shared/rpc-schema";
 import { copyDirRecursive, linkOrCopy, removePath } from "./fsutil";
 import { parseSkillMdFile } from "./parser";
@@ -174,9 +184,10 @@ export function touchProject(path: string): void {
 // ─── Listing project skills ─────────────────────────────────────────────────
 
 export function listProjectSkills(projectPath: string): ProjectSkillJson[] {
-  const root = projectCanonicalSkillsDir(projectPath);
-  if (!existsSync(root)) return [];
   const out: ProjectSkillJson[] = [];
+  for (const enabled of [true, false]) {
+  const root = join(projectPath, enabled ? UNIVERSAL_REL : `${UNIVERSAL_REL}-disabled`);
+  if (!existsSync(root)) continue;
   let entries: string[];
   try {
     entries = readdirSync(root);
@@ -205,10 +216,71 @@ export function listProjectSkills(projectPath: string): ProjectSkillJson[] {
       name: parsed.name ?? name,
       description: parsed.description ?? null,
       path: dir,
+      enabled,
     });
+  }
   }
   out.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   return out;
+}
+
+/** Move the project's own package and its links without changing any library source. */
+export function setProjectSkillEnabled(input: unknown, projects = listProjects(), agents = loadRegisteredAgents()): void {
+  const { projectPath, skillId, enabled } = z.object({
+    projectPath: z.string().refine(isAbsolute),
+    skillId: z.string().min(1).max(255).refine(id => !/[\\/\x00-\x1f]/.test(id) && id !== '.' && id !== '..'),
+    enabled: z.boolean(),
+  }).strict().parse(input);
+  if (!projects.some(project => project.path === projectPath)) throw new Error('Choose a registered project');
+  const root = realpathSync(projectPath);
+  const active = join(root, UNIVERSAL_REL, skillId);
+  const disabled = join(root, `${UNIVERSAL_REL}-disabled`, skillId);
+  const present = (path: string) => existsSync(path) || isSymlinkLoose(path);
+  function safe(path: string) {
+    if (!isPathSafe(root, path)) throw new Error('Skill path is outside this project');
+    let parent = dirname(path);
+    while (!existsSync(parent) && !isSymlinkLoose(parent)) parent = dirname(parent);
+    if (!isPathSafe(root, realpathSync(parent))) throw new Error('Linked skills roots outside the project cannot be changed');
+  }
+  safe(active); safe(disabled);
+  const source = present(enabled ? disabled : active) ? (enabled ? disabled : active) : (enabled ? active : disabled);
+  if (!present(source) || lstatSync(source).isSymbolicLink() || !lstatSync(source).isDirectory() || !existsSync(join(source, 'SKILL.md'))) throw new Error('Only a project-owned skill package can be enabled or disabled');
+  const target = enabled ? active : disabled;
+  if (source !== target && present(target)) throw new Error('Both enabled and disabled copies exist. Keep both copies and resolve them first.');
+  const moves: { from: string; to: string }[] = [];
+  const roots = new Set(agents.map(agent => agent.project_skills_dir).filter((rel): rel is string => !!rel && rel !== UNIVERSAL_REL));
+  for (const rel of roots) {
+    const activeLink = resolve(root, rel, skillId);
+    const disabledLink = resolve(root, `${rel}-disabled`, skillId);
+    if (!present(activeLink) && !present(disabledLink)) continue;
+    safe(activeLink); safe(disabledLink);
+    for (const path of [activeLink, disabledLink]) {
+      if (!present(path)) continue;
+      if (!lstatSync(path).isSymbolicLink()) throw new Error(`Separate agent copy must be handled first: ${path}`);
+      const linkedTarget = resolve(dirname(activeLink), readlinkSync(path));
+      if (!existsSync(dirname(linkedTarget)) || join(realpathSync(dirname(linkedTarget)), basename(linkedTarget)) !== active) throw new Error(`External agent link must be handled first: ${path}`);
+    }
+    const from = enabled ? disabledLink : activeLink;
+    const to = enabled ? activeLink : disabledLink;
+    if (present(from)) {
+      if (present(to)) throw new Error(`Destination already exists: ${to}`);
+      moves.push({ from, to });
+    }
+  }
+  // Links retain their original target; returning the package reactivates them.
+  if (source !== target) {
+    if (enabled) moves.unshift({ from: source, to: target });
+    else moves.push({ from: source, to: target });
+  }
+  const completed: typeof moves = [];
+  try {
+    for (const move of moves) { mkdirSync(dirname(move.to), { recursive: true }); renameSync(move.from, move.to); completed.push(move); }
+  } catch (error) {
+    const failures: string[] = [];
+    for (const move of completed.reverse()) { try { renameSync(move.to, move.from) } catch { failures.push(move.to) } }
+    if (failures.length) throw new Error(`Could not finish or roll back. Files are preserved at: ${failures.join(', ')}`);
+    throw error;
+  }
 }
 
 // ─── Install ────────────────────────────────────────────────────────────────
@@ -240,6 +312,7 @@ export function installSkillToProjectFromPath(
     targetSkillName ?? basename(sourceSkillDir) ?? "skill",
   );
   const canonical = join(canonicalRoot, name);
+  if (existsSync(join(projectPath, `${UNIVERSAL_REL}-disabled`, name))) throw new Error("This skill is disabled in the project. Enable it before replacing it.");
   if (!isPathSafe(canonicalRoot, canonical)) {
     throw new Error(`unsafe skill name: ${name}`);
   }
@@ -322,8 +395,16 @@ export function installRepoSkillToProject(
   const localPath = resolveRepoPath(repoIdParam);
   if (!existsSync(localPath)) throw new Error("Repository not found locally");
   const candidates = discoverSkillDirs(localPath);
-  const skillPath = candidates.find((c) => basename(c.dir) === skillId)?.dir;
+  const matches = candidates.filter(c => basename(c.dir) === skillId);
+  if (matches.length > 1) throw new Error(`Several skill folders use '${skillId}'. Import them individually with distinct names.`);
+  const skillPath = matches[0]?.dir;
   if (!skillPath) throw new Error(`Skill '${skillId}' not found in repository`);
+  const name = sanitizeSkillName(skillId);
+  assertSkillDestinationsAvailable([
+    join(projectCanonicalSkillsDir(projectPath), name),
+    join(projectPath, `${UNIVERSAL_REL}-disabled`, name),
+    ...loadDetectedAgents().filter(agent => agent.detected && agent.project_skills_dir).map(agent => join(projectPath, agent.project_skills_dir!, name)),
+  ]);
   return installSkillToProjectFromPath(skillPath, projectPath, skillId);
 }
 
@@ -348,21 +429,90 @@ export async function installMarketplaceSkillToProject(
 /**
  * Remove canonical skill directory plus every agent-specific symlink that points at it.
  */
-export function uninstallProjectSkill(
+export async function uninstallProjectSkill(
   projectPath: string,
   skillId: string,
-): void {
-  const canonical = join(projectCanonicalSkillsDir(projectPath), skillId);
-  if (existsSync(canonical) || isSymlinkLoose(canonical)) removePath(canonical);
-
-  const agents = loadDetectedAgents();
+  trash: (path: string) => Promise<void>,
+  projects = listProjects(),
+  agents = loadDetectedAgents(),
+): Promise<{ removed: string[]; kept: string[] }> {
+  const parsed = z.object({ projectPath: z.string().refine(isAbsolute), skillId: z.string().min(1).max(255).refine(id => !/[\\/\x00-\x1f]/.test(id) && id !== '.' && id !== '..') }).safeParse({ projectPath, skillId });
+  if (!parsed.success || !projects.some(project => project.path === projectPath)) throw new Error('Choose a registered project and skill');
+  const skill = listProjectSkills(projectPath).find(skill => skill.id === skillId);
+  if (!skill) throw new Error('Project skill is no longer available');
+  const root = realpathSync(projectPath);
+  const canonical = join(root, skill.enabled === false ? `${UNIVERSAL_REL}-disabled` : UNIVERSAL_REL, skillId);
+  if (lstatSync(canonical).isSymbolicLink() || !isPathSafe(root, realpathSync(canonical))) throw new Error('Linked skills are kept; unlink their source separately');
+  const removed: string[] = [];
+  const kept: string[] = [];
   for (const agent of agents) {
     const rel = agent.project_skills_dir;
     if (!rel || rel === UNIVERSAL_REL) continue;
-    const link = join(projectPath, rel, skillId);
-    if (!isPathSafe(projectPath, link)) continue;
+    const link = resolve(root, skill.enabled === false ? `${rel}-disabled` : rel, skillId);
+    if (!isPathSafe(root, link)) continue;
     if (existsSync(link) || isSymlinkLoose(link)) {
-      removePath(link);
+      if (isPathSafe(root, realpathSync(dirname(link))) && lstatSync(link).isSymbolicLink() && ((existsSync(link) && realpathSync(link) === canonical) || (skill.enabled === false && resolve(root, rel, readlinkSync(link)) === join(root, UNIVERSAL_REL, skillId)))) {
+        await trash(link);
+        removed.push(link);
+      } else kept.push(link);
     }
   }
+  // Recheck after asynchronous OS calls before moving the canonical folder.
+  if (lstatSync(canonical).isSymbolicLink() || !isPathSafe(root, realpathSync(canonical))) throw new Error('Project skill changed; review again');
+  await trash(canonical);
+  removed.push(canonical);
+  return { removed, kept };
+}
+
+
+const comparisonInput = z.object({
+  projectPath: z.string().refine(isAbsolute),
+  skillId: z.string().min(1).max(255).refine(id => !/[\\/\x00-\x1f]/.test(id) && id !== '.' && id !== '..'),
+  librarySourcePath: z.string().min(1).max(4096),
+  file: z.string().max(1024).optional(),
+}).strict()
+
+export function compareProjectSkill(input: unknown, inventory: Skill[], projects = listProjects()): ProjectSkillComparisonJson {
+  const parsed = comparisonInput.safeParse(input)
+  if (!parsed.success) throw new Error('Choose a registered project, skill and library source')
+  const params = parsed.data
+  if (!projects.some(project => project.path === params.projectPath)) throw new Error('Choose a project registered in Skiller')
+  const skill = listProjectSkills(params.projectPath).find(skill => skill.id === params.skillId)
+  if (!skill) throw new Error('Project skill is no longer available. Refresh the project.')
+  const projectRoot = realpathSync(params.projectPath)
+  const localPath = realpathSync(skill.path)
+  if (!isPathSafe(projectRoot, localPath)) throw new Error('Project skill links outside the selected project')
+  const source = inventory.find(item => item.id === params.skillId && item.canonical_path === params.librarySourcePath)
+  if (!source) throw new Error('Library source changed or is unavailable. Refresh the library.')
+  const libraryPath = realpathSync(source.canonical_path)
+  const comparison = buildBundledConflictComparison({ id: skill.id, libraryPath, localPath })
+  if (comparison.local_state !== 'directory') throw new Error('Project package could not be compared safely. Inspect its files and links.')
+  let libraryUpdate: ProjectSkillComparisonJson['libraryUpdate']
+  let libraryUpdateBlocked: string | undefined
+  try {
+    if (source.scope.kind !== 'SharedLibrary' || source.collection || libraryPath !== join(realpathSync(sharedSkillsDir()), source.id)) throw new Error('Only a matching entry in your shared library can be updated here.')
+    if (localPath === libraryPath) throw new Error('This project reads the library source directly.')
+    if (lstatSync(skill.path).isSymbolicLink() || lstatSync(source.canonical_path).isSymbolicLink() || libraryPath !== join(realpathSync(sharedSkillsDir()), source.id)) throw new Error('Linked packages cannot be replaced here. Inspect their source folders.')
+    const hashes = reviewedPackageHashes(skill.id, localPath, libraryPath)
+    libraryUpdate = { projectHash: hashes.sourceHash, libraryHash: hashes.targetHash }
+  } catch (error) { libraryUpdateBlocked = error instanceof Error ? error.message : String(error) }
+  return { projectPath: skill.path, libraryPath: source.canonical_path, comparison, libraryUpdate, libraryUpdateBlocked,
+    ...(params.file ? { filePreview: previewBundledConflictFile({ libraryPath, localPath, comparison, file: params.file }) } : {}),
+  }
+}
+
+const libraryUpdateInput = comparisonInput.omit({ file: true }).extend({
+  projectHash: z.string().regex(/^[a-f0-9]{64}$/),
+  libraryHash: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict()
+
+/** Update only the local shared library. No Git publication or sibling-copy overwrite. */
+export async function updateProjectSkillToLibrary(input: unknown, inventory: Skill[], trash: (path: string) => Promise<void>, projects = listProjects()): Promise<{ backupPath?: string }> {
+  const { projectHash, libraryHash, ...params } = libraryUpdateInput.parse(input)
+  const review = compareProjectSkill(params, inventory, projects)
+  if (!review.libraryUpdate) throw new Error(review.libraryUpdateBlocked ?? 'Library update is unavailable.')
+  return replaceReviewedPackage({ id: params.skillId, sourcePath: review.projectPath, targetPath: review.libraryPath, sourceHash: projectHash, targetHash: libraryHash }, () => {
+    const fresh = compareProjectSkill(params, inventory, projects)
+    if (!fresh.libraryUpdate) throw new Error(fresh.libraryUpdateBlocked ?? 'Library update is unavailable.')
+  }, trash)
 }

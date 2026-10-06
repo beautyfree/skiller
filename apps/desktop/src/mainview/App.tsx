@@ -11,6 +11,7 @@ import {
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import SkillsManager from './pages/SkillsManager'
+import SkillSets from './pages/SkillSets'
 import Marketplace from './pages/Marketplace'
 import ProjectsPage from './pages/Projects'
 import SettingsPage from './pages/Settings'
@@ -357,6 +358,8 @@ function AppInner() {
         >
           <Route index element={<Dashboard />} />
           <Route path="skills" element={<SkillsManager />} />
+          <Route path="skill-sets" element={<SkillSets />} />
+          <Route path="skill-sets/:id" element={<SkillSets />} />
           <Route path="marketplace" element={<Marketplace />} />
           <Route path="projects" element={<ProjectsPage />} />
 		  {/* Old Quality bookmarks now open the unified skills workspace. */}

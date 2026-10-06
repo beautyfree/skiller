@@ -35,9 +35,10 @@ function parseSkillsApiResponse(jsonStr: string): MarketplaceSkill[] {
 	try {
 		parsed = JSON.parse(jsonStr) as { data?: ApiSkill[] };
 	} catch {
-		return [];
+		throw new Error("Marketplace gateway returned invalid JSON");
 	}
-	return (parsed.data ?? []).flatMap((skill) => {
+  if (!Array.isArray(parsed.data)) throw new Error("Marketplace gateway returned an invalid skills page");
+	return parsed.data.flatMap((skill) => {
 		if (!skill.source || !skill.slug) return [];
 		const owner = skill.source.split("/", 1)[0] ?? skill.source;
 		return [{
@@ -69,7 +70,7 @@ async function fetchGatewaySkills(
 		});
 		if (!response.ok) throw new Error("Marketplace gateway request failed");
 		const skills = parseSkillsApiResponse(await response.text());
-		if (skills.length === 0) throw new Error("Marketplace gateway returned no readable skills");
+		// A valid empty page/search means there are no more results.
 		writeCache(cacheKey, skills, 5 * 60);
 		return skills;
 	} catch {

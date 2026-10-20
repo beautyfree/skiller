@@ -68,3 +68,20 @@ test('custom agent registration uses the normal detection/install flow and prese
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+const filesystemRoots = process.platform === 'win32'
+  ? ['/', '\\', 'C:/', 'C:\\', 'C:/folder/..', '//server/share/', '\\\\server\\share\\']
+  : ['/', '/folder/..']
+
+test.each(filesystemRoots)('custom agents reject filesystem root %s for skills and detection', value => {
+  const root = mkdtempSync(join(tmpdir(), 'skiller-custom-root-'))
+  try {
+    const input = { name: 'Root guard', globalPath: join(root, 'skills'), marker: join(root, 'agent') }
+    const custom = join(root, 'custom-agents')
+    expect(() => saveCustomAgent({ ...input, globalPath: value }, custom)).toThrow('filesystem root')
+    expect(() => saveCustomAgent({ ...input, marker: value }, custom)).toThrow('filesystem root')
+    expect(existsSync(custom)).toBe(false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { compareAgentSkill, replaceAgentSkill } from './agent-comparison';
@@ -69,7 +69,7 @@ test('agent comparison and reviewed replacement preserve local versions and reje
     symlinkSync(library, local);
     expect(review().sameSource).toBe(true);
     expect(review().replacement).toBeUndefined();
-    rmSync(local);
+    unlinkSync(local);
     symlinkSync(root, local);
     expect(() => review()).toThrow('another source');
   } finally { rmSync(root, { recursive: true, force: true }); }

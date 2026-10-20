@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.7](https://github.com/beautyfree/skiller/compare/v0.3.6...v0.3.7) (2026-10-20)
+
+
+### Bug Fixes
+
+* repair Windows CI root validation and symlink cleanup ([#72](https://github.com/beautyfree/skiller/issues/72)) ([c305b13](https://github.com/beautyfree/skiller/commit/c305b138607922eaea18f762d1c99df9167bc622))
+
 ## [0.3.6](https://github.com/beautyfree/skiller/compare/v0.3.5...v0.3.6) (2026-10-06)
 
 

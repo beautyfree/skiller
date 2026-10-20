@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { compareProjectSkill, updateProjectSkillToLibrary } from './projects'
@@ -60,6 +60,8 @@ test('reviewed project publication preserves the old package and rejects stale, 
     }
     writeFileSync(join(local, 'scripts/check.sh'), 'echo Project\n')
     chmodSync(join(local, 'scripts/check.sh'), 0o755)
+    // Windows exposes writable files as 0666 even after chmod(0755).
+    const scriptMode = statSync(join(local, 'scripts/check.sh')).mode & 0o777
     writeFileSync(join(library, 'scripts/check.sh'), 'echo Library\n')
     writeFileSync(join(local, 'project-only.txt'), 'Project notes\n')
     writeFileSync(join(library, 'library-only.txt'), 'Library notes\n')
@@ -74,7 +76,7 @@ test('reviewed project publication preserves the old package and rejects stale, 
     process.env.SKILLER_TEST_HOME = join(root, 'home-alias')
     expect(review().libraryUpdate).toEqual(initial.libraryUpdate)
     process.env.SKILLER_TEST_HOME = root
-    rmSync(join(root, 'home-alias'))
+    unlinkSync(join(root, 'home-alias'))
     const moved: string[] = []
     const trash = async (path: string) => { const target = join(root, `trash-${moved.length}`); renameSync(path, target); moved.push(target) }
     writeFileSync(join(local, 'project-only.txt'), 'Changed after review\n')
@@ -101,17 +103,17 @@ test('reviewed project publication preserves the old package and rejects stale, 
     renameSync(library, libraryElsewhere)
     symlinkSync(libraryElsewhere, library)
     expect(review().libraryUpdate).toBeUndefined()
-    rmSync(library)
+    unlinkSync(library)
     renameSync(libraryElsewhere, library)
     const projectElsewhere = join(project, 'elsewhere')
     renameSync(local, projectElsewhere)
     symlinkSync(projectElsewhere, local)
     expect(review().libraryUpdate).toBeUndefined()
-    rmSync(local)
+    unlinkSync(local)
     renameSync(projectElsewhere, local)
     await updateProjectSkillToLibrary({ ...params, ...review().libraryUpdate! }, inventory, trash, projects)
     expect(readFileSync(join(library, 'scripts/check.sh'), 'utf8')).toBe('echo Project\n')
-    expect(statSync(join(library, 'scripts/check.sh')).mode & 0o777).toBe(0o755)
+    expect(statSync(join(library, 'scripts/check.sh')).mode & 0o777).toBe(scriptMode)
     expect(readFileSync(join(local, 'project-only.txt'), 'utf8')).toBe('Changed after review\n')
     expect(existsSync(join(library, 'library-only.txt'))).toBe(false)
     expect(readFileSync(join(moved[0]!, 'library-only.txt'), 'utf8')).toBe('Library changed after review\n')

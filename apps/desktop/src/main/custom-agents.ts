@@ -37,11 +37,11 @@ export function loadRegisteredAgents(builtinDir = getAgentsDir(), customDir = cu
 }
 
 function absolutePath(value: string): string {
-  const expanded = expandHome(value)
-  if (!isAbsolute(expanded) || expanded.includes('\0') || normalize(expanded) === parse(expanded).root) {
+  const expanded = normalize(expandHome(value))
+  if (!isAbsolute(expanded) || expanded.includes('\0') || expanded === parse(expanded).root) {
     throw new Error('Choose an absolute folder path, not a filesystem root')
   }
-  return normalize(expanded)
+  return expanded
 }
 
 export function saveCustomAgent(value: unknown, dir = customAgentsDir()): string {

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { installSkillToProjectFromPath, listProjectSkills, setProjectSkillEnabled, uninstallProjectSkill } from './projects'
@@ -41,7 +41,7 @@ test('project disable/enable preserves packages and links, rejects unsafe or con
     expect(() => toggle(false)).toThrow('Both')
     expect(readFileSync(join(active, 'SKILL.md'), 'utf8')).toBe(content)
     rmSync(disabled, { recursive: true })
-    rmSync(link); mkdirSync(link); writeFileSync(join(link, 'SKILL.md'), 'Independent copy')
+    unlinkSync(link); mkdirSync(link); writeFileSync(join(link, 'SKILL.md'), 'Independent copy')
     expect(() => toggle(false)).toThrow('Separate')
     expect(existsSync(active)).toBe(true)
     rmSync(link, { recursive: true }); symlinkSync(active, link)

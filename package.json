@@ -22,6 +22,6 @@
   },
   "license": "SUL-1.0",
   "patchedDependencies": {
-    "dotagents@0.4.0": "patches/dotagents@0.4.0.patch"
+    "dotagents@0.4.1": "patches/dotagents@0.4.1.patch"
   }
 }

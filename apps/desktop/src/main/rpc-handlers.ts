@@ -161,7 +161,7 @@ import {
   setProjectSkillEnabled,
 } from './projects'
 import { resolveSkillSourcePath } from './skill-paths'
-import { sharedSkillsDir } from './shared-skills'
+import { sharedSkillHistoryRoot, sharedSkillsDir } from './shared-skills'
 import { scanSyncInventoryWithDotagents, syncInventoryRoots, type SyncInventoryItem } from './sync-inventory'
 import { classifyLibraryLocalChanges } from './sync-library-local-changes'
 import { planBundledSkillExport } from './sync-export'
@@ -2150,6 +2150,7 @@ export function createRequestHandlers(ctx: {
       }))
       const result = await applyReviewedManagedSkillUpdates({
         root: sharedSkillsDir(),
+        historyRoot: sharedSkillHistoryRoot(),
         sources: readLocalSkillSources(),
         updates,
         onProgress: (progress) => rpc.send('skill_update_progress', {

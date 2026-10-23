@@ -44,7 +44,7 @@
     "chokidar": "^5.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "dotagents": "0.4.0",
+    "dotagents": "0.4.1",
     "electron-updater": "^6.8.3",
     "handlebars": "^4.7.9",
     "i18next": "^25.8.19",

@@ -22,6 +22,7 @@ import { setPackagedResourcesDir, setPackagedViewsDir } from "../main/paths";
 import { startSkillWatcher } from "../main/watcher";
 import type { AppRPCSchema } from "../shared/rpc-schema";
 import type { BunSideRpc } from "../main/rpc-handlers";
+import { migrateLegacySharedSkillHistory } from "../main/shared-skills";
 import { createAppRouter } from "../main/trpc/router";
 import { initAppUpdater, stopAppUpdater } from "../main/app-updater";
 import { createElectronPlatform } from "./platform-electron";
@@ -236,6 +237,13 @@ function setupTray(): void {
 // --- App lifecycle --------------------------------------------------------
 void app.whenReady().then(async () => {
 	electronApp.setAppUserModelId("com.beautyfree.skiller");
+	try {
+		const historyMigration = migrateLegacySharedSkillHistory();
+		if (historyMigration === "moved") console.info("Moved shared skill update history to ~/.dotagents/history");
+		if (historyMigration === "pending-recovery") console.warn("Kept shared skill history in place until its interrupted update is recovered");
+	} catch (error) {
+		console.warn("Could not move shared skill update history; continuing startup without deleting it", error);
+	}
 
 	app.on("browser-window-created", (_event, win) => {
 		optimizer.watchWindowShortcuts(win);

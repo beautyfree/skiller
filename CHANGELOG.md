@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.8](https://github.com/beautyfree/skiller/compare/v0.3.7...v0.3.8) (2026-10-23)
+
+
+### Features
+
+* move shared skill history outside the skills library ([#74](https://github.com/beautyfree/skiller/issues/74)) ([d96c282](https://github.com/beautyfree/skiller/commit/d96c282990e132aa48894dacec676c2b71511f76))
+
 ## [0.3.7](https://github.com/beautyfree/skiller/compare/v0.3.6...v0.3.7) (2026-10-20)
 
 
